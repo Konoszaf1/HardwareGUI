@@ -1,0 +1,10 @@
+<RCC>
+  <qresource>
+    <file>icons/close.png</file>
+    <file>icons/maximize.png</file>
+    <file>icons/minimize.png</file>
+    <file>icons/keyboard.png</file>
+    <file>icons/scanner-image.png</file>
+    <file>icons/screen.png</file>
+  </qresource>
+</RCC>
