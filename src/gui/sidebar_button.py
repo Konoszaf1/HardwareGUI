@@ -1,4 +1,4 @@
-"""Custom Button Type to handle expansion and collapse in the sidebar"""
+"""Custom Button Type to handle expansion and collapse of the sidebar"""
 
 from PySide6.QtWidgets import QToolButton, QSizePolicy
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
@@ -22,7 +22,7 @@ class SidebarButton(QToolButton):
         self._original_text = None
         # Animation for smooth text appearance
         self.animation = QPropertyAnimation(self, b"minimumWidth")
-        self.animation.setDuration(200)
+        self.animation.setDuration(400)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
 
     def set_collapsed(self, collapsed):
