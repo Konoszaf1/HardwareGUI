@@ -10,23 +10,21 @@ class ActionModel(QAbstractListModel):
 
     def __init__(self, actions: list[ActionDescriptor]):
         super().__init__()
-        self.data = actions
+        self.actions = actions
 
     def rowCount(self, parent=QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self.data)
+        return 0 if parent.isValid() else len(self.actions)
 
-    def data(self, index, role=Qt.DisplayRole):
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
-        a = self.data[index.row()]
-        if role in (Qt.DisplayRole, self.LabelRole):
+        a = self.actions[index.row()]
+        if role in (Qt.ItemDataRole.DisplayRole, self.label_role):
             return a.label
-        if role == self.IdRole:
+        if role == self.id_role:
             return a.id
-        if role == self.HardwareIdRole:
+        if role == self.hardware_id_role:
             return a.hardware_id
-        if role == self.IconPathRole:
-            return a.icon_path
         return None
 
     def roleNames(self):
@@ -42,9 +40,10 @@ class ActionsByHardwareProxy(QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
         self.hardware_id: int | None = None
-        self.setFilterRole(ActionModel.HardwareIdRole)
+        self.setFilterRole(ActionModel.hardware_id_role)
 
     def setHardwareId(self, hardware_id: int | None):
+        print(f"set property as {hardware_id}")
         if self.hardware_id == hardware_id:
             return
         self.hardware_id = hardware_id
@@ -55,4 +54,4 @@ class ActionsByHardwareProxy(QSortFilterProxyModel):
             return False
         m = self.sourceModel()
         idx = m.index(source_row, 0, source_parent)
-        return m.data(idx, ActionModel.HardwareIdRole) == self.hardware_id
+        return m.data(idx, ActionModel.hardware_id_role) == self.hardware_id

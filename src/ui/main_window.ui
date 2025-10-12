@@ -57,94 +57,7 @@
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <layout class="QVBoxLayout" name="verticalLayout" stretch="1,1,1,6">
-        <item>
-         <widget class="SidebarButton" name="toolButton">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="focusPolicy">
-           <enum>Qt::NoFocus</enum>
-          </property>
-          <property name="text">
-           <string>Keyboard</string>
-          </property>
-          <property name="icon">
-           <iconset resource="../resources/icons.qrc">
-            <normaloff>:/icons/keyboard.png</normaloff>:/icons/keyboard.png</iconset>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="autoExclusive">
-           <bool>true</bool>
-          </property>
-          <property name="arrowType">
-           <enum>Qt::NoArrow</enum>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="SidebarButton" name="toolButton_3">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="focusPolicy">
-           <enum>Qt::NoFocus</enum>
-          </property>
-          <property name="text">
-           <string>Screen</string>
-          </property>
-          <property name="icon">
-           <iconset resource="../resources/icons.qrc">
-            <normaloff>:/icons/screen.png</normaloff>:/icons/screen.png</iconset>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="checked">
-           <bool>false</bool>
-          </property>
-          <property name="autoExclusive">
-           <bool>true</bool>
-          </property>
-          <property name="autoRaise">
-           <bool>false</bool>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="SidebarButton" name="toolButton_2">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="focusPolicy">
-           <enum>Qt::NoFocus</enum>
-          </property>
-          <property name="text">
-           <string>Scanner</string>
-          </property>
-          <property name="icon">
-           <iconset resource="../resources/icons.qrc">
-            <normaloff>:/icons/scanner-image.png</normaloff>:/icons/scanner-image.png</iconset>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="autoExclusive">
-           <bool>true</bool>
-          </property>
-         </widget>
-        </item>
+       <layout class="QVBoxLayout" name="verticalLayout" stretch="6">
         <item>
          <spacer name="verticalSpacer">
           <property name="orientation">
@@ -280,11 +193,6 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>SidebarButton</class>
-   <extends>QToolButton</extends>
-   <header>gui.sidebar_button</header>
-  </customwidget>
   <customwidget>
    <class>ExpandingSplitter</class>
    <extends>QSplitter</extends>

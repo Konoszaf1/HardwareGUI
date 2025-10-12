@@ -10,3 +10,4 @@ class HardwareDescriptor:
     id: int
     label: str
     icon_path: str
+    order: int
