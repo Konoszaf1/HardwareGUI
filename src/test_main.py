@@ -1,200 +1,112 @@
-# sidebar_demo.py
-import sys
-from PySide6.QtCore import (
-    QPropertyAnimation,
-    QEasingCurve,
-    QParallelAnimationGroup,
-    QTimer,
-    Qt,
-    QSize,
-    QAbstractAnimation,
-)
-from PySide6.QtGui import QCursor, QStandardItemModel, QStandardItem
+# split_anim_zero_floor.py
+from PySide6.QtCore import QEasingCurve, QVariantAnimation, QTimer, QSize
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
     QMainWindow,
-    QHBoxLayout,
+    QWidget,
+    QSplitter,
+    QPushButton,
     QVBoxLayout,
-    QListView,
-    QToolButton,
+    QTextEdit,
     QSizePolicy,
 )
+import sys
 
 
-class Sidebar(QWidget):
-    def __init__(
-        self, collapsed_w=50, expanded_w=240, list_original_w=400, parent=None
-    ):
+class ZeroMin(QWidget):
+    """Wrapper to guarantee zero minimum width/height regardless of child hints."""
+
+    def __init__(self, child: QWidget, parent=None):
         super().__init__(parent)
-        self._collapsed_w = collapsed_w
-        self._expanded_w = expanded_w
-        self._list_original_w = list_original_w
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(child)
+        self.setMinimumSize(0, 0)
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Expanding)
+        self.setSizePolicy(sp)
 
-        self._collapsed = True
-        self._buttons = []
-
-        # fixed size policy so parent layout does not stretch this column
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setMaximumWidth(self._collapsed_w)
-        self.setMinimumWidth(self._collapsed_w)
-
-        self.vlay = QVBoxLayout(self)
-        self.vlay.setContentsMargins(0, 0, 0, 0)
-        self.vlay.setSpacing(0)
-
-        # animation refs
-        self.left_anim = None
-        self.right_anim = None
-        self.group = None
-
-        self._listview = None
-
-    def set_listview(self, lv: QListView):
-        self._listview = lv
-        # ensure sensible starting max width for list
-        self._listview.setMaximumWidth(self._list_original_w)
-
-    def add_button(self, btn: QToolButton):
-        btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        btn.setFixedHeight(48)
-        btn.setIconSize(QSize(20, 20))
-        self.vlay.addWidget(btn)
-        self._buttons.append(btn)
-        btn.show()
-
-    def enterEvent(self, event):
-        if self._collapsed:
-            self.expand()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        # short delay to avoid flicker when moving between children
-        QTimer.singleShot(80, self._maybe_collapse)
-        super().leaveEvent(event)
-
-    def _maybe_collapse(self):
-        # collapse only if cursor is outside this widget
-        if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
-            return
-        self.collapse()
-
-    def expand(self):
-        if not self._listview or not self._collapsed:
-            return
-
-        # stop any running animations
-        if self.group and self.group.state() == QAbstractAnimation.Running:
-            self.group.stop()
-
-        left_start = self.width() or self._collapsed_w
-        left_end = self._expanded_w
-
-        right_start = self._listview.width() or self._list_original_w
-        right_end = 0
-
-        self.left_anim = QPropertyAnimation(self, b"maximumWidth", self)
-        self.left_anim.setStartValue(left_start)
-        self.left_anim.setEndValue(left_end)
-        self.left_anim.setDuration(260)
-        self.left_anim.setEasingCurve(QEasingCurve.InOutQuad)
-
-        self.right_anim = QPropertyAnimation(self._listview, b"maximumWidth", self)
-        self.right_anim.setStartValue(right_start)
-        self.right_anim.setEndValue(right_end)
-        self.right_anim.setDuration(260)
-        self.right_anim.setEasingCurve(QEasingCurve.InOutQuad)
-
-        # show text beside icon
-        for b in self._buttons:
-            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-
-        self._collapsed = False
-
-        self.group = QParallelAnimationGroup(self)
-        self.group.addAnimation(self.left_anim)
-        self.group.addAnimation(self.right_anim)
-        self.group.start()
-
-    def collapse(self):
-        if self._collapsed:
-            return
-
-        # prevent collapse if cursor back inside
-        if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
-            return
-
-        if self.group and self.group.state() == QAbstractAnimation.Running:
-            self.group.stop()
-
-        left_start = self.width()
-        left_end = self._collapsed_w
-
-        right_start = self._listview.width() or 0
-        right_end = self._list_original_w
-
-        self.left_anim = QPropertyAnimation(self, b"maximumWidth", self)
-        self.left_anim.setStartValue(left_start)
-        self.left_anim.setEndValue(left_end)
-        self.left_anim.setDuration(260)
-        self.left_anim.setEasingCurve(QEasingCurve.InOutQuad)
-
-        self.right_anim = QPropertyAnimation(self._listview, b"maximumWidth", self)
-        self.right_anim.setStartValue(right_start)
-        self.right_anim.setEndValue(right_end)
-        self.right_anim.setDuration(260)
-        self.right_anim.setEasingCurve(QEasingCurve.InOutQuad)
-
-        self.group = QParallelAnimationGroup(self)
-        self.group.addAnimation(self.left_anim)
-        self.group.addAnimation(self.right_anim)
-        self.group.finished.connect(self._reset_buttons)
-        self.group.start()
-
-    def _reset_buttons(self):
-        for b in self._buttons:
-            b.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        self._collapsed = True
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sidebar demo")
-        central = QWidget(self)
-        self.setCentralWidget(central)
+        self.setWindowTitle("Splitter → 0 px (no 50px floor)")
 
-        h = QHBoxLayout(central)
-        h.setContentsMargins(6, 6, 6, 6)
-        h.setSpacing(6)
+        self.splitter = QSplitter()  # Horizontal
+        self.splitter.setOpaqueResize(True)
+        self.splitter.setChildrenCollapsible(True)
+        self.splitter.setCollapsible(0, True)  # left pane collapsible
+        self.splitter.setCollapsible(1, True)
 
-        # sidebar and list view
-        self.sidebar = Sidebar(collapsed_w=50, expanded_w=220, list_original_w=360)
-        h.addWidget(self.sidebar)
+        # Real content
+        left_content = QTextEdit("Left content")
+        right_content = QTextEdit("Right content")
 
-        self.listview = QListView()
-        self.listview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.listview.setMaximumWidth(360)
-        h.addWidget(self.listview, 1)
+        # Wrap left to kill minimums from inner widgets/layouts
+        left = ZeroMin(left_content)
+        right = ZeroMin(right_content)
 
-        # populate list quickly
-        model = QStandardItemModel()
-        for i in range(60):
-            model.appendRow(QStandardItem(f"Item {i}"))
-        self.listview.setModel(model)
+        # Also explicitly zero mins on inner content (belt-and-suspenders)
+        left_content.setMinimumSize(0, 0)
+        right_content.setMinimumSize(0, 0)
 
-        # add buttons
-        for name in ("One", "Two", "Three"):
-            btn = QToolButton()
-            btn.setText(name)
-            self.sidebar.add_button(btn)
+        self.splitter.addWidget(left)
+        self.splitter.addWidget(right)
 
-        self.sidebar.set_listview(self.listview)
+        # Initial sizes
+        self.splitter.setSizes([240, 560])
+
+        # Controls
+        btnCollapse = QPushButton("Collapse left → 0")
+        btnExpand = QPushButton("Expand left → 240")
+        btnCollapse.clicked.connect(lambda: self.animate_left_to(0, 700))
+        btnExpand.clicked.connect(lambda: self.animate_left_to(240, 700))
+
+        wrap = QWidget()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)  # no outer floors
+        lay.addWidget(self.splitter)
+        lay.addWidget(btnCollapse)
+        lay.addWidget(btnExpand)
+        self.setCentralWidget(wrap)
+
+        self._anim = None
+        QTimer.singleShot(0, self._set_baseline)
+
+    def _set_baseline(self):
+        total = max(1, self.splitter.width())
+        left = 240
+        self.splitter.setSizes([left, max(1, total - left)])
+
+    def animate_left_to(self, end_left_px: int, duration_ms: int):
+        sizes = self.splitter.sizes()
+        start_left = sizes[0]
+        total = sum(sizes)
+        end_left = max(0, min(end_left_px, total))
+
+        if self._anim:
+            self._anim.stop()
+        self._anim = QVariantAnimation(self)
+        self._anim.setStartValue(float(start_left))
+        self._anim.setEndValue(float(end_left))
+        self._anim.setDuration(duration_ms)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        # Handle index 1 = before second widget
+        self._anim.valueChanged.connect(lambda v: self.splitter.moveSplitter(int(v), 1))
+        self._anim.finished.connect(
+            lambda: self.splitter.moveSplitter(int(end_left), 1)
+        )
+        self._anim.start()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MainWindow()
-    w.resize(800, 600)
+    w.resize(800, 500)
     w.show()
     sys.exit(app.exec())

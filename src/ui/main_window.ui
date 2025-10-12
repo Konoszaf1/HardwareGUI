@@ -40,7 +40,7 @@
      <number>0</number>
     </property>
     <item row="1" column="0">
-     <widget class="ExpandingSidebar" name="splitter">
+     <widget class="ExpandingSplitter" name="splitter">
       <property name="lineWidth">
        <number>0</number>
       </property>
@@ -50,7 +50,7 @@
       <property name="handleWidth">
        <number>0</number>
       </property>
-      <widget class="QWidget" name="widget" native="true">
+      <widget class="QWidget" name="sidebar" native="true">
        <property name="sizePolicy">
         <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
          <horstretch>0</horstretch>
@@ -163,7 +163,7 @@
         </item>
        </layout>
       </widget>
-      <widget class="QListView" name="listView">
+      <widget class="HidingListView" name="listView">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
          <horstretch>0</horstretch>
@@ -286,10 +286,15 @@
    <header>gui.sidebar_button</header>
   </customwidget>
   <customwidget>
-   <class>ExpandingSidebar</class>
+   <class>ExpandingSplitter</class>
    <extends>QSplitter</extends>
-   <header>gui.expanding_sidebar</header>
+   <header>gui.expanding_splitter</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>HidingListView</class>
+   <extends>QListView</extends>
+   <header>gui.hiding_listview</header>
   </customwidget>
  </customwidgets>
  <resources>

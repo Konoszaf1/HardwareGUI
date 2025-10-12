@@ -1,4 +1,5 @@
-# main.py
+"""Main Window of the application"""
+
 import sys
 
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QColor
@@ -6,11 +7,12 @@ from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QGraphicsDropShadowEffect,
-    QSplitter,
     QWidget,
-    QListView,
 )
 from PySide6.QtCore import Qt, QPoint
+
+from src.gui.expanding_splitter import ExpandingSplitter
+from src.gui.hiding_listview import HidingListView
 
 # Import your generated UI file
 from ui_main_window import Ui_MainWindow
@@ -18,20 +20,43 @@ import qt_material
 
 
 class MainWindow(QMainWindow):
+    """Frameless main window that binds the Designer-generated Ui_MainWindow
+    to a QMainWindow.
+
+    This class provides custom chrome (frameless, translucent background),
+    a title bar with window controls, mouse-driven window dragging,
+    and a central ExpandingSplitter with a sidebar of exclusive
+    SidebarButtons and a HidingListView. The list view’s model is created
+    and populated on startup, and a drop shadow is applied to the central
+    widget.
+
+    Attributes: ui (Ui_MainWindow): Compiled UI exposing widgets from the
+    .ui file. splitter (ExpandingSplitter | None): Splitter hosting the
+    sidebar and list view. list_view (HidingListView | None): List view
+    shown in the splitter; model is set up in code. dragging (bool):
+    Window-drag state flag. drag_position (QPoint): Top-left offset used
+    during window dragging.
+
+    Methods: setup_splitter(): Connects sidebar buttons and list view to the
+    splitter; seeds the model.
+    toggleMaximizeRestore(): Toggles between maximized and normal window
+    states.
+    """
+
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.splitter: QSplitter = None
-        self.widget: QWidget = None
-        self.list_view: QListView = None
-        self.setupSidebar()
+        self.splitter: ExpandingSplitter | None = None
+        self.widget: QWidget | None = None
+        self.list_view: HidingListView | None = None
+        self.setup_splitter()
 
         # Window Specific Setup
-        self.setWindowFlags(Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.ui.minimizePushButton.clicked.connect(self.showMinimized)
-        self.ui.maximizePushButton.clicked.connect(self.toggleMaximizeRestore)
+        self.ui.maximizePushButton.clicked.connect(self.toggle_max_restore)
         self.ui.closePushButton.clicked.connect(self.close)
         self.dragging = False
         self.drag_position = QPoint()
@@ -41,7 +66,8 @@ class MainWindow(QMainWindow):
         shadow.setOffset(0, 0)
         self.centralWidget().setGraphicsEffect(shadow)
 
-    def setupSidebar(self) -> QSplitter:
+    def setup_splitter(self) -> None:
+        """Populate the splitter with the required widgets"""
         self.splitter = self.ui.splitter
         # ListView
         self.list_view = self.ui.listView
@@ -49,21 +75,23 @@ class MainWindow(QMainWindow):
         self.list_view.setModel(model)
         self.populate_list_fast(model)
 
-        self.splitter.set_widget(self.ui.widget)
+        self.splitter.set_sidebar(self.ui.sidebar)
         self.splitter.set_listview(self.list_view)
         # Add buttons to sidebar
-        self.splitter.addButton(self.ui.toolButton)
-        self.splitter.addButton(self.ui.toolButton_3)
-        self.splitter.addButton(self.ui.toolButton_2)
+        self.splitter.add_button(self.ui.toolButton)
+        self.splitter.add_button(self.ui.toolButton_3)
+        self.splitter.add_button(self.ui.toolButton_2)
 
-    def toggleMaximizeRestore(self):
+    def toggle_max_restore(self):
+        """Handles maximize button logic"""
         if self.isMaximized():
             self.showNormal()
         else:
             self.showMaximized()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        """Handle start of dragging behavior after clicking"""
+        if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
             self.drag_position = (
                 event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -71,12 +99,14 @@ class MainWindow(QMainWindow):
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.LeftButton and self.dragging:
+        """Handle moving the window when clicking & dragging"""
+        if event.buttons() == Qt.MouseButton.LeftButton and self.dragging:
             self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        """Finalize dragging behavior logic"""
+        if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             event.accept()
 
