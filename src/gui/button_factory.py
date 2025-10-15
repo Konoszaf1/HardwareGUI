@@ -1,4 +1,5 @@
-# views/button_builder.py
+"""Factory utilities for constructing sidebar hardware buttons."""
+
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
 
@@ -6,6 +7,17 @@ from src.gui.sidebar_button import SidebarButton
 
 
 def build_toolbuttons(parent: QWidget, buttons):
+    """Create sidebar QPushButton from hardware descriptor metadata.
+
+    Args:
+        parent (QWidget): Widget that will own the generated buttons.
+        buttons (Iterable): Sequence of descriptor objects exposing "label",
+            "id", "order", and optional "icon_path" attributes.
+
+    Returns:
+        list[SidebarButton]: Instantiated buttons configured for the sidebar.
+    """
+
     button_objs = []
     for button in buttons:
         button_obj = SidebarButton(parent)

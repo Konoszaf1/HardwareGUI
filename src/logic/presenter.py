@@ -1,3 +1,8 @@
+"""
+Presenter class that connects view events to model logic and acts as a bridge
+between graphical user interface and actual data
+"""
+
 from typing import List
 
 from PySide6.QtCore import QObject
@@ -8,6 +13,10 @@ from src.logic.model.actions_model import ActionModel, ActionsByHardwareProxy
 
 
 class ActionsPresenter(QObject):
+    """
+    Handles model and view connections and logic
+    """
+
     def __init__(
         self, widget, buttons: List[SidebarButton], actions: list[ActionDescriptor]
     ):
@@ -19,5 +28,5 @@ class ActionsPresenter(QObject):
         for button in buttons:
             button.toggled.connect(
                 lambda checked, btn=button: checked
-                and self.proxy.setHardwareId(btn.property("id"))
+                and self.proxy.set_hardware_id(btn.property("id"))
             )

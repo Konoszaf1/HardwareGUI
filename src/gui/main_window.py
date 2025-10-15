@@ -2,7 +2,7 @@
 
 from typing import List
 
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QColor
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QGraphicsDropShadowEffect,
@@ -112,12 +112,3 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             event.accept()
-
-    def populate_list_fast(self, model):
-        """Quick population using batch processing"""
-        items = []
-        for i in range(100):  # Large number of items
-            item = QStandardItem(f"Item {i}")
-            model.appendRow(item)
-            items.append(item)
-        print("items ready")

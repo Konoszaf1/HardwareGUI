@@ -26,7 +26,7 @@ class ExpandingSplitter(QSplitter):
         self.widget: QWidget | None = None
         self.listview: QListView | None = None
         self.sidebar: QWidget | None = None
-        self.setCollapsible(1, True)
+        self.setHandleWidth(0)
         self.setContentsMargins(0, 0, 0, 0)
         # Button's description will expand after timer timeout
         self.expand_timer = QTimer(self)
@@ -48,6 +48,7 @@ class ExpandingSplitter(QSplitter):
         :param sidebar: The sidebar Widget that contains all SidebarButtons
         """
         self.sidebar = sidebar
+        self.setCollapsible(0, False)
 
     def set_listview(self, listview: QListView):
         """

@@ -1,3 +1,5 @@
+"""Static hardware and action descriptors used by the sample application."""
+
 from src.logic.hardware_dataclass import HardwareDescriptor
 from src.logic.action_dataclass import ActionDescriptor
 
