@@ -2,5 +2,13 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="/measdata/dpi/arrayextensionunit" vcs="Git" />
+    <mapping directory="/measdata/dpi/dpi" vcs="Git" />
+    <mapping directory="/measdata/dpi/maincontrolunit" vcs="Git" />
+    <mapping directory="/measdata/dpi/powersupplyunit" vcs="Git" />
+    <mapping directory="/measdata/dpi/samplingunit" vcs="Git" />
+    <mapping directory="/measdata/dpi/sourcemeasureunit" vcs="Git" />
+    <mapping directory="/measdata/dpi/venv" vcs="Git" />
+    <mapping directory="/measdata/dpi/voltageunit" vcs="Git" />
   </component>
 </project>

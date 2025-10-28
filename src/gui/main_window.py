@@ -64,6 +64,8 @@ class MainWindow(QMainWindow):
         self.ui.closePushButton.clicked.connect(self.close)
         self.dragging = False
         self.drag_position = QPoint()
+        self.ui.maximizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.ui.minimizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(20)
         shadow.setColor(QColor(0, 0, 0, 150))
@@ -95,10 +97,13 @@ class MainWindow(QMainWindow):
     def mousePressEvent(self, event):
         """Handle start of dragging behavior after clicking"""
         if event.button() == Qt.MouseButton.LeftButton:
-            self.dragging = True
-            self.drag_position = (
-                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            )
+            # Dragging operation and fallback to old style dragging if first one fails
+            if self.windowHandle().startSystemMove():
+                return
+            else:
+                self.dragging = True
+                self.drag_position = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft())
             event.accept()
 
     def mouseMoveEvent(self, event):

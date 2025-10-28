@@ -6,7 +6,7 @@ from PySide6.QtCore import (
     QEvent,
     QEasingCurve,
     QVariantAnimation,
-    QAbstractAnimation,
+    QAbstractAnimation, QPropertyAnimation,
 )
 
 
@@ -108,10 +108,20 @@ class ExpandingSplitter(QSplitter):
         if value == 0:
             self._is_expanded = True
 
+    def collapse_sidebar(self, value):
+        """Handle resizing of the splitter for expansion animation"""
+        self.setSizes([int(self.width() - value), int(value)])
+
+
     def collapse(self):
         """Collapse the sidebar and show the list view"""
-        self.setSizes([self._collapsed_width, self.width() / 0.3])
+        #self.setSizes([self._collapsed_width, self.width() / 0.3])
+        self._animation.setStartValue(self.sizes()[1])
+        self._animation.setEndValue(self.width()-self._collapsed_width)
+        self._animation.valueChanged.connect(lambda v: self.expand_sidebar(v))
+        self._animation.start()
         self._is_expanded = False
+
         # Update button states to hide text
         for button in self.buttons:
             button.set_collapsed(True)
