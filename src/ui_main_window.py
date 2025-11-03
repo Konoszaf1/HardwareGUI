@@ -15,19 +15,21 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QGraphicsView, QGridLayout, QHBoxLayout,
-    QMainWindow, QPushButton, QSizePolicy, QSpacerItem,
-    QStatusBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QFrame, QGridLayout,
+    QHBoxLayout, QListView, QMainWindow, QPushButton,
+    QSizePolicy, QSpacerItem, QStatusBar, QVBoxLayout,
+    QWidget)
 
+from gui.action_stacked_widget import ActionStackedWidget
 from gui.expanding_splitter import ExpandingSplitter
 from gui.hiding_listview import HidingListView
-from . import icons_rc
+import icons_rc
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(745, 549)
+        MainWindow.resize(1060, 851)
         MainWindow.setStyleSheet(u"")
         MainWindow.setUnifiedTitleAndToolBarOnMac(False)
         self.centralwidget = QWidget(MainWindow)
@@ -43,7 +45,7 @@ class Ui_MainWindow(object):
         self.splitter = ExpandingSplitter(self.centralwidget)
         self.splitter.setObjectName(u"splitter")
         self.splitter.setLineWidth(0)
-        self.splitter.setOrientation(Qt.Horizontal)
+        self.splitter.setOrientation(Qt.Orientation.Horizontal)
         self.splitter.setHandleWidth(0)
         self.sidebar = QWidget(self.splitter)
         self.sidebar.setObjectName(u"sidebar")
@@ -69,19 +71,11 @@ class Ui_MainWindow(object):
         self.listView.setSizePolicy(sizePolicy2)
         self.listView.setMinimumSize(QSize(0, 0))
         self.listView.setMaximumSize(QSize(16777215, 16777215))
+        self.listView.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.listView.setResizeMode(QListView.ResizeMode.Adjust)
         self.splitter.addWidget(self.listView)
 
         self.gridLayout.addWidget(self.splitter, 1, 0, 1, 1)
-
-        self.graphicsView = QGraphicsView(self.centralwidget)
-        self.graphicsView.setObjectName(u"graphicsView")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.graphicsView.sizePolicy().hasHeightForWidth())
-        self.graphicsView.setSizePolicy(sizePolicy3)
-
-        self.gridLayout.addWidget(self.graphicsView, 1, 1, 1, 1)
 
         self.titleBar = QHBoxLayout()
         self.titleBar.setSpacing(0)
@@ -123,16 +117,26 @@ class Ui_MainWindow(object):
 
         self.gridLayout.addLayout(self.titleBar, 0, 0, 1, 2)
 
+        self.stackedWidget = ActionStackedWidget(self.centralwidget)
+        self.stackedWidget.setObjectName(u"stackedWidget")
+        self.stackedWidget.setFrameShape(QFrame.Shape.Box)
+        self.stackedWidget.setFrameShadow(QFrame.Shadow.Plain)
+
+        self.gridLayout.addWidget(self.stackedWidget, 1, 1, 1, 1)
+
         self.gridLayout.setRowStretch(0, 1)
         self.gridLayout.setRowStretch(1, 20)
         self.gridLayout.setColumnStretch(0, 1)
-        self.gridLayout.setColumnStretch(1, 3)
+        self.gridLayout.setColumnStretch(1, 4)
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
+
+        self.stackedWidget.setCurrentIndex(-1)
+
 
         QMetaObject.connectSlotsByName(MainWindow)
     # setupUi

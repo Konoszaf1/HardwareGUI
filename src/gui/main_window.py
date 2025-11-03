@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint
 
+from src.gui.action_stacked_widget import ActionStackedWidget
 from src.populate_items import ACTIONS, HARDWARE
 from src.gui.button_factory import build_toolbuttons
 from src.gui.expanding_splitter import ExpandingSplitter
@@ -54,7 +55,9 @@ class MainWindow(QMainWindow):
         self.actions: List[ActionDescriptor] | None = None
         self.presenter: ActionsPresenter | None = None
         self.buttons: List[SidebarButton] = build_toolbuttons(self, HARDWARE)
+        self.stacked_widget = self.ui.stackedWidget
         self.setup_splitter()
+        self.presenter.connect_actions_and_stacked_view(self.actions)
 
         # Window Specific Setup
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)

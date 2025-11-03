@@ -18,6 +18,7 @@ class ActionModel(QAbstractListModel):
     hardware_id_role = Qt.ItemDataRole.UserRole + 2
     label_role = Qt.ItemDataRole.UserRole + 3
     order_role = Qt.ItemDataRole.UserRole + 4
+    page_id_role = Qt.ItemDataRole.UserRole + 5
 
     def __init__(self, actions: list[ActionDescriptor]):
         super().__init__()
@@ -38,7 +39,10 @@ class ActionModel(QAbstractListModel):
             return a.id
         if role == self.hardware_id_role:
             return a.hardware_id
+        if role == self.page_id_role:
+            return a.page_id
         return None
+
 
     def roleNames(self):
         """Return a dictionary of all role names available"""
@@ -47,8 +51,8 @@ class ActionModel(QAbstractListModel):
             self.hardware_id_role: b"hardware_id",
             self.label_role: b"label",
             self.order_role: b"order",
+            self.page_id_role: b"page_id",
         }
-
 
 class ActionsByHardwareProxy(QSortFilterProxyModel):
     """Proxy to enable filtering actions according to selected hardware id"""

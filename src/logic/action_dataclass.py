@@ -20,3 +20,4 @@ class ActionDescriptor:
     hardware_id: int
     label: str
     order: int
+    page_id: str

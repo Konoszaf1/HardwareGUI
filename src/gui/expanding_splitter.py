@@ -26,6 +26,7 @@ class ExpandingSplitter(QSplitter):
         self.widget: QWidget | None = None
         self.listview: QListView | None = None
         self.sidebar: QWidget | None = None
+        self.parent().installEventFilter(self)
         self.setHandleWidth(0)
         self.setContentsMargins(0, 0, 0, 0)
         # Button's description will expand after timer timeout
@@ -74,6 +75,9 @@ class ExpandingSplitter(QSplitter):
             if obj in self.buttons or obj == self:
                 self.handle_hover_leave()
                 return False
+        elif obj == self.parent() and event.type() == QEvent.Type.Resize:
+            # Collapse buttons when resizing top application
+            self.collapse()
 
         return super().eventFilter(obj, event)
 
@@ -115,7 +119,6 @@ class ExpandingSplitter(QSplitter):
 
     def collapse(self):
         """Collapse the sidebar and show the list view"""
-        #self.setSizes([self._collapsed_width, self.width() / 0.3])
         self._animation.setStartValue(self.sizes()[1])
         self._animation.setEndValue(self.width()-self._collapsed_width)
         self._animation.valueChanged.connect(lambda v: self.expand_sidebar(v))
