@@ -10,9 +10,10 @@ HARDWARE: list[HardwareDescriptor] = [
 ]
 
 ACTIONS: list[ActionDescriptor] = [
-    ActionDescriptor(id=1, hardware_id=1, label="Calibration", order=0, page_id="workbench"),
-    ActionDescriptor(2, 1, "Flash", 1, ""),
-    ActionDescriptor(3, 1, "Setup", 2, ""),
+    ActionDescriptor(id=1, hardware_id=1, label="Session & Coefficients", order=0, page_id="workbench"),
+    ActionDescriptor(2, 1, "Calibration", 1, "calibration"),
+    ActionDescriptor(3, 1, "Test", 2, "test"),
+    ActionDescriptor(4, 1, "Guard", 3, "guard"),
     ActionDescriptor(4, 2, "Initialize", 0, ""),
     ActionDescriptor(5, 2, "Calibrate", 1, ""),
     ActionDescriptor(6, 3, "Install", 0, ""),

@@ -37,8 +37,9 @@ HardwareGUI/
 
 ## Requirements
 
-* Python 3.11+ (recommended)
-* Qt runtime via `PySide6` (installed through `pip`)
+* Python 3.11+ (recommended: 3.12.3)
+* Qt runtime via `PySide6` (installed through `uv`)
+* Access to `/measdata/dpi` directory with DPI hardware packages
 * Linux: X11 users may need `libxcb` and related Qt platform packages
 * Windows/macOS: no extra system deps beyond Python
 
@@ -47,21 +48,40 @@ HardwareGUI/
 ```bash
 # 1) Create and activate a virtualenv
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Unix/macOS:
-source .venv/bin/activate
+source .venv/bin/activate  # Unix/macOS
+# .venv\Scripts\activate   # Windows
 
-# 2) Install deps
-pip install -r requirements.txt
+# 2) Install project dependencies
+uv sync
 
-# 3) Run
-python -m src.main
-# or:
+# 3) Install DPI hardware packages (editable mode)
+./install_dpi.sh
+
+# 4) Run the application
 python src/main.py
 ```
 
 The app loads the `dark_amber.xml` theme from `qt-material` and opens the main
 window of the application.
+
+## DPI Package Installation
+
+The application depends on local DPI hardware packages that are not on PyPI:
+
+- **dpi** - Main DPI framework (`/measdata/dpi/dpi`)
+- **dpivoltageunit** - Voltage Unit drivers (`/measdata/dpi/voltageunit/python`)
+- **dpimaincontrolunit** - Main Control Unit drivers (`/measdata/dpi/maincontrolunit/python`)
+
+These are installed in **editable mode** via the `install_dpi.sh` script, which runs:
+
+```bash
+cd /measdata/dpi/dpi && uv pip install -e .
+cd /measdata/dpi/voltageunit/python && uv pip install -e .
+cd /measdata/dpi/maincontrolunit/python && uv pip install -e .
+```
+
+Editable mode means changes to the DPI source code are immediately reflected without reinstallation.
+
 ## Development
 
 ### Tooling
@@ -88,6 +108,10 @@ mypy .
 ```bash
 # example (adjust paths to your environment)
 pyside6-uic main_window.ui -o src/ui_main_window.py
+```
+Or directly using uv with
+``` 
+uv tool run --from pyside6-essentials pyside6-uic src/ui/main_window.ui -o src/ui_main_window.py --from-imports
 ```
 ## Resources (Qt Resource System)
 

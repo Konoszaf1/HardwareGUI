@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.1
+## Created by: Qt User Interface Compiler version 6.10.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QFrame, QGridL
 from gui.action_stacked_widget import ActionStackedWidget
 from gui.expanding_splitter import ExpandingSplitter
 from gui.hiding_listview import HidingListView
-import icons_rc
+from . import icons_rc
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -127,7 +127,7 @@ class Ui_MainWindow(object):
         self.gridLayout.setRowStretch(0, 1)
         self.gridLayout.setRowStretch(1, 20)
         self.gridLayout.setColumnStretch(0, 1)
-        self.gridLayout.setColumnStretch(1, 4)
+        self.gridLayout.setColumnStretch(1, 3)
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
