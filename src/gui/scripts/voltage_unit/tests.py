@@ -1,9 +1,10 @@
 # tests_page_min.py
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QWidget, QGridLayout, QLabel, QGroupBox, QFormLayout,
     QPushButton, QListView, QListWidget, QPlainTextEdit,
-    QSizePolicy, QSpacerItem, QDoubleSpinBox, QSpinBox, QHBoxLayout, QMessageBox
+    QSizePolicy, QSpacerItem, QDoubleSpinBox, QSpinBox, QHBoxLayout, QMessageBox,
+    QVBoxLayout, QWidget as QW, QLineEdit
 )
 
 from src.gui.utils.gui_helpers import append_log, add_thumbnail_item
@@ -23,56 +24,42 @@ class TestsPage(QWidget):
         super().__init__(parent)
         self.service = service
 
-        # ==== Root grid ====
-        self.grid = QGridLayout(self)
-        self.grid.setObjectName("grid")
-
-        # ==== Title ====
-        title = QLabel("Voltage Unit – Tests (Minimal)")
-        title.setObjectName("title")
-        self.grid.addWidget(title, 0, 0, 1, 2)
-
-        # ==== Top: constants used by tests ====
-        constBox = QGroupBox("Script Constants (for reference)")
-        constForm = QFormLayout(constBox)
-        constForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        # Values as defined in test_outputs / test_ramp / test_transient
-        constForm.addRow("Output voltages:", QLabel("−0.75, −0.5, −0.25, 0, 0.25, 0.5, 0.75"))
-        constForm.addRow("Output CH scales:", QLabel("CH1=0.20 V/div, CH2=0.20 V/div, CH3=0.20 V/div"))
-        constForm.addRow("Output time scale:", QLabel("1e−2 s/div"))
-        constForm.addRow("Output points:", QLabel("5000"))
-        constForm.addRow("Ramp scales:", QLabel("Derived from VU amplification (±20 V/s nominal)"))
-        constForm.addRow("Ramp time range:", QLabel("500 ms"))
-        constForm.addRow("Transient amplitude:", QLabel("1 V"))
-        constForm.addRow("Transient timestep:", QLabel("auto (5e−6 s; 20e−6 s if 20-bit DAC)"))
-        self.grid.addWidget(constBox, 1, 0, 1, 2)
-
-        # ==== Left: literal test buttons ====
+        # ==== Main Layout (Vertical) ====
+        mainLayout = QVBoxLayout(self)
+        
+        # ==== Top Section ====
+        topWidget = QW()
+        topLayout = QHBoxLayout(topWidget)
+        topLayout.setContentsMargins(0, 0, 0, 0)
+        
+        # -- Left: Controls --
+        controlsBox = QGroupBox("Test Actions")
+        controlsLayout = QVBoxLayout(controlsBox)
+        
         self.btn_test_outputs = QPushButton("Test: Outputs")
-        self.grid.addWidget(self.btn_test_outputs, 2, 0, 1, 1)
-
         self.btn_test_ramp = QPushButton("Test: Ramp")
-        self.grid.addWidget(self.btn_test_ramp, 3, 0, 1, 1)
-
         self.btn_test_transient = QPushButton("Test: Transient")
-        self.grid.addWidget(self.btn_test_transient, 4, 0, 1, 1)
-
         self.btn_test_all = QPushButton("Test: All")
-        self.grid.addWidget(self.btn_test_all, 5, 0, 1, 1)
-
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.grid.addItem(spacer, 6, 0, 1, 1)
-
-        # ==== Right: artifact list + console ====
-        self.listWidget = QListWidget()
-        self.listWidget.setObjectName("artifacts")
-        self.listWidget.setMovement(QListView.Movement.Static)
-        self.listWidget.setProperty("isWrapping", False)
-        self.listWidget.setResizeMode(QListView.ResizeMode.Adjust)
-        self.listWidget.setViewMode(QListView.ViewMode.IconMode)
-        self.grid.addWidget(self.listWidget, 2, 1, 2, 1)
-
+        
+        controlsLayout.addWidget(self.btn_test_outputs)
+        controlsLayout.addWidget(self.btn_test_ramp)
+        controlsLayout.addWidget(self.btn_test_transient)
+        controlsLayout.addWidget(self.btn_test_all)
+        controlsLayout.addStretch()
+        
+        # Info box (compact)
+        infoBox = QGroupBox("Constants")
+        infoForm = QFormLayout(infoBox)
+        infoForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        infoForm.addRow("Out pts:", QLabel("5000"))
+        infoForm.addRow("Ramp:", QLabel("500 ms"))
+        infoForm.addRow("Trans amp:", QLabel("1 V"))
+        
+        controlsLayout.addWidget(infoBox)
+        
+        topLayout.addWidget(controlsBox, 1)
+        
+        # -- Right: Console --
         self.console = QPlainTextEdit()
         self.console.setObjectName("console")
         self.console.setReadOnly(True)
@@ -80,17 +67,52 @@ class TestsPage(QWidget):
         self.console.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
         self.console.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.console.setMaximumBlockCount(20000)
-        self.grid.addWidget(self.console, 4, 1, 3, 1)
-
-        self.grid.setColumnStretch(1, 1)
-        self.grid.setRowStretch(4, 2)
-        self.grid.setRowStretch(6, 2)
+        self.console.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #282a36;
+                color: #f8f8f2;
+                font-family: 'Consolas', 'Monospace';
+                font-size: 10pt;
+                border: 1px solid #44475a;
+                border-radius: 4px;
+                padding: 4px;
+            }
+        """)
+        
+        topLayout.addWidget(self.console, 2)
+        
+        mainLayout.addWidget(topWidget, 2)
+        
+        # Input field (hidden by default)
+        self.le_input = QLineEdit()
+        self.le_input.setPlaceholderText("Type input here and press Enter...")
+        self.le_input.setVisible(False)
+        self.le_input.returnPressed.connect(self._on_input_return)
+        mainLayout.addWidget(self.le_input)
+        
+        # ==== Bottom Section: Images ====
+        self.listWidget = QListWidget()
+        self.listWidget.setObjectName("artifacts")
+        self.listWidget.setMovement(QListView.Movement.Static)
+        self.listWidget.setProperty("isWrapping", False)
+        self.listWidget.setResizeMode(QListView.ResizeMode.Adjust)
+        self.listWidget.setViewMode(QListView.ViewMode.IconMode)
+        self.listWidget.setFlow(QListView.Flow.LeftToRight)
+        self.listWidget.setIconSize(QSize(128, 128))
+        self.listWidget.setGridSize(QSize(140, 160))
+        self.listWidget.setSpacing(10)
+        self.listWidget.itemDoubleClicked.connect(self._on_image_double_clicked)
+        
+        mainLayout.addWidget(self.listWidget, 1)
 
         # Wire backend actions
         self.btn_test_outputs.clicked.connect(self._on_test_outputs)
         self.btn_test_ramp.clicked.connect(self._on_test_ramp)
         self.btn_test_transient.clicked.connect(self._on_test_transient)
         self.btn_test_all.clicked.connect(self._on_test_all)
+        
+        if self.service:
+            self.service.inputRequested.connect(self._on_input_requested)
 
         self._log("Tests page ready. Actions map 1:1 to script.")
 
@@ -118,6 +140,14 @@ class TestsPage(QWidget):
 
         signals.finished.connect(_finished)
 
+    def _on_image_double_clicked(self, item):
+        """Open the image viewer dialog."""
+        path = item.data(Qt.UserRole)
+        if path:
+            from src.gui.utils.image_viewer import ImageViewerDialog
+            dlg = ImageViewerDialog(path, self)
+            dlg.exec()
+
     # ---- Handlers ----
     def _on_test_outputs(self) -> None:
         if not self.service:
@@ -143,5 +173,23 @@ class TestsPage(QWidget):
             return
         self._start_task(self.service.test_all())
 
+    def _on_input_requested(self, prompt: str):
+        """Show input field when service requests input."""
+        if not self.isVisible():
+            return
+        self._log(f"<b>Input requested:</b> {prompt}")
+        self.le_input.setVisible(True)
+        self.le_input.setPlaceholderText(prompt if prompt else "Type input here...")
+        self.le_input.setFocus()
+
+    def _on_input_return(self):
+        """Send input back to service."""
+        text = self.le_input.text()
+        self._log(f"> {text}")
+        self.le_input.clear()
+        self.le_input.setVisible(False)
+        if self.service:
+            self.service.provide_input(text)
+
     def _log(self, msg: str):
-        self.console.appendPlainText(msg)
+        append_log(self.console, msg)

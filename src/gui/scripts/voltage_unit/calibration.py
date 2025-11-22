@@ -1,9 +1,10 @@
 # calibration_page_min.py
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QWidget, QGridLayout, QLabel, QGroupBox, QFormLayout,
     QPushButton, QListView, QListWidget, QPlainTextEdit,
-    QSizePolicy, QSpacerItem
+    QSizePolicy, QSpacerItem, QVBoxLayout, QHBoxLayout,
+    QWidget as QW, QLineEdit
 )
 
 from src.gui.utils.gui_helpers import append_log, add_thumbnail_item
@@ -19,51 +20,42 @@ class CalibrationPage(QWidget):
         super().__init__(parent)
         self.service = service
 
-        # ==== Root grid ====
-        self.grid = QGridLayout(self)
-        self.grid.setObjectName("grid")
-
-        # ==== Title ====
-        title = QLabel("Voltage Unit – Calibration (Minimal)")
-        title.setObjectName("title")
-        self.grid.addWidget(title, 0, 0, 1, 2)
-
-        # ==== Info: constants used by the script (read-only labels) ====
-        infoBox = QGroupBox("Script Constants (for reference)")
+        # ==== Main Layout (Vertical) ====
+        # Top: Splitter (Controls | Console)
+        # Bottom: Image List
+        mainLayout = QVBoxLayout(self)
+        
+        # ==== Top Section ====
+        topWidget = QW()
+        topLayout = QHBoxLayout(topWidget)
+        topLayout.setContentsMargins(0, 0, 0, 0)
+        
+        # -- Left: Controls --
+        controlsBox = QGroupBox("Calibration Actions")
+        controlsLayout = QVBoxLayout(controlsBox)
+        
+        self.btn_run_autocal_python = QPushButton("Run Autocalibration (Python)")
+        self.btn_run_autocal_onboard = QPushButton("Run Autocalibration (Onboard)")
+        self.btn_test_all = QPushButton("Test: All")
+        
+        controlsLayout.addWidget(self.btn_run_autocal_python)
+        controlsLayout.addWidget(self.btn_run_autocal_onboard)
+        controlsLayout.addWidget(self.btn_test_all)
+        controlsLayout.addStretch()
+        
+        # Info box (compact)
+        infoBox = QGroupBox("Constants")
         infoForm = QFormLayout(infoBox)
         infoForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        # Values are hard-coded in the script; shown for clarity only
-        infoForm.addRow("Max iterations:", QLabel("10"))
-        infoForm.addRow("Offset threshold:", QLabel("2 mV"))
-        infoForm.addRow("Ramp slope error:", QLabel("0.1 %"))
-        infoForm.addRow("Outputs time scale:", QLabel("1e-2 s/div"))
-        infoForm.addRow("Outputs acq. points:", QLabel("5000"))
-        infoForm.addRow("Ramp time range:", QLabel("500e-3 s"))
-        self.grid.addWidget(infoBox, 1, 0, 1, 2)
-
-        # ==== Left: literal calibration actions ====
-        self.btn_run_autocal_python = QPushButton("Run Autocalibration (Python)")
-        self.grid.addWidget(self.btn_run_autocal_python, 2, 0, 1, 1)
-
-        self.btn_run_autocal_onboard = QPushButton("Run Autocalibration (Onboard)")
-        self.grid.addWidget(self.btn_run_autocal_onboard, 3, 0, 1, 1)
-
-        self.btn_test_all = QPushButton("Test: All")
-        self.grid.addWidget(self.btn_test_all, 4, 0, 1, 1)
-
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.grid.addItem(spacer, 5, 0, 1, 1)
-
-        # ==== Right: artifacts + console ====
-        self.listWidget = QListWidget()
-        self.listWidget.setObjectName("artifacts")
-        self.listWidget.setMovement(QListView.Movement.Static)
-        self.listWidget.setProperty("isWrapping", False)
-        self.listWidget.setResizeMode(QListView.ResizeMode.Adjust)
-        self.listWidget.setViewMode(QListView.ViewMode.IconMode)
-        self.grid.addWidget(self.listWidget, 2, 1, 1, 1)
-
+        infoForm.addRow("Max iter:", QLabel("10"))
+        infoForm.addRow("Offset:", QLabel("2 mV"))
+        infoForm.addRow("Slope err:", QLabel("0.1 %"))
+        
+        controlsLayout.addWidget(infoBox)
+        
+        topLayout.addWidget(controlsBox, 1) # Stretch factor 1
+        
+        # -- Right: Console --
         self.console = QPlainTextEdit()
         self.console.setObjectName("console")
         self.console.setReadOnly(True)
@@ -71,16 +63,52 @@ class CalibrationPage(QWidget):
         self.console.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
         self.console.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.console.setMaximumBlockCount(20000)
-        self.grid.addWidget(self.console, 3, 1, 3, 1)
-
-        self.grid.setColumnStretch(1, 1)
-        self.grid.setRowStretch(3, 2)
-        self.grid.setRowStretch(5, 2)
+        self.console.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #282a36;
+                color: #f8f8f2;
+                font-family: 'Consolas', 'Monospace';
+                font-size: 10pt;
+                border: 1px solid #44475a;
+                border-radius: 4px;
+                padding: 4px;
+            }
+        """)
+        
+        topLayout.addWidget(self.console, 2) # Stretch factor 2 (wider console)
+        
+        mainLayout.addWidget(topWidget, 2) # Top section takes 2/3 height
+        
+        # Input field (hidden by default)
+        self.le_input = QLineEdit()
+        self.le_input.setPlaceholderText("Type input here and press Enter...")
+        self.le_input.setVisible(False)
+        self.le_input.returnPressed.connect(self._on_input_return)
+        mainLayout.addWidget(self.le_input)
+        
+        # ==== Bottom Section: Images ====
+        self.listWidget = QListWidget()
+        self.listWidget.setObjectName("artifacts")
+        self.listWidget.setMovement(QListView.Movement.Static)
+        self.listWidget.setProperty("isWrapping", False) # Horizontal scroll
+        self.listWidget.setResizeMode(QListView.ResizeMode.Adjust)
+        self.listWidget.setViewMode(QListView.ViewMode.IconMode)
+        self.listWidget.setFlow(QListView.Flow.LeftToRight) # Horizontal flow
+        self.listWidget.setIconSize(QSize(128, 128))
+        self.listWidget.setGridSize(QSize(140, 160))
+        self.listWidget.setSpacing(10)
+        # Connect double click
+        self.listWidget.itemDoubleClicked.connect(self._on_image_double_clicked)
+        
+        mainLayout.addWidget(self.listWidget, 1) # Bottom section takes 1/3 height
 
         # Wire backend actions
         self.btn_run_autocal_python.clicked.connect(self._on_autocal_python)
         self.btn_run_autocal_onboard.clicked.connect(self._on_autocal_onboard)
         self.btn_test_all.clicked.connect(self._on_test_all)
+        
+        if self.service:
+            self.service.inputRequested.connect(self._on_input_requested)
 
         self._log("Calibration page ready. Actions map 1:1 to script.")
 
@@ -112,6 +140,14 @@ class CalibrationPage(QWidget):
 
         signals.finished.connect(_finished)
 
+    def _on_image_double_clicked(self, item):
+        """Open the image viewer dialog."""
+        path = item.data(Qt.UserRole)
+        if path:
+            from src.gui.utils.image_viewer import ImageViewerDialog
+            dlg = ImageViewerDialog(path, self)
+            dlg.exec()
+
     # ---- Handlers ----
     def _on_autocal_python(self) -> None:
         if not self.service:
@@ -131,5 +167,23 @@ class CalibrationPage(QWidget):
             return
         self._start_task(self.service.test_all())
 
+    def _on_input_requested(self, prompt: str):
+        """Show input field when service requests input."""
+        if not self.isVisible():
+            return
+        self._log(f"<b>Input requested:</b> {prompt}")
+        self.le_input.setVisible(True)
+        self.le_input.setPlaceholderText(prompt if prompt else "Type input here...")
+        self.le_input.setFocus()
+
+    def _on_input_return(self):
+        """Send input back to service."""
+        text = self.le_input.text()
+        self._log(f"> {text}")
+        self.le_input.clear()
+        self.le_input.setVisible(False)
+        if self.service:
+            self.service.provide_input(text)
+
     def _log(self, msg: str):
-        self.console.appendPlainText(msg)
+        append_log(self.console, msg)

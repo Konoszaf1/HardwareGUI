@@ -10,9 +10,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QSpinBox,
     QHBoxLayout,
+    QVBoxLayout,
     QPushButton,
     QPlainTextEdit,
     QWidget as QW,
+    QApplication,
+    QStyle,
 )
 
 from src.gui.utils.gui_helpers import append_log
@@ -36,6 +39,7 @@ class SessionAndCoeffsPage(QWidget):
         super().__init__(parent)
         self.service = service
         self._busy = False
+        self._scope_verified = False
 
         # ==== Root grid ====
         self.grid = QGridLayout(self)
@@ -46,69 +50,69 @@ class SessionAndCoeffsPage(QWidget):
         title.setObjectName("title")
         self.grid.addWidget(title, 0, 0, 1, 1)
 
-        # ==== Top: constants / IDs ====
-        topBox = QGroupBox("Required Parameters")
-        topForm = QFormLayout(topBox)
-        topForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        # Scope IP (constant in script)
+        # ==== Top: Compact Configuration ====
+        # We'll use a horizontal layout for the main controls to save vertical space
+        topWidget = QW()
+        topLayout = QHBoxLayout(topWidget)
+        topLayout.setContentsMargins(0, 0, 0, 0)
+        
+        # Group 1: Connection
+        connBox = QGroupBox("Connection")
+        connLayout = QFormLayout(connBox)
+        connLayout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
         self.le_scope_ip = QLineEdit("192.168.68.154")
-        ip_re = QRegularExpression(
-            r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$"
-        )
+        ip_re = QRegularExpression(r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$")
         self.le_scope_ip.setValidator(QRegularExpressionValidator(ip_re, self))
         self.le_scope_ip.setPlaceholderText("e.g. 192.168.0.10")
-        topForm.addRow("Scope IP (SCOPE_IP):", self.le_scope_ip)
-
-        # Device IDs (0 means autodetect in the script)
-        idRow = QHBoxLayout()
-        self.sp_vu_serial = QSpinBox()
-        self.sp_vu_serial.setRange(0, 9999)
-        self.sp_vu_serial.setValue(0)
-        self.sp_vu_interface = QSpinBox()
-        self.sp_vu_interface.setRange(0, 99)
-        self.sp_vu_interface.setValue(0)
-        self.sp_mcu_serial = QSpinBox()
-        self.sp_mcu_serial.setRange(0, 9999)
-        self.sp_mcu_serial.setValue(0)
-        self.sp_mcu_interface = QSpinBox()
-        self.sp_mcu_interface.setRange(0, 99)
-        self.sp_mcu_interface.setValue(0)
-
-        idRow.addWidget(QLabel("VU serial:"))
-        idRow.addWidget(self.sp_vu_serial)
-        idRow.addWidget(QLabel("VU interf:"))
-        idRow.addWidget(self.sp_vu_interface)
-        idRow.addSpacing(12)
-        idRow.addWidget(QLabel("MCU serial:"))
-        idRow.addWidget(self.sp_mcu_serial)
-        idRow.addWidget(QLabel("MCU interf:"))
-        idRow.addWidget(self.sp_mcu_interface)
-        idRow.addStretch()
-        idRowWidget = QW()
-        idRowWidget.setLayout(idRow)
-        topForm.addRow("Device IDs (0 = auto):", idRowWidget)
-
-        # Scope status indicator (uses ✔ / ✖)
-        self.lbl_scope_status = QLabel("—")
-        self.lbl_scope_status.setAlignment(Qt.AlignCenter)
-        self._set_scope_status(None)
-        topForm.addRow("Scope status:", self.lbl_scope_status)
-
-        # Actions row: test scope + reset coefficients
-        actionsRow = QHBoxLayout()
         self.btn_test_scope = QPushButton("Test Scope")
-        self.btn_reset_coeffs = QPushButton("Reset Coefficients (RAM)")
-        actionsRow.addWidget(self.btn_test_scope)
-        actionsRow.addWidget(self.btn_reset_coeffs)
-        actionsRow.addStretch()
-        actionsWidget = QW()
-        actionsWidget.setLayout(actionsRow)
-        topForm.addRow("Actions:", actionsWidget)
+        
+        connLayout.addRow("Scope IP:", self.le_scope_ip)
+        connLayout.addRow(self.btn_test_scope)
+        
+        topLayout.addWidget(connBox)
+        
+        # Group 2: Hardware IDs
+        idBox = QGroupBox("Hardware IDs")
+        idLayout = QGridLayout(idBox)
+        
+        self.sp_vu_serial = QSpinBox()
+        self.sp_vu_serial.setRange(0, 9999); self.sp_vu_serial.setValue(0)
+        self.sp_vu_interface = QSpinBox()
+        self.sp_vu_interface.setRange(0, 99); self.sp_vu_interface.setValue(0)
+        self.sp_mcu_serial = QSpinBox()
+        self.sp_mcu_serial.setRange(0, 9999); self.sp_mcu_serial.setValue(0)
+        self.sp_mcu_interface = QSpinBox()
+        self.sp_mcu_interface.setRange(0, 99); self.sp_mcu_interface.setValue(0)
+        
+        idLayout.addWidget(QLabel("VU Serial:"), 0, 0)
+        idLayout.addWidget(self.sp_vu_serial, 0, 1)
+        idLayout.addWidget(QLabel("VU Interf:"), 0, 2)
+        idLayout.addWidget(self.sp_vu_interface, 0, 3)
+        
+        idLayout.addWidget(QLabel("MCU Serial:"), 1, 0)
+        idLayout.addWidget(self.sp_mcu_serial, 1, 1)
+        idLayout.addWidget(QLabel("MCU Interf:"), 1, 2)
+        idLayout.addWidget(self.sp_mcu_interface, 1, 3)
+        
+        topLayout.addWidget(idBox)
+        
+        # Group 3: Coefficients Actions
+        actBox = QGroupBox("Coefficients")
+        actLayout = QVBoxLayout(actBox)
+        
+        self.btn_reset_coeffs = QPushButton("Reset (RAM)")
+        self.btn_write_coeffs = QPushButton("Write (EEPROM)")
+        
+        actLayout.addWidget(self.btn_reset_coeffs)
+        actLayout.addWidget(self.btn_write_coeffs)
+        
+        topLayout.addWidget(actBox)
+        topLayout.addStretch()
+        
+        self.grid.addWidget(topWidget, 1, 0, 1, 1)
 
-        self.grid.addWidget(topBox, 1, 0, 1, 1)
-
-        # ==== Console only ====
+        # ==== Console ====
         self.console = QPlainTextEdit()
         self.console.setObjectName("console")
         self.console.setReadOnly(True)
@@ -118,39 +122,63 @@ class SessionAndCoeffsPage(QWidget):
         )
         self.console.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.console.setMaximumBlockCount(10000)
+        # Modern styling for console
+        self.console.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #282a36;
+                color: #f8f8f2;
+                font-family: 'Consolas', 'Monospace';
+                font-size: 10pt;
+                border: 1px solid #44475a;
+                border-radius: 4px;
+                padding: 4px;
+            }
+        """)
         self.grid.addWidget(self.console, 2, 0, 1, 1)
+
+        # Input field (hidden by default)
+        self.le_input = QLineEdit()
+        self.le_input.setPlaceholderText("Type input here and press Enter...")
+        self.le_input.setVisible(False)
+        self.le_input.returnPressed.connect(self._on_input_return)
+        self.grid.addWidget(self.le_input, 3, 0, 1, 1)
 
         self.grid.setRowStretch(2, 1)
 
         # Wire backend actions
         self.btn_test_scope.clicked.connect(self._on_test_scope)
         self.btn_reset_coeffs.clicked.connect(self._on_reset_coeffs)
+        self.btn_write_coeffs.clicked.connect(self._on_write_coeffs_eeprom)
+        
+        if self.service:
+            self.service.inputRequested.connect(self._on_input_requested)
 
-        self._log("Session page ready. Configure targets and use the actions above.")
+        # Initial UI state
+        self._update_ui_state()
+
+        self._log("Session page ready. Please configure Scope IP and click 'Test Scope'.")
 
     # ---- Wiring helpers ----
+    def _update_ui_state(self) -> None:
+        """Enable/disable controls based on busy state and scope verification."""
+        # Always allow testing scope if not busy
+        self.btn_test_scope.setEnabled(not self._busy)
+        
+        # Only allow other actions if not busy AND scope is verified
+        can_act = (not self._busy) and self._scope_verified
+        self.btn_reset_coeffs.setEnabled(can_act)
+        self.btn_write_coeffs.setEnabled(can_act)
+
+        # Inputs should be disabled while busy
+        self.le_scope_ip.setEnabled(not self._busy)
+        self.sp_vu_serial.setEnabled(not self._busy)
+        self.sp_vu_interface.setEnabled(not self._busy)
+        self.sp_mcu_serial.setEnabled(not self._busy)
+        self.sp_mcu_interface.setEnabled(not self._busy)
+
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        for w in (self.btn_test_scope, self.btn_reset_coeffs):
-            w.setEnabled(not busy)
-
-    def _set_scope_status(self, ok: bool | None) -> None:
-        """
-        Update scope status label.
-
-        ok=True   -> green check
-        ok=False  -> red cross
-        ok=None   -> neutral / unknown
-        """
-        if ok is True:
-            self.lbl_scope_status.setText("✔ Connected")
-            self.lbl_scope_status.setStyleSheet("color: green; font-weight: bold;")
-        elif ok is False:
-            self.lbl_scope_status.setText("✖ Not reachable")
-            self.lbl_scope_status.setStyleSheet("color: red; font-weight: bold;")
-        else:
-            self.lbl_scope_status.setText("—")
-            self.lbl_scope_status.setStyleSheet("color: gray;")
+        self._update_ui_state()
 
     def _apply_targets(self) -> None:
         if not self.service:
@@ -178,20 +206,37 @@ class SessionAndCoeffsPage(QWidget):
         ip = self.le_scope_ip.text().strip()
         if not ip:
             self._log("No scope IP configured.")
-            self._set_scope_status(False)
             return
+
+        # Register IP with service (needed for ping and subsequent calls)
+        self.service.set_scope_ip(ip)
+
+        # Set loading icon
+        style = QApplication.style()
+        self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_BrowserReload))
 
         try:
             self._set_busy(True)
-            ok = self.service.ping_scope(ip)
+            # Force UI update to show busy state immediately
+            QW.repaint(self) 
+            
+            ok = self.service.ping_scope()
         except Exception as exc:
             self._log(f"Ping failed with exception: {exc}")
-            self._set_scope_status(False)
+            self._scope_verified = False
+            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
             self._set_busy(False)
             return
 
-        self._set_scope_status(bool(ok))
-        self._log("Scope reachable." if ok else "Scope not reachable.")
+        self._scope_verified = bool(ok)
+        
+        if ok:
+            self._log(f"Scope at {ip} is reachable.")
+            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogApplyButton))
+        else:
+            self._log(f"Scope at {ip} is NOT reachable.")
+            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
+            
         self._set_busy(False)
 
     def _on_reset_coeffs(self) -> None:
@@ -221,5 +266,50 @@ class SessionAndCoeffsPage(QWidget):
 
         signals.finished.connect(_finished)
 
+    def _on_write_coeffs_eeprom(self) -> None:
+        """Trigger write of coefficients to EEPROM via the service."""
+
+        if not self.service:
+            self._log("Service not available.")
+            return
+
+        self._apply_targets()
+        self._set_busy(True)
+
+        signals = self.service.write_coefficients_eeprom()
+        if not signals:
+            self._log("write_coefficients_eeprom() returned no signals.")
+            self._set_busy(False)
+            return
+
+        signals.started.connect(lambda: self._log("Writing coefficients (EEPROM)..."))
+        signals.log.connect(lambda s: append_log(self.console, s))
+        signals.error.connect(lambda e: self._log(f"Error: {e}"))
+
+        def _finished(_result):
+            self._log("Write coefficients (EEPROM) finished.")
+            self._set_busy(False)
+            self.le_input.setVisible(False)
+
+        signals.finished.connect(_finished)
+
+    def _on_input_requested(self, prompt: str):
+        """Show input field when service requests input."""
+        if not self.isVisible():
+            return
+        self._log(f"<b>Input requested:</b> {prompt}")
+        self.le_input.setVisible(True)
+        self.le_input.setPlaceholderText(prompt if prompt else "Type input here...")
+        self.le_input.setFocus()
+
+    def _on_input_return(self):
+        """Send input back to service."""
+        text = self.le_input.text()
+        self._log(f"> {text}")
+        self.le_input.clear()
+        self.le_input.setVisible(False)
+        if self.service:
+            self.service.provide_input(text)
+
     def _log(self, msg: str) -> None:
-        self.console.appendPlainText(msg)
+        append_log(self.console, msg)

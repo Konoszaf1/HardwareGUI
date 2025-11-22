@@ -8,14 +8,32 @@ from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit
 
 
-THUMBNAIL_SIZE = QSize(96, 96)
+THUMBNAIL_SIZE = QSize(128, 128)
 
 
 def append_log(console: QPlainTextEdit, text: str) -> None:
-    """Append a line to a QPlainTextEdit in a safe way."""
+    """Append a line to a QPlainTextEdit, parsing ANSI color codes."""
     if not console:
         return
-    console.appendPlainText(text.rstrip("\n"))
+    
+    # Basic ANSI to HTML conversion
+    # This is a simplified parser for common colors used in the script
+    line = text.rstrip("\n")
+    
+    # Replace ANSI color codes with HTML spans
+    # Red
+    line = line.replace("\033[31m", '<span style="color: #ff5555;">')
+    # Green
+    line = line.replace("\033[32m", '<span style="color: #50fa7b;">')
+    # Bold / Bright (often used for headers)
+    line = line.replace("\033[1m", '<span style="font-weight: bold; color: #ffffff;">')
+    # Reset
+    line = line.replace("\033[0m", '</span>')
+    
+    # Handle newlines for HTML
+    line = line.replace("\n", "<br>")
+    
+    console.appendHtml(line)
 
 
 def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: Optional[str] = None) -> None:
@@ -56,6 +74,7 @@ def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: Optional[st
         item.setToolTip(tooltip)
 
     # Provide a reasonable size hint so items have visual space
-    item.setSizeHint(QSize(THUMBNAIL_SIZE.width() + 16, THUMBNAIL_SIZE.height() + 24))
+    # Width matches thumbnail, height allows for text
+    item.setSizeHint(QSize(THUMBNAIL_SIZE.width() + 10, THUMBNAIL_SIZE.height() + 40))
 
     list_widget.addItem(item)
