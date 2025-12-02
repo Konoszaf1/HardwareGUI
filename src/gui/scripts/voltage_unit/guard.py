@@ -6,10 +6,24 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.utils.gui_helpers import append_log
+from src.logic.qt_workers import run_in_thread
 from src.logic.vu_service import VoltageUnitService
 
 
 class GuardPage(QWidget):
+    """Guard signal control page.
+    
+    Provides two literal actions matching the script's guard() function:
+    - Set guard to signal  
+    - Set guard to ground
+    
+    WARNING: The scope must NOT be connected when setting guard to signal,
+    as this can damage equipment.
+    
+    Attributes:
+        service: VoltageUnitService instance for hardware communication
+        console: QPlainTextEdit widget for operation logs
+    """
     """
     Minimal guard control matching the script's `guard(vu, scope)` choices.
     No extra options; two literal actions only.
@@ -68,16 +82,30 @@ class GuardPage(QWidget):
         self.btn_guard_signal.setEnabled(not busy)
         self.btn_guard_ground.setEnabled(not busy)
 
-    def _start_task(self, signals):
-        if not signals:
+    def _start_task(self, task):
+        """Start a guard configuration task with signal handling.
+        
+        Args:
+            task: FunctionTask instance returned from VoltageUnitService
+        """
+        if not task:
             return
+
+        self._active_task = task
+        signals = task.signals
         self._set_busy(True)
         signals.started.connect(lambda: self._log("Started."))
         signals.log.connect(lambda s: append_log(self.console, s))
         signals.error.connect(lambda e: self._log(f"Error: {e}"))
-        signals.finished.connect(lambda _: (self._set_busy(False), self._log("Finished.")))
+        signals.finished.connect(lambda _: (self._set_busy(False), setattr(self, "_active_task", None), self._log("Finished.")))
+        run_in_thread(task)
 
     def _on_guard_signal(self) -> None:
+        """Set output guard to signal mode.
+        
+        WARNING: Displays confirmation dialog reminding user to disconnect scope
+        before proceeding, as connecting scope in signal mode can cause damage.
+        """
         if not self.service:
             self._log("Service not available.")
             return
@@ -88,6 +116,10 @@ class GuardPage(QWidget):
         self._start_task(self.service.set_guard_signal())
 
     def _on_guard_ground(self) -> None:
+        """Set output guard to ground mode.
+        
+        This is the safe default mode for normal operation.
+        """
         if not self.service:
             self._log("Service not available.")
             return

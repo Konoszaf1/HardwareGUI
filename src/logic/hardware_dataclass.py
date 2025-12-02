@@ -1,5 +1,5 @@
-"""Dataclass representing the domain object of a specific hardware that
-needs to be calibrated
+"""Dataclass representing the domain object of a specific hardware device that
+needs to be calibrated or acted upon
 """
 
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class HardwareDescriptor:
-    """Metadata describing a single hardware.
+    """Metadata describing a single hardware device.
 
     Attributes:
         id: Unique identifier for this hardware.

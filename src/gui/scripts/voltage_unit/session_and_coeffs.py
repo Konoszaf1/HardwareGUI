@@ -1,6 +1,6 @@
 # session_and_coeffs_page_min.py
 from PySide6.QtCore import Qt, QRegularExpression
-from PySide6.QtGui import QRegularExpressionValidator
+from PySide6.QtGui import QRegularExpressionValidator, QIcon
 from PySide6.QtWidgets import (
     QWidget,
     QGridLayout,
@@ -19,10 +19,25 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.utils.gui_helpers import append_log
+from src.logic.qt_workers import run_in_thread
 from src.logic.vu_service import VoltageUnitService
 
 
 class SessionAndCoeffsPage(QWidget):
+    """Session management and coefficient control page.
+    
+    Provides controls for:
+    - Scope connectivity testing
+    - Hardware ID configuration (VU and MCU serial/interface numbers)
+    - Coefficient reset (RAM only)
+    - Coefficient write (to EEPROM)
+    
+    The page validates scope connectivity before enabling coefficient operations.
+    
+    Attributes:
+        service: VoltageUnitService instance for hardware communication
+        console: QPlainTextEdit widget for operation logs
+    """
     """
     Minimal session page.
 
@@ -39,7 +54,6 @@ class SessionAndCoeffsPage(QWidget):
         super().__init__(parent)
         self.service = service
         self._busy = False
-        self._scope_verified = False
 
         # ==== Root grid ====
         self.grid = QGridLayout(self)
@@ -136,13 +150,6 @@ class SessionAndCoeffsPage(QWidget):
         """)
         self.grid.addWidget(self.console, 2, 0, 1, 1)
 
-        # Input field (hidden by default)
-        self.le_input = QLineEdit()
-        self.le_input.setPlaceholderText("Type input here and press Enter...")
-        self.le_input.setVisible(False)
-        self.le_input.returnPressed.connect(self._on_input_return)
-        self.grid.addWidget(self.le_input, 3, 0, 1, 1)
-
         self.grid.setRowStretch(2, 1)
 
         # Wire backend actions
@@ -151,7 +158,7 @@ class SessionAndCoeffsPage(QWidget):
         self.btn_write_coeffs.clicked.connect(self._on_write_coeffs_eeprom)
         
         if self.service:
-            self.service.inputRequested.connect(self._on_input_requested)
+            self.service.scopeVerified.connect(self._on_scope_verified_changed)
 
         # Initial UI state
         self._update_ui_state()
@@ -160,12 +167,18 @@ class SessionAndCoeffsPage(QWidget):
 
     # ---- Wiring helpers ----
     def _update_ui_state(self) -> None:
+        """Enable/disable controls based on busy state and scope verification.
+        
+        Controls are disabled when a task is running. Coefficient operations
+        are only enabled when scope is verified and system is not busy.
+        """
         """Enable/disable controls based on busy state and scope verification."""
         # Always allow testing scope if not busy
         self.btn_test_scope.setEnabled(not self._busy)
         
         # Only allow other actions if not busy AND scope is verified
-        can_act = (not self._busy) and self._scope_verified
+        is_verified = self.service.is_scope_verified if self.service else False
+        can_act = (not self._busy) and is_verified
         self.btn_reset_coeffs.setEnabled(can_act)
         self.btn_write_coeffs.setEnabled(can_act)
 
@@ -181,6 +194,11 @@ class SessionAndCoeffsPage(QWidget):
         self._update_ui_state()
 
     def _apply_targets(self) -> None:
+        """Apply current UI values to the service's target configuration.
+        
+        Reads scope IP, VU serial/interface, and MCU serial/interface from
+        the UI widgets and updates the service's target configuration.
+        """
         if not self.service:
             return
         self.service.set_targets(
@@ -195,10 +213,7 @@ class SessionAndCoeffsPage(QWidget):
     def _on_test_scope(self) -> None:
         """
         Ping the oscilloscope using the service.
-
-        Expects: service.ping_scope(ip: str) -> bool
         """
-
         if not self.service:
             self._log("Service not available.")
             return
@@ -209,37 +224,61 @@ class SessionAndCoeffsPage(QWidget):
             return
 
         # Register IP with service (needed for ping and subsequent calls)
+        # This will reset verification state to False if IP changed
         self.service.set_scope_ip(ip)
 
         # Set loading icon
         style = QApplication.style()
         self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_BrowserReload))
+        self.btn_test_scope.setText("Testing...")
+        self.btn_test_scope.setStyleSheet("") # Reset style
 
         try:
             self._set_busy(True)
-            # Force UI update to show busy state immediately
-            QW.repaint(self) 
+            QApplication.processEvents() 
             
+            # Service updates its own state, which triggers _on_scope_verified_changed
             ok = self.service.ping_scope()
+            if not ok:
+                # If ping failed, the state might not have changed (if it was already False),
+                # so the signal might not have fired. Force UI update to show failure.
+                self._on_scope_verified_changed(False)
+            else:
+                # If ping succeeded, the state might not have changed (if it was already True),
+                # so the signal might not have fired. Force UI update to show success.
+                self._on_scope_verified_changed(True)
+            
         except Exception as exc:
             self._log(f"Ping failed with exception: {exc}")
-            self._scope_verified = False
-            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
-            self._set_busy(False)
-            return
-
-        self._scope_verified = bool(ok)
+            # Ensure we reflect failure if exception occurred
+            self.service.set_scope_verified(False)
+            self._on_scope_verified_changed(False)
         
-        if ok:
-            self._log(f"Scope at {ip} is reachable.")
-            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogApplyButton))
-        else:
-            self._log(f"Scope at {ip} is NOT reachable.")
-            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
-            
         self._set_busy(False)
 
+    def _on_scope_verified_changed(self, verified: bool) -> None:
+        """Handle updates to scope verification state from service."""
+        style = QApplication.style()
+        if verified:
+            self._log("Scope verified.")
+            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogApplyButton))
+            self.btn_test_scope.setStyleSheet("background-color: #50fa7b; color: #282a36; font-weight: bold;")
+            self.btn_test_scope.setText("Connected")
+        else:
+            self._log("Scope verification failed or reset.")
+            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
+            self.btn_test_scope.setStyleSheet("background-color: #ff5555; color: white; font-weight: bold;")
+            self.btn_test_scope.setText("Failed")
+        
+        self._update_ui_state()
+
     def _on_reset_coeffs(self) -> None:
+        """Reset calibration coefficients to default values in RAM.
+        
+        Sets all channel coefficients to (k=1.0, d=0.0) in the voltage unit's
+        RAM only. Does NOT write to EEPROM, so changes are temporary until
+        explicitly saved or power cycle.
+        """
         """Trigger reset of coefficients in RAM via the service."""
 
         if not self.service:
@@ -250,7 +289,9 @@ class SessionAndCoeffsPage(QWidget):
         self._set_busy(True)
 
         # Expect an async-style service similar to the previous design:
-        signals = self.service.reset_coefficients_ram()
+        task = self.service.reset_coefficients_ram()
+        self._active_task = task # Keep alive
+        signals = task.signals
         if not signals:
             self._log("reset_coefficients_ram() returned no signals.")
             self._set_busy(False)
@@ -263,10 +304,17 @@ class SessionAndCoeffsPage(QWidget):
         def _finished(_result):
             self._log("Reset coefficients (RAM) finished.")
             self._set_busy(False)
+            self._active_task = None
 
         signals.finished.connect(_finished)
+        run_in_thread(task)
 
     def _on_write_coeffs_eeprom(self) -> None:
+        """Write current coefficients to EEPROM for persistence.
+        
+        Saves the current calibration coefficients to the voltage unit's EEPROM,
+        making them persistent across power cycles.
+        """
         """Trigger write of coefficients to EEPROM via the service."""
 
         if not self.service:
@@ -276,7 +324,9 @@ class SessionAndCoeffsPage(QWidget):
         self._apply_targets()
         self._set_busy(True)
 
-        signals = self.service.write_coefficients_eeprom()
+        task = self.service.write_coefficients_eeprom()
+        self._active_task = task  # Keep alive
+        signals = task.signals
         if not signals:
             self._log("write_coefficients_eeprom() returned no signals.")
             self._set_busy(False)
@@ -289,27 +339,11 @@ class SessionAndCoeffsPage(QWidget):
         def _finished(_result):
             self._log("Write coefficients (EEPROM) finished.")
             self._set_busy(False)
+            self._active_task = None
             self.le_input.setVisible(False)
 
         signals.finished.connect(_finished)
-
-    def _on_input_requested(self, prompt: str):
-        """Show input field when service requests input."""
-        if not self.isVisible():
-            return
-        self._log(f"<b>Input requested:</b> {prompt}")
-        self.le_input.setVisible(True)
-        self.le_input.setPlaceholderText(prompt if prompt else "Type input here...")
-        self.le_input.setFocus()
-
-    def _on_input_return(self):
-        """Send input back to service."""
-        text = self.le_input.text()
-        self._log(f"> {text}")
-        self.le_input.clear()
-        self.le_input.setVisible(False)
-        if self.service:
-            self.service.provide_input(text)
+        run_in_thread(task)
 
     def _log(self, msg: str) -> None:
         append_log(self.console, msg)

@@ -6,8 +6,8 @@ from PySide6.QtWidgets import QWidget
 from src.gui.sidebar_button import SidebarButton
 
 
-def build_toolbuttons(parent: QWidget, buttons):
-    """Create sidebar QPushButton from hardware descriptor metadata.
+def build_tool_buttons(parent: QWidget, buttons):
+    """Create a sidebar QPushButton from hardware descriptor metadata.
 
     Args:
         parent (QWidget): Widget that will own the generated buttons.

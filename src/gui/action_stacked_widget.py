@@ -1,5 +1,5 @@
 from typing import Callable, Dict, Optional
-from PySide6.QtCore import Qt, QModelIndex, QObject, Signal, Slot
+from PySide6.QtCore import Qt, QModelIndex, QObject, Signal, Slot, QItemSelectionModel
 from PySide6.QtWidgets import QWidget, QStackedWidget
 
 
@@ -51,22 +51,15 @@ class ActionStackedWidget(QStackedWidget):
         self.ids_by_index.clear()
         self.index_by_id.clear()
 
-    # ---- Selection binding ----
-    def bind_to_selection(self, selection_model: QObject, role: int = Qt.UserRole) -> None:
-        """Route QListView/QTreeView's currentChanged to show corresponding page.
+    def bind_to_selection(self, selection_model: QItemSelectionModel, role: int = Qt.ItemDataRole.UserRole) -> None:
+        """Route QListView/QTreeView's currentChanged to show the corresponding page.
 
-        The model is expected to store the router page_id at `role`.
+        The model is expected to store the router page_id at 'role'.
         """
-        # selection_model is a QItemSelectionModel, but keep type loosely typed for import-lightness.
         selection_model.currentChanged.connect(lambda cur, prev: self.on_current_changed(cur, prev, role))
 
     def bind_to_listview(self, list_view, role: int = Qt.UserRole) -> None:
-        """Convenience: bind after you've set the model on a QListView/QTreeView.
-        Example:
-            list_view.setModel(proxy)
-            router.bind_to_listview(list_view, role=ActionModel.id_role)
-        """
-        print(f"Bound listview to role {role}")
+        """Bind after setting the model on a QListView/QTreeView."""
         sel = getattr(list_view, "selectionModel", None)
         sel = sel() if callable(sel) else sel
         if sel is not None:
@@ -74,24 +67,20 @@ class ActionStackedWidget(QStackedWidget):
 
     @Slot(QModelIndex, QModelIndex)
     def on_current_changed(self, current: QModelIndex, previous: QModelIndex, role: int) -> None:
-        print("Invoked")
+        """Change the shown page when the selection changes."""
         if not current.isValid():
             return
 
         page_id = current.data(role)
-        print(f"Requested for page id {page_id}")
         if isinstance(page_id, str):
             self.show_page(page_id)
 
-    # ---- Page switching ----
     def show_page(self, page_id: str) -> None:
         """Show (and lazily create) the page mapped to page_id."""
-        print(f"Called for page id {page_id}")
         if page_id not in self.factories and page_id not in self.index_by_id:
-            # no factory and not already created -> nothing to show
             return
 
-        # Ensure page exists
+        # Create page if not yet created, then show
         idx = self.index_by_id.get(page_id)
         if idx is None:
             factory = self.factories.get(page_id)
@@ -102,15 +91,11 @@ class ActionStackedWidget(QStackedWidget):
             self.ids_by_index[idx] = page_id
             self.index_by_id[page_id] = idx
 
-        # Switch
         self.setCurrentIndex(idx)
         cur_w = self.currentWidget()
         print(f"current widget {cur_w}")
         if cur_w is not None and hasattr(cur_w, "enter"):
-            try:
-                cur_w.show()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            cur_w.show()
         self.currentPageIdChanged.emit(page_id, cur_w)
 
     def get_page(self, page_id: str) -> Optional[QWidget]:

@@ -1,9 +1,8 @@
+"""Used to wrap dpi scripts and redirect stdout and stderr to the application"""
 from __future__ import annotations
 
 import io
-import os
 import sys
-import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -22,7 +21,7 @@ class TaskSignals(QObject):
 class _EmittingStream(io.TextIOBase):
     """A text stream that emits written chunks via a signal.
 
-    We buffer until a newline or flush is requested to avoid overwhelming the UI.
+    The stream is buffered until a newline is encountered, at which point it is emitted.
     """
 
     def __init__(self, emit_fn: Callable[[str], None]):
@@ -30,10 +29,10 @@ class _EmittingStream(io.TextIOBase):
         self._emit = emit_fn
         self._buf = ""
 
-    def writable(self) -> bool:  # type: ignore[override]
+    def writable(self) -> bool:
         return True
 
-    def write(self, s: str) -> int:  # type: ignore[override]
+    def write(self, s: str) -> int:
         self._buf += s
         while "\n" in self._buf:
             line, self._buf = self._buf.split("\n", 1)
@@ -43,7 +42,7 @@ class _EmittingStream(io.TextIOBase):
                 self._emit("")
         return len(s)
 
-    def flush(self) -> None:  # type: ignore[override]
+    def flush(self) -> None:
         if self._buf:
             self._emit(self._buf)
             self._buf = ""
@@ -65,7 +64,7 @@ class FunctionTask(QRunnable):
         self.fn = fn
         self.signals = TaskSignals()
 
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:
         # Configure non-interactive matplotlib to avoid blocking UI if imported here
         try:
             import matplotlib
@@ -74,15 +73,18 @@ class FunctionTask(QRunnable):
             pass
 
         # Redirect stdout/stderr to log signal for the duration of the task
-        old_out, old_err = sys.stdout, sys.stderr
+        from contextlib import redirect_stdout, redirect_stderr
+        
         out_stream = _EmittingStream(lambda s: self.signals.log.emit(s))
         err_stream = _EmittingStream(lambda s: self.signals.log.emit(f"[stderr] {s}"))
-        sys.stdout, sys.stderr = out_stream, err_stream
+        
         try:
             self.signals.started.emit()
-            result = self.fn()
+            with redirect_stdout(out_stream), redirect_stderr(err_stream):
+                result = self.fn()
+            print(f"DEBUG: Task {self.name} finished execution, emitting signal")
             self.signals.finished.emit(TaskResult(self.name, True, result))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.signals.error.emit(f"{self.name} failed: {e}")
             self.signals.finished.emit(TaskResult(self.name, False, None))
         finally:
@@ -91,11 +93,11 @@ class FunctionTask(QRunnable):
                 err_stream.flush()
             except Exception:
                 pass
-            sys.stdout, sys.stderr = old_out, old_err
 
+def make_task(name: str, fn: Callable[[], Any]) -> FunctionTask:
+    return FunctionTask(name, fn)
 
-def run_in_thread(name: str, fn: Callable[[], Any]) -> TaskSignals:
+def run_in_thread(task: FunctionTask) -> TaskSignals:
     """Submit a function to the global QThreadPool and return its TaskSignals."""
-    task = FunctionTask(name, fn)
     QThreadPool.globalInstance().start(task)
     return task.signals

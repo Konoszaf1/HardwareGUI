@@ -1,5 +1,5 @@
 """Dataclass representing the domain object of a specific action that
-a hardware does, hardware and actions are linked by the hardware id number
+a specific hardware device does, hardware and actions are linked by the hardware id number
 """
 
 from dataclasses import dataclass

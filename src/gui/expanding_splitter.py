@@ -113,7 +113,7 @@ class ExpandingSplitter(QSplitter):
             self._is_expanded = True
 
     def collapse_sidebar(self, value):
-        """Handle resizing of the splitter for expansion animation"""
+        """Handle resizing of the splitter for collapse animation"""
         self.setSizes([int(self.width() - value), int(value)])
 
 
