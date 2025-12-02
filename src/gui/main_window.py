@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint
 
-from src.gui.action_stacked_widget import ActionStackedWidget
 from src.populate_items import ACTIONS, HARDWARE
 from src.gui.button_factory import build_tool_buttons
 from src.gui.expanding_splitter import ExpandingSplitter

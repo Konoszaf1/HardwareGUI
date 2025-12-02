@@ -1,13 +1,10 @@
-# Navigate to your project
-cd /path/to/HardwareGUI
+#!/bin/bash
+# DPIPathConfiguration.sh - Configure Python paths for DPI modules
 
-# Create a .pth file in your venv's site-packages
-cat > .venv/lib/python3.12/site-packages/dpi_packages.pth << 'EOF'
-/measdata/dpi/dpi
-/measdata/dpi/arrayextensionunit/python
-/measdata/dpi/maincontrolunit/python
-/measdata/dpi/powersupplyunit/python
-/measdata/dpi/samplingunit/python
-/measdata/dpi/sourcemeasureunit/python
-/measdata/dpi/voltageunit/python
-EOF
+# Add DPI module paths to PYTHONPATH
+export PYTHONPATH="/measdata/dpi/voltageunit/python:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/voltageunit/python/dev:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/maincontrolunit/python:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/dpi:${PYTHONPATH}"
+
+echo "[OK] DPI Python paths configured"

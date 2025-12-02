@@ -1,56 +1,62 @@
 #!/bin/bash
-# run.sh - Portable startup script for HardwareGUI
-# This script handles DPI path configuration and starts the application
+# run.sh - Portable startup script matching IntelliJ configuration
 
-set -e  # Exit on error
+set -e
 
+# 1. Determine Project Root (where this script is located)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$PROJECT_ROOT"
 
-echo "🚀 HardwareGUI Startup"
-echo "======================="
-echo ""
+# 2. Set Working Directory to 'src' (matches IntelliJ "Working directory")
+cd "$PROJECT_ROOT/src"
 
-# Step 1: Source DPI path configuration
-echo "📁 Configuring DPI module paths..."
-if [ -f "DPIPathConfiguration.sh" ]; then
-    source DPIPathConfiguration.sh
-else
-    echo "⚠️  Warning: DPIPathConfiguration.sh not found"
-    echo "   Creating default configuration..."
-    cat > DPIPathConfiguration.sh << 'DPICFG'
-#!/bin/bash
-# DPIPathConfiguration.sh - Configure Python paths for DPI modules
+echo "HardwareGUI Startup"
+echo "==================="
+echo "Working Directory: $(pwd)"
 
-# Add DPI module paths to PYTHONPATH
-export PYTHONPATH="/measdata/dpi/voltageunit/python:${PYTHONPATH}"
-export PYTHONPATH="/measdata/dpi/maincontrolunit/python:${PYTHONPATH}"
-export PYTHONPATH="/measdata/dpi/dpi:${PYTHONPATH}"
-
-echo "✓ DPI Python paths configured:"
-echo "  - /measdata/dpi/voltageunit/python"
-echo "  - /measdata/dpi/maincontrolunit/python"
-echo "  - /measdata/dpi/dpi"
-DPICFG
-    source DPIPathConfiguration.sh
-fi
-echo ""
-
-# Step 2: Check for uv
-if ! command -v uv &> /dev/null; then
-    echo "❌ Error: uv is not installed"
-    echo "   Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+# Warn about existing virtual environment
+if [ -n "$VIRTUAL_ENV" ]; then
+    echo "[ERROR] You are currently in a virtual environment: $VIRTUAL_ENV"
+    echo "        Please deactivate it first with: deactivate"
+    echo "        Then run this script again."
     exit 1
 fi
-echo "✓ uv found: $(uv --version)"
-echo ""
 
-# Step 3: Sync dependencies
-echo "📦 Syncing dependencies with uv..."
-uv sync --all-groups
-echo ""
+# 3. Configure PYTHONPATH (matches IntelliJ "Add content/source roots")
+# - PROJECT_ROOT (Content Root)
+# - PROJECT_ROOT/src (Source Root)
+export PYTHONPATH="$PROJECT_ROOT:$PROJECT_ROOT/src"
 
-# Step 4: Run the application
-echo "▶️  Starting HardwareGUI..."
+# 4. Add ALL DPI package directories to PYTHONPATH
+# This ensures imports work even if editable installs have issues
+DPI_PACKAGES=(
+    "/measdata/dpi/dpi"
+    "/measdata/dpi/arrayextensionunit/python"
+    "/measdata/dpi/maincontrolunit/python"
+    "/measdata/dpi/powersupplyunit/python"
+    "/measdata/dpi/samplingunit/python"
+    "/measdata/dpi/sourcemeasureunit/python"
+    "/measdata/dpi/voltageunit/python"
+    "/measdata/dpi/voltageunit/python/dev"
+)
+
+for pkg in "${DPI_PACKAGES[@]}"; do
+    if [ -d "$pkg" ]; then
+        export PYTHONPATH="$pkg:$PYTHONPATH"
+    fi
+done
+
+echo "[OK] PYTHONPATH configured with all DPI packages"
+
+# 5. Set Environment Variables (matches IntelliJ)
+export PYTHONUNBUFFERED=1
+
+# 6. Check for uv
+if ! command -v uv &> /dev/null; then
+    echo "[ERROR] uv is not installed"
+    exit 1
+fi
+
+# 7. Run the application
+echo "Starting main.py..."
 echo ""
-uv run python src/main.py
+uv run python main.py
