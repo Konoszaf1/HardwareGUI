@@ -1,205 +1,189 @@
 # HardwareGUI
 
-PySide6 app with a frameless main window for handling the initialization of hardware in the Institute of Microelectronics
-Uses a simple Model–View–Presenter split and typed dataclasses for the domain layer.
+A PySide6 application for controlling and calibrating DPI hardware at the Institute of Microelectronics. The application uses a Model-View-Presenter architecture with typed dataclasses for clean separation of concerns.
 
-## What it does
+## Overview
 
-* Perform all necessary actions for rebooting any hardware as well has having
-an overview of all calibration steps that have already commenced.
-* Easily extensible with more hardware and intiialization steps only with 
-minimal code
+This application provides:
+- Hardware initialization and calibration workflows
+- Real-time monitoring and control of voltage units, main control units, and other DPI hardware
+- Interactive GUI for running tests and viewing calibration results
+- Modular architecture for easy extension with new hardware types
 
-## Repo layout
+## Project Structure
 
 ```
 HardwareGUI/
 ├─ src/
-│  ├─ main.py                       # App entrypoint (applies qt-material theme)
-│  ├─ populate_items.py             # Static seed data for hardware/actions
-│  ├─ ui_main_window.py             # Generated from Qt Designer .ui
+│  ├─ main.py                       # Application entry point
+│  ├─ setup_cal.py                  # Symlink to calibration utilities
 │  ├─ gui/
-│  │  ├─ main_window.py             # Frameless main window + wiring
-│  │  ├─ button_factory.py          # Builds SidebarButton instances
-│  │  ├─ sidebar_button.py          # Animated tool button (expand/collapse)
-│  │  ├─ expanding_splitter.py      # Hover-to-expand sidebar splitter
-│  │  └─ hiding_listview.py         # ListView with zero-width min size hint
+│  │  ├─ main_window.py             # Main application window
+│  │  ├─ scripts/voltage_unit/      # Voltage unit control pages
+│  │  └─ utils/                     # GUI helpers and utilities
 │  └─ logic/
-│     ├─ presenter.py               # ActionsPresenter (connects view and model)
-│     ├─ action_dataclass.py        # ActionDescriptor dataclass
-│     ├─ hardware_dataclass.py      # HardwareDescriptor dataclass
-│     └─ model/
-│        └─ actions_model.py        # QAbstractListModel + filter proxy
-├─ requirements.txt                 # Runtime + tooling deps
-├─ pyproject.toml                   # ruff + mypy settings
-└─ .gitignore
+│     ├─ presenter.py               # MVP presenter layer
+│     ├─ vu_service.py              # Voltage unit service
+│     ├─ qt_workers.py              # Background task management
+│     └─ model/                     # Data models
+├─ setup.sh                         # One-time setup script
+├─ run.sh                           # Application launcher
+├─ pyproject.toml                   # Project dependencies and tools
+└─ DPIPathConfiguration.sh          # DPI package path configuration
 ```
 
 ## Requirements
 
-* Python 3.11+ (recommended: 3.12.3)
-* Qt runtime via `PySide6` (installed through `uv`)
-* Access to `/measdata/dpi` directory with DPI hardware packages
-* Linux: X11 users may need `libxcb` and related Qt platform packages
-* Windows/macOS: no extra system deps beyond Python
+- Python 3.11 or later (3.12 recommended)
+- Access to `/measdata/dpi` directory containing DPI hardware packages
+- `uv` package manager (installed automatically by setup.sh)
+- Linux system with X11 or Wayland
 
-## Quick start
+### Hardware Dependencies
 
-```bash
-# 1) Create and activate a virtualenv
-python -m venv .venv
-source .venv/bin/activate  # Unix/macOS
-# .venv\Scripts\activate   # Windows
+The application requires access to the following DPI packages in `/measdata/dpi`:
+- `dpi` - Core DPI framework
+- `dpivoltageunit` - Voltage unit drivers
+- `dpimaincontrolunit` - Main control unit drivers
+- `dpiarrayextensionunit` - Array extension unit drivers
+- `dpipowersupplyunit` - Power supply unit drivers
+- `dpisamplingunit` - Sampling unit drivers
+- `dpisourcemeasureunit` - Source measure unit drivers
 
-# 2) Install project dependencies
-uv sync
+These packages are accessed via PYTHONPATH at runtime and do not need to be installed.
 
-# 3) Install DPI hardware packages (editable mode)
-./install_dpi.sh
+## Installation
 
-# 4) Run the application
-python src/main.py
-```
-
-The app loads the `dark_amber.xml` theme from `qt-material` and opens the main
-window of the application.
-
-## DPI Package Installation
-
-The application depends on local DPI hardware packages that are not on PyPI:
-
-- **dpi** - Main DPI framework (`/measdata/dpi/dpi`)
-- **dpivoltageunit** - Voltage Unit drivers (`/measdata/dpi/voltageunit/python`)
-- **dpimaincontrolunit** - Main Control Unit drivers (`/measdata/dpi/maincontrolunit/python`)
-
-These are installed in **editable mode** via the `install_dpi.sh` script, which runs:
+The setup process is simple and automated:
 
 ```bash
-cd /measdata/dpi/dpi && uv pip install -e .
-cd /measdata/dpi/voltageunit/python && uv pip install -e .
-cd /measdata/dpi/maincontrolunit/python && uv pip install -e .
+# 1. Clone the repository (or navigate to your clone)
+cd HardwareGUI
+
+# 2. Ensure you are not in any virtual environment
+deactivate  # if you're in a venv
+
+# 3. Run the setup script
+./setup.sh
 ```
 
-Editable mode means changes to the DPI source code are immediately reflected without reinstallation.
+The setup script will:
+- Install the `uv` package manager if needed
+- Create a virtual environment in `.venv`
+- Install all Python dependencies
+- Create a symlink to the calibration utilities
+
+## Running the Application
+
+To launch the application:
+
+```bash
+./run.sh
+```
+
+The run script handles environment configuration automatically, including:
+- Setting the correct working directory
+- Configuring PYTHONPATH for DPI package access
+- Setting required environment variables
+
+**Important**: Make sure you are not in an active virtual environment before running. The script will check and warn you if needed.
 
 ## Development
 
-### Tooling
+### Code Quality Tools
 
-* Formatting: `black`
-* Linting: `ruff`
-* Typing: `mypy` with `strict = true`
+The project uses the following tools for code quality:
 
 ```bash
-# format
-black .
+# Format code
+uv run black .
 
-# lint
-ruff check .
+# Check linting
+uv run ruff check .
 
-# type-check
-mypy .
+# Type checking
+uv run mypy src/
 ```
 
-### UI generation
+Configuration for these tools is in `pyproject.toml`.
 
-`ui_main_window.py` is generated from a Qt Designer `.ui` file. If you change the `.ui`, re-generate:
+### UI Development
+
+The UI is built with Qt Designer. To regenerate UI files:
 
 ```bash
-# example (adjust paths to your environment)
-pyside6-uic main_window.ui -o src/ui_main_window.py
-```
-Or directly using uv with
-``` 
-uv tool run --from pyside6-essentials pyside6-uic src/ui/main_window.ui -o src/ui_main_window.py --from-imports
-```
-## Resources (Qt Resource System)
-
-Goal: add images/icons/styles and load them via `:/...` paths.
-
-### Layout
-
-```
-src/
-├─ resources/
-│  ├─ icons/        # .svg/.png
-│  └─ icons.qrc     # Qt resource collection
+uv tool run --from pyside6-essentials pyside6-uic \
+  src/ui/main_window.ui \
+  -o src/ui_main_window.py \
+  --from-imports
 ```
 
-### Create `icons.qrc`
+### Architecture
 
-Minimal example:
+- **View Layer**: PySide6 widgets and windows
+- **Model Layer**: `QAbstractListModel` implementations for data
+- **Presenter Layer**: Connects views to models, handles user interactions
+- **Service Layer**: Background task execution and hardware communication
 
-```xml
-<RCC>
-  <qresource prefix="/icons">
-    <file>icons/gear.svg</file>
-    <file>icons/plus.svg</file>
-  </qresource>
-  <qresource prefix="/images">
-    <file>images/banner.png</file>
-  </qresource>
-</RCC>
-```
+The application uses Qt's signal/slot mechanism for loose coupling between components.
 
-### Compile to Python
+## Features
 
-Run after adding/removing files:
+### Calibration
 
-```bash
-# from repo root
-pyside6-rcc src/resources/resources.qrc -o src/icons_rc.py
-```
+The calibration page provides:
+- Python-based autocalibration (iterative, up to 10 iterations)
+- Onboard autocalibration (firmware-based)
+- Comprehensive test suite (output tests, ramp tests, transient tests)
+- Real-time thumbnail updates showing generated plots
 
-Commit `src/icons_rc.py`. This embeds assets into the binary and avoids runtime file lookups.
+### Testing
 
-#### Use in Qt Designer
+The testing page allows you to:
+- Run individual validation tests
+- Execute all tests sequentially
+- View results as they are generated
+- Monitor test output in real-time
 
-Set properties to resource paths (e.g., `:/icons/plus.svg`). After regenerating `ui_main_window.py`, ensure `import icons_rc` executes before UI uses those paths (import it in `main.py` or at the top of `ui_main_window.py`).
+### Session Management
 
-### Update workflow
-
-1. Add files under `src/resources/...`
-2. Update `resources.qrc`
-3. Re-run `pyside6-rcc` to refresh `icons_rc.py`
-4. Run app
-
-### Troubleshooting
-
-Icons not visible → confirm the `:/...` path, `icons_rc.py` is up to date, and `import icons_rc` happens before any UI loads paths.
-
-### Tests
-
-A placeholder `src/test_main.py` exists. Add your tests and run with `pytest` (not pinned in requirements; install if used):
-
-```bash
-pip install pytest
-pytest -q
-```
-
-## Architecture notes
-
-* **View**: `MainWindow`, `ExpandingSplitter`, `SidebarButton`, `HidingListView`, `Ui_MainWindow`
-* **Model**: `ActionModel` (`QAbstractListModel`) exposes roles: `id`, `hardware_id`, `label`, `order`
-* **Proxy**: `ActionsByHardwareProxy` filters `ActionModel` by selected hardware id
-* **Presenter**: `ActionsPresenter` binds sidebar button toggles → proxy filter and sets the list’s model
-* **Data**: `populate_items.py` seeds `HARDWARE` and `ACTIONS` for the demo
-
-## Packaging (optional)
-
-For a quick single-file build using PyInstaller:
-
-```bash
-pip install pyinstaller
-pyinstaller -n HardwareGUI -F -w src/main.py
-```
-
-Adjust hidden imports for PySide6 if needed.
+Control hardware parameters:
+- Scope connectivity verification
+- Hardware ID configuration
+- Coefficient management (RAM and EEPROM)
 
 ## Troubleshooting
 
-* App doesn’t start and mentions Qt platform plugin “xcb”: install system packages for X11 (e.g., `libxcb`, `libxkbcommon-x11`) or run on Wayland/XQuartz with appropriate Qt plugins.
-* If icons don’t render, ensure `icons_rc.py` and the resource paths (e.g., `:/icons/*.png`) are available.
+### Application Won't Start
+
+If you see Qt platform plugin errors:
+```bash
+sudo apt-get install libxcb-cursor0 libxkbcommon-x11-0
+```
+
+### Import Errors
+
+If you see `ModuleNotFoundError` for DPI packages:
+- Verify `/measdata/dpi` directory exists and is accessible
+- Check that you ran `./setup.sh` successfully
+- Ensure you deactivated any other virtual environments before running `./run.sh`
+
+### Plot Thumbnails Not Updating
+
+Thumbnails update automatically during calibration. If they don't:
+- Check that the `calibration_vuXXXX` directory is being created
+- Verify file permissions allow writing to the project directory
+
+## Portable Deployment
+
+To deploy on another machine:
+
+1. Clone the repository
+2. Ensure `/measdata/dpi` is accessible (or update `DPIPathConfiguration.sh` with correct paths)
+3. Run `./setup.sh`
+4. Run `./run.sh`
+
+No manual configuration is required. The scripts handle all environment setup.
 
 ## License
 

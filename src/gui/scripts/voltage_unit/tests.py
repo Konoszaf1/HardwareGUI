@@ -200,6 +200,7 @@ class TestsPage(QWidget):
             
         artifact_dir = os.path.abspath(f"calibration_vu{setup_cal.VU_SERIAL}")
         self._artifact_watcher = ArtifactWatcher(self.listWidget, self)
+        self._artifact_watcher.setup(artifact_dir)
     
     def _set_busy(self, busy: bool) -> None:
         """Enable or disable test control buttons based on busy state.
