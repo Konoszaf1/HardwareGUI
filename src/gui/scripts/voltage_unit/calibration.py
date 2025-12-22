@@ -31,6 +31,11 @@ class CalibrationPage(QWidget):
         # Bottom: Image List
         mainLayout = QVBoxLayout(self)
         
+        # ==== Title ====
+        title = QLabel("Voltage Unit – Calibration")
+        title.setObjectName("title")
+        mainLayout.addWidget(title)
+        
         # ==== Top Section ====
         topWidget = QW()
         topLayout = QHBoxLayout(topWidget)

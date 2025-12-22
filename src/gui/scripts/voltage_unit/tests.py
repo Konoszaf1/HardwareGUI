@@ -45,6 +45,11 @@ class TestsPage(QWidget):
         mainLayout = QVBoxLayout(self)
         mainLayout.setSpacing(15)
         
+        # ==== Title ====
+        title = QLabel("Voltage Unit – Tests")
+        title.setObjectName("title")
+        mainLayout.addWidget(title)
+        
         # ==== Top Section: Test Cards ====
         cardsWidget = QW()
         cardsLayout = QHBoxLayout(cardsWidget)
