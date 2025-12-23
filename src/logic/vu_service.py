@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import glob
 import os
 import re
 import subprocess
@@ -9,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 from PySide6.QtCore import QObject, Signal
 
+from src.logic.artifact_manager import ArtifactManager
 from src.logic.qt_workers import make_task, FunctionTask
 # noinspection PyUnusedImports
 import dpi # required to avoid circular imports
@@ -52,6 +52,7 @@ class VoltageUnitService(QObject):
         self._connected: bool = False
         self._scope_verified_state: bool = False
         self._hw_lock = threading.Lock()
+        self._artifact_manager = ArtifactManager()
         
         # Input redirection
         self._input_event = threading.Event()
@@ -73,9 +74,22 @@ class VoltageUnitService(QObject):
             self.scopeVerified.emit(verified)
 
     def require_scope_ip(func):
-        """Decorator to check if scope IP is set before running a task."""
+        """Decorator to check if scope IP is set before running a task.
+        
+        Returns None with a warning if scope IP is not configured.
+        Callers should check for None return values.
+        """
+        import functools
+        import warnings
+        
+        @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             if not getattr(self, "_target_scope_ip", ""):
+                warnings.warn(
+                    f"{func.__name__}() requires scope IP to be configured. "
+                    "Call set_scope_ip() first.",
+                    stacklevel=2
+                )
                 return None
             with self._hw_lock:
                 self._ensure_connected()
@@ -154,25 +168,11 @@ class VoltageUnitService(QObject):
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        return os.path.abspath(f"calibration_vu{setup_cal.VU_SERIAL}")  
+        return self._artifact_manager.get_artifact_dir(setup_cal.VU_SERIAL)
 
     def _collect_artifacts(self) -> List[str]:
-        paths: List[str] = []
-        d = self._artifact_dir()
-        for name in ("output.png", "ramp.png", "transient.png"):
-            p = os.path.join(d, name)
-            if os.path.exists(p):
-                paths.append(p)
-        # Also include any other PNGs the user might have produced
-        paths.extend(sorted(glob.glob(os.path.join(d, "*.png"))))
-        # Deduplicate while preserving order
-        seen = set()
-        unique: List[str] = []
-        for p in paths:
-            if p not in seen:
-                unique.append(p)
-                seen.add(p)
-        return unique
+        """Collect all artifact files for the current voltage unit."""
+        return self._artifact_manager.collect_artifacts(setup_cal.VU_SERIAL)
 
     # ---- Public operations (threaded) ----
     @require_scope_ip

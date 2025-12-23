@@ -27,6 +27,16 @@ class SidebarButton(QToolButton):
 
     def set_collapsed(self, collapsed):
         """Start expansion and collapse animations"""
+        # Disconnect previous connections to prevent signal accumulation
+        try:
+            self.animation.finished.disconnect()
+        except RuntimeError:
+            pass  # Not connected yet
+        try:
+            self.animation.stateChanged.disconnect()
+        except RuntimeError:
+            pass  # Not connected yet
+            
         if collapsed:
             super().setText("")
             self.animation.setStartValue(self.width())

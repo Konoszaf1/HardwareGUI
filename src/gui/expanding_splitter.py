@@ -98,6 +98,11 @@ class ExpandingSplitter(QSplitter):
         """Expand the sidebar and hide the list view"""
         if self._is_expanded:
             return
+        # Disconnect previous connections to prevent signal accumulation
+        try:
+            self._animation.valueChanged.disconnect()
+        except RuntimeError:
+            pass  # Not connected yet
         self._animation.setStartValue(self.sizes()[1])
         self._animation.setEndValue(0)
         self._animation.valueChanged.connect(lambda v: self.expand_sidebar(v))
@@ -119,9 +124,14 @@ class ExpandingSplitter(QSplitter):
 
     def collapse(self):
         """Collapse the sidebar and show the list view"""
+        # Disconnect previous connections to prevent signal accumulation
+        try:
+            self._animation.valueChanged.disconnect()
+        except RuntimeError:
+            pass  # Not connected yet
         self._animation.setStartValue(self.sizes()[1])
         self._animation.setEndValue(self.width()-self._collapsed_width)
-        self._animation.valueChanged.connect(lambda v: self.expand_sidebar(v))
+        self._animation.valueChanged.connect(lambda v: self.collapse_sidebar(v))
         self._animation.start()
         self._is_expanded = False
 
