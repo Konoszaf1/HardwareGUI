@@ -11,8 +11,8 @@ Usage:
     ip = config.hardware.default_scope_ip
 """
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,8 @@ class UIConfig:
     animation_duration_ms: int = 500
     expand_hover_delay_ms: int = 350
     collapse_hover_delay_ms: int = 200
+    window_min_width: int = 900
+    window_min_height: int = 600
 
 
 @dataclass(frozen=True)

@@ -50,5 +50,3 @@ Thumbs.db
 *.bak
 *.swp
 
-# Allow implementation plans (override global gitignore)
-!implementation_plan.md

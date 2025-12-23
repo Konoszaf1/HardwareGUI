@@ -3,15 +3,15 @@
 import sys
 
 from PySide6.QtWidgets import QApplication
-import qt_material
 
+import qt_material  # isort: skip
+import icons_rc  # noqa: F401
 from gui.main_window import MainWindow
-from logging_config import setup_logging, get_logger
+from logging_config import get_logger, setup_logging
 
 
 def main():
     """Initialize and run the application."""
-    # Initialize logging before anything else
     setup_logging()
     logger = get_logger(__name__)
     logger.info("Application starting")

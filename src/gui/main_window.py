@@ -1,20 +1,21 @@
 """Main Window of the application"""
 
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QMainWindow,
     QGraphicsDropShadowEffect,
+    QMainWindow,
     QWidget,
 )
-from PySide6.QtCore import Qt, QPoint
 
-from src.populate_items import ACTIONS, HARDWARE
+from src.config import config
 from src.gui.button_factory import build_tool_buttons
 from src.gui.expanding_splitter import ExpandingSplitter
 from src.gui.hiding_listview import HidingListView
 from src.gui.sidebar_button import SidebarButton
 from src.logic.action_dataclass import ActionDescriptor
 from src.logic.presenter import ActionsPresenter
+from src.populate_items import ACTIONS, HARDWARE
 from src.ui_main_window import Ui_MainWindow
 
 
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
         # Window Specific Setup
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setMinimumSize(config.ui.window_min_width, config.ui.window_min_height)
         self.ui.minimizePushButton.clicked.connect(self.showMinimized)
         self.ui.maximizePushButton.clicked.connect(self.toggle_max_restore)
         self.ui.closePushButton.clicked.connect(self.close)

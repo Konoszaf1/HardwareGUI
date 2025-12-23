@@ -1,13 +1,13 @@
 """Custom QSplitter Widget to handle the sidebar expansion and collapse"""
 
-from PySide6.QtWidgets import QWidget, QSplitter, QListView
 from PySide6.QtCore import (
-    QTimer,
-    QEvent,
-    QEasingCurve,
-    QVariantAnimation,
     QAbstractAnimation,
+    QEasingCurve,
+    QEvent,
+    QTimer,
+    QVariantAnimation,
 )
+from PySide6.QtWidgets import QListView, QSplitter, QWidget
 
 from src.config import config
 
@@ -20,7 +20,7 @@ class ExpandingSplitter(QSplitter):
         self._collapsed_width = config.ui.sidebar_collapsed_width
         self._expanded_width = config.ui.sidebar_expanded_width
         self.setMinimumWidth(self._collapsed_width)
-        self.setMaximumWidth(self._expanded_width)
+        self.setMinimumWidth(self._collapsed_width)
         self.buttons = []
         self._is_expanded = False
         self.widget: QWidget | None = None

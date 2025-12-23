@@ -1,22 +1,25 @@
 # session_and_coeffs_page_min.py
 """Session management and coefficient control page for voltage unit."""
 
-from PySide6.QtCore import Qt, QRegularExpression
+from PySide6.QtCore import QRegularExpression, Qt
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
-    QWidget,
-    QGridLayout,
-    QLabel,
-    QGroupBox,
-    QFormLayout,
-    QLineEdit,
-    QSpinBox,
-    QHBoxLayout,
-    QVBoxLayout,
-    QPushButton,
-    QWidget as QW,
     QApplication,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QSpinBox,
     QStyle,
+    QVBoxLayout,
+    QWidget,
+)
+from PySide6.QtWidgets import (
+    QWidget as QW,
 )
 
 from src.config import config
@@ -71,6 +74,9 @@ class SessionAndCoeffsPage(QWidget):
         connLayout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.le_scope_ip = QLineEdit(config.hardware.default_scope_ip)
+        self.le_scope_ip.setSizePolicy(
+            QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed
+        )
         ip_re = QRegularExpression(
             r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$"
         )
@@ -126,7 +132,8 @@ class SessionAndCoeffsPage(QWidget):
         topLayout.addWidget(actBox)
         topLayout.addStretch()
 
-        self.grid.addWidget(topWidget, 1, 0, 1, 1)
+        self.grid.addWidget(topWidget, 1, 0, 1, 1, Qt.AlignTop)
+        self.grid.setVerticalSpacing(20)  # Spacing between top widget and console
 
         # ==== Console (using factory) ====
         self.console = create_console_widget(max_block_count=config.console.max_block_count_small)
