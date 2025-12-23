@@ -17,7 +17,6 @@ def build_tool_buttons(parent: QWidget, buttons):
     Returns:
         list[SidebarButton]: Instantiated buttons configured for the sidebar.
     """
-
     button_objs = []
     for button in buttons:
         button_obj = SidebarButton(parent)

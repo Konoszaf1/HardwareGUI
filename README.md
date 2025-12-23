@@ -1,190 +1,193 @@
 # HardwareGUI
 
-A PySide6 application for controlling and calibrating DPI hardware at the Institute of Microelectronics. The application uses a Model-View-Presenter architecture with typed dataclasses for clean separation of concerns.
+![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)
+![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Overview
+A PySide6 application for controlling and calibrating DPI hardware at the Institute of Microelectronics. Built with a **Model-View-Presenter (MVP)** architecture, it features type-safe configuration, asynchronous hardware communication, and a modular UI.
 
-This application provides:
-- Hardware initialization and calibration workflows
-- Real-time monitoring and control of voltage units, main control units, and other DPI hardware
-- Interactive GUI for running tests and viewing calibration results
-- Modular architecture for easy extension with new hardware types
+---
 
-## Project Structure
+## Key Features
 
-```
-HardwareGUI/
-├─ src/
-│  ├─ main.py                       # Application entry point
-│  ├─ setup_cal.py                  # Symlink to calibration utilities
-│  ├─ gui/
-│  │  ├─ main_window.py             # Main application window
-│  │  ├─ scripts/voltage_unit/      # Voltage unit control pages
-│  │  └─ utils/                     # GUI helpers and utilities
-│  └─ logic/
-│     ├─ presenter.py               # MVP presenter layer
-│     ├─ vu_service.py              # Voltage unit service
-│     ├─ qt_workers.py              # Background task management
-│     └─ model/                     # Data models
-├─ setup.sh                         # One-time setup script
-├─ run.sh                           # Application launcher
-├─ pyproject.toml                   # Project dependencies and tools
-└─ DPIPathConfiguration.sh          # DPI package path configuration
-```
+- **Automated Calibration**: Python-based and onboard firmware calibration workflows.
+- **Real-Time Monitoring**: Live status updates from Voltage Units and Main Control Units.
+- **Visual Feedback**: Real-time plotting and thumbnail generation for calibration results.
+- **Modular Design**: Extensible architecture for new hardware types.
+- **Portable Deployment**: Automated setup scripts for zero-configuration deployment.
+
+---
 
 ## Requirements
 
-- Python 3.11 or later (3.12 recommended)
-- Access to `/measdata/dpi` directory containing DPI hardware packages
-- `uv` package manager (installed automatically by setup.sh)
-- Linux system with X11 or Wayland
+### System Requirements
+- **OS**: Linux (X11 or Wayland)
+- **Python**: 3.12 or later
+- **Hardware Access**: Network access to DPI hardware (default scope IP: `192.168.68.154`)
 
-### Hardware Dependencies
+### External Dependencies
+The application relies on the standard DPI package library at `/measdata/dpi`:
+- `dpi` (Core framework)
+- `dpivoltageunit`
+- `dpimaincontrolunit`
+- `dpiarrayextensionunit`
+- `dpipowersupplyunit`
+- `dpisamplingunit`
+- `dpisourcemeasureunit`
 
-The application requires access to the following DPI packages in `/measdata/dpi`:
-- `dpi` - Core DPI framework
-- `dpivoltageunit` - Voltage unit drivers
-- `dpimaincontrolunit` - Main control unit drivers
-- `dpiarrayextensionunit` - Array extension unit drivers
-- `dpipowersupplyunit` - Power supply unit drivers
-- `dpisamplingunit` - Sampling unit drivers
-- `dpisourcemeasureunit` - Source measure unit drivers
+> **Note**: These packages are loaded dynamically via `PYTHONPATH` by the launcher script. You do not need to install them manually.
 
-These packages are accessed via PYTHONPATH at runtime and do not need to be installed.
+---
 
-## Installation
+## Quick Start
 
-The setup process is simple and automated:
+### 1. Installation
+
+The `setup.sh` script automates the entire installation process, creating a dedicated virtual environment with `uv`.
 
 ```bash
-# 1. Clone the repository (or navigate to your clone)
+# Clone the repository
+git clone https://github.com/yourusername/HardwareGUI.git
 cd HardwareGUI
 
-# 2. Ensure you are not in any virtual environment
-deactivate  # if you're in a venv
-
-# 3. Run the setup script
+# Run setup (handles venv creation and dependencies)
 ./setup.sh
 ```
 
-The setup script will:
-- Install the `uv` package manager if needed
-- Create a virtual environment in `.venv`
-- Install all Python dependencies
-- Create a symlink to the calibration utilities
+### 2. Running the App
 
-## Running the Application
-
-To launch the application:
+Always use the provided `run.sh` script to launch the application. It handles crucial environment setup (PYTHONPATH, variable updates) that direct Python invocation would miss.
 
 ```bash
 ./run.sh
 ```
 
-The run script handles environment configuration automatically, including:
-- Setting the correct working directory
-- Configuring PYTHONPATH for DPI package access
-- Setting required environment variables
+---
 
-**Important**: Make sure you are not in an active virtual environment before running. The script will check and warn you if needed.
+## Architecture
 
-## Development
+The application follows a **Model-View-Presenter (MVP)** pattern to separate UI logic from business rules and hardware communication.
 
-### Code Quality Tools
+### High-Level Overview
 
-The project uses the following tools for code quality:
+```mermaid
+graph TD
+    subgraph Presentation_Layer [Presentation Layer]
+        View["View (MainWindow, Pages)"]
+        Presenter["Presenter (ActionsPresenter)"]
+    end
+
+    subgraph Domain_Layer [Domain Layer]
+        Model["Model (ActionModel)"]
+        Service["Service (VoltageUnitService)"]
+    end
+
+    subgraph Infrastructure [Infrastructure]
+        Workers["Qt Workers (Background Threads)"]
+        Hardware["DPI Hardware (/measdata/dpi)"]
+    end
+
+    User((User)) -->|Interacts| View
+    View -->|Emits Signals| Presenter
+    View -->|Reads Data| Model
+    Presenter -->|Commands| Service
+    Service -->|Spawns| Workers
+    Workers -->|I/O| Hardware
+    Workers -->|Signals| Presenter
+    Model -->|Proivdes Structure| View
+```
+
+### Component Roles
+
+| Layer | Component | Responsibility |
+|-------|-----------|----------------|
+| **View** | `MainWindow`, `BasePage` | Renders UI, capturing inputs, displaying data. Reads structure from Model. |
+| **Presenter** | `ActionsPresenter` | Orchestrates logic. Receives view signals, calls services. |
+| **Model** | `ActionModel` | Static data structure defining application hierarchy (read-only). |
+| **Service** | `VoltageUnitService` | Handles long-running business logic and hardware communication using independent workers. |
+
+### Configuration System
+Configuration is centralized in `src/config.py` using immutable dataclasses (`frozen=True`) to prevent runtime modification and side effects.
+
+---
+
+## Development Workflow
+
+The project uses modern Python tooling for quality assurance.
+
+### Code Style & Quality
+We use `ruff` for linting/formatting and `mypy` for static analysis.
 
 ```bash
-# Format code
-uv run black .
+# Format code (Black compliant)
+uv run ruff format .
 
-# Check linting
+# Run linting check
 uv run ruff check .
 
-# Type checking
+# Run static type checking
 uv run mypy src/
 ```
 
-Configuration for these tools is in `pyproject.toml`.
-
-### UI Development
-
-The UI is built with Qt Designer. To regenerate UI files:
+### Running Tests
+Unit tests use `pytest` with `pytest-qt` for GUI interaction.
 
 ```bash
-uv tool run --from pyside6-essentials pyside6-uic \
-  src/ui/main_window.ui \
-  -o src/ui_main_window.py \
-  --from-imports
+# Run all tests
+uv run pytest
+
+# Run with coverage report
+uv run pytest --cov=src
 ```
 
-### Architecture
+### Qt Resources
+Icons and assets are compiled into a Python module. If you modify `.qrc` files or add icons:
 
-- **View Layer**: PySide6 widgets and windows
-- **Model Layer**: `QAbstractListModel` implementations for data
-- **Presenter Layer**: Connects views to models, handles user interactions
-- **Service Layer**: Background task execution and hardware communication
+```bash
+# Regenerate resources
+./scripts/build_resources.sh
+```
 
-The application uses Qt's signal/slot mechanism for loose coupling between components.
-
-## Features
-
-### Calibration
-
-The calibration page provides:
-- Python-based autocalibration (iterative, up to 10 iterations)
-- Onboard autocalibration (firmware-based)
-- Comprehensive test suite (output tests, ramp tests, transient tests)
-- Real-time thumbnail updates showing generated plots
-
-### Testing
-
-The testing page allows you to:
-- Run individual validation tests
-- Execute all tests sequentially
-- View results as they are generated
-- Monitor test output in real-time
-
-### Session Management
-
-Control hardware parameters:
-- Scope connectivity verification
-- Hardware ID configuration
-- Coefficient management (RAM and EEPROM)
+---
 
 ## Troubleshooting
 
-### Application Won't Start
+### Common Issues
 
-If you see Qt platform plugin errors:
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| **ModuleNotFoundError: No module named 'dpi'** | Missing PYTHONPATH | Always run using `./run.sh`, not `python src/main.py`. |
+| **Qt Platform Plugin Error** | Missing system libs | Install `libxcb-cursor0` and `libxkbcommon-x11-0`. |
+| **Permission Denied** | Script execution rights | Run `chmod +x setup.sh run.sh scripts/*.sh`. |
+
+### Debugging
+To enable verbose debug logging, export the `LOG_LEVEL` variable before running:
+
 ```bash
-sudo apt-get install libxcb-cursor0 libxkbcommon-x11-0
+export LOG_LEVEL=DEBUG
+./run.sh
 ```
 
-### Import Errors
+---
 
-If you see `ModuleNotFoundError` for DPI packages:
-- Verify `/measdata/dpi` directory exists and is accessible
-- Check that you ran `./setup.sh` successfully
-- Ensure you deactivated any other virtual environments before running `./run.sh`
+## Project Structure
 
-### Plot Thumbnails Not Updating
-
-Thumbnails update automatically during calibration. If they don't:
-- Check that the `calibration_vuXXXX` directory is being created
-- Verify file permissions allow writing to the project directory
-
-## Portable Deployment
-
-To deploy on another machine:
-
-1. Clone the repository
-2. Ensure `/measdata/dpi` is accessible (or update `DPIPathConfiguration.sh` with correct paths)
-3. Run `./setup.sh`
-4. Run `./run.sh`
-
-No manual configuration is required. The scripts handle all environment setup.
-
-## License
-
-MIT
+```bash
+HardwareGUI/
+├── src/
+│   ├── config.py             # Centralized configuration
+│   ├── main.py               # Entry point
+│   ├── gui/                  # View layer
+│   │   ├── main_window.py
+│   │   ├── scripts/          # Hardware specific pages
+│   │   └── utils/            # Shared UI components
+│   ├── logic/                # Business logic
+│   │   ├── presenter.py      # MVP Presenter
+│   │   ├── vu_service.py     # Hardware Service
+│   │   └── model/            # Data Models
+│   └── resources/            # Icons and assets
+├── tests/                    # Unit and integration tests
+├── setup.sh                  # One-time install script
+├── run.sh                    # Application launcher
+└── pyproject.toml            # Dependencies & tool config
+```

@@ -3,6 +3,8 @@
 from PySide6.QtWidgets import QToolButton, QSizePolicy
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 
+from src.config import config
+
 
 class SidebarButton(QToolButton):
     """Custom implementation consists of expanding and collapsing animation"""
@@ -22,21 +24,22 @@ class SidebarButton(QToolButton):
         self._original_text = None
         # Animation for smooth text appearance
         self.animation = QPropertyAnimation(self, b"minimumWidth")
-        self.animation.setDuration(400)
+        self.animation.setDuration(config.ui.animation_duration_ms)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        # Track connected signal handlers to avoid disconnect warnings
+        self._animation_finished_connected = False
+        self._animation_state_connected = False
 
     def set_collapsed(self, collapsed):
         """Start expansion and collapse animations"""
-        # Disconnect previous connections to prevent signal accumulation
-        try:
+        # Disconnect previous connections only if they were connected
+        if self._animation_finished_connected:
             self.animation.finished.disconnect()
-        except RuntimeError:
-            pass  # Not connected yet
-        try:
+            self._animation_finished_connected = False
+        if self._animation_state_connected:
             self.animation.stateChanged.disconnect()
-        except RuntimeError:
-            pass  # Not connected yet
-            
+            self._animation_state_connected = False
+
         if collapsed:
             super().setText("")
             self.animation.setStartValue(self.width())
@@ -44,10 +47,13 @@ class SidebarButton(QToolButton):
             self.animation.start()
             self.animation.finished.connect(self.finish_collapse_animation)
             self.animation.stateChanged.connect(self.finish_collapse_animation)
+            self._animation_finished_connected = True
+            self._animation_state_connected = True
         else:
             self.animation.setStartValue(self.width())
             self.animation.start()
             self.animation.finished.connect(self.finish_expand_animation)
+            self._animation_finished_connected = True
 
     def finish_collapse_animation(self):
         """Remove text from button to only show icon"""
@@ -59,9 +65,7 @@ class SidebarButton(QToolButton):
 
     def create_size_policy(self):
         """Custom size policy that enables resizing"""
-        size_policy = QSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
+        size_policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         size_policy.setHorizontalStretch(0)
         size_policy.setVerticalStretch(0)
         size_policy.setHeightForWidth(self.parent().hasHeightForWidth())

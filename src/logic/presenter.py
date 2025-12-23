@@ -1,9 +1,8 @@
-"""
-Presenter class that connects view events to model logic and acts as a bridge
+"""Presenter class that connects view events to model logic and acts as a bridge
 between graphical user interface and actual data.
 """
 
-from typing import Callable, Dict, List
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QWidget
@@ -12,10 +11,13 @@ from src.gui.scripts.voltage_unit.calibration import CalibrationPage
 from src.gui.scripts.voltage_unit.guard import GuardPage
 from src.gui.scripts.voltage_unit.session_and_coeffs import SessionAndCoeffsPage
 from src.gui.scripts.voltage_unit.tests import TestsPage
+from src.logging_config import get_logger
 from src.logic.vu_service import VoltageUnitService
 from src.gui.sidebar_button import SidebarButton
 from src.logic.action_dataclass import ActionDescriptor
 from src.logic.model.actions_model import ActionModel, ActionsByHardwareProxy
+
+logger = get_logger(__name__)
 
 
 # Page factory type: takes parent widget and service, returns page widget
@@ -23,7 +25,7 @@ PageFactory = Callable[[QWidget, VoltageUnitService], QWidget]
 
 # Registry mapping page_id to factory function
 # To add a new page, simply add an entry here - no if-elif changes needed (OCP)
-PAGE_FACTORIES: Dict[str, PageFactory] = {
+PAGE_FACTORIES: dict[str, PageFactory] = {
     "workbench": lambda parent, svc: SessionAndCoeffsPage(parent, svc),
     "calibration": lambda parent, svc: CalibrationPage(parent, svc),
     "test": lambda parent, svc: TestsPage(parent, svc),
@@ -37,10 +39,11 @@ class ActionsPresenter(QObject):
     def __init__(
         self,
         widget,
-        buttons: List[SidebarButton],
+        buttons: list[SidebarButton],
         actions: list[ActionDescriptor],
     ):
         super().__init__(widget)
+        logger.debug("ActionsPresenter initializing")
         self.widget = widget
         self.service = VoltageUnitService()
         self.model = ActionModel(actions)
@@ -52,6 +55,7 @@ class ActionsPresenter(QObject):
                 lambda checked, btn=button: checked
                 and self.proxy.set_hardware_id(btn.property("id"))
             )
+        logger.info(f"ActionsPresenter initialized with {len(actions)} actions")
 
     def connect_actions_and_stacked_view(self, actions: list[ActionDescriptor]) -> None:
         """Register page factories for each action and bind to list view.
@@ -67,6 +71,9 @@ class ActionsPresenter(QObject):
                     action.page_id,
                     lambda f=factory: f(self.widget.stacked_widget, self.service),
                 )
+                logger.debug(f"Registered page factory: {action.page_id}")
+            else:
+                logger.warning(f"No factory registered for page_id: {action.page_id}")
 
         self.widget.stacked_widget.bind_to_listview(
             self.widget.list_view, role=ActionModel.page_id_role

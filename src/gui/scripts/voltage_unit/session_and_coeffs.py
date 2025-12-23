@@ -19,11 +19,15 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 
+from src.config import config
 from src.gui.styles import Styles
 from src.gui.utils.gui_helpers import append_log
 from src.gui.utils.widget_factories import create_console_widget
+from src.logging_config import get_logger
 from src.logic.qt_workers import run_in_thread
 from src.logic.vu_service import VoltageUnitService
+
+logger = get_logger(__name__)
 
 
 class SessionAndCoeffsPage(QWidget):
@@ -66,7 +70,7 @@ class SessionAndCoeffsPage(QWidget):
         connLayout = QFormLayout(connBox)
         connLayout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self.le_scope_ip = QLineEdit("192.168.68.154")
+        self.le_scope_ip = QLineEdit(config.hardware.default_scope_ip)
         ip_re = QRegularExpression(
             r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$"
         )
@@ -83,17 +87,18 @@ class SessionAndCoeffsPage(QWidget):
         idBox = QGroupBox("Hardware IDs")
         idLayout = QGridLayout(idBox)
 
+        hw = config.hardware
         self.sp_vu_serial = QSpinBox()
-        self.sp_vu_serial.setRange(0, 9999)
+        self.sp_vu_serial.setRange(0, hw.vu_serial_max)
         self.sp_vu_serial.setValue(0)
         self.sp_vu_interface = QSpinBox()
-        self.sp_vu_interface.setRange(0, 99)
+        self.sp_vu_interface.setRange(0, hw.vu_interface_max)
         self.sp_vu_interface.setValue(0)
         self.sp_mcu_serial = QSpinBox()
-        self.sp_mcu_serial.setRange(0, 9999)
+        self.sp_mcu_serial.setRange(0, hw.mcu_serial_max)
         self.sp_mcu_serial.setValue(0)
         self.sp_mcu_interface = QSpinBox()
-        self.sp_mcu_interface.setRange(0, 99)
+        self.sp_mcu_interface.setRange(0, hw.mcu_interface_max)
         self.sp_mcu_interface.setValue(0)
 
         idLayout.addWidget(QLabel("VU Serial:"), 0, 0)
@@ -124,7 +129,7 @@ class SessionAndCoeffsPage(QWidget):
         self.grid.addWidget(topWidget, 1, 0, 1, 1)
 
         # ==== Console (using factory) ====
-        self.console = create_console_widget(max_block_count=10000)
+        self.console = create_console_widget(max_block_count=config.console.max_block_count_small)
         self.grid.addWidget(self.console, 2, 0, 1, 1)
 
         self.grid.setRowStretch(2, 1)
@@ -209,6 +214,7 @@ class SessionAndCoeffsPage(QWidget):
                 self._on_scope_verified_changed(True)
 
         except Exception as exc:
+            logger.error(f"Scope ping failed with exception: {exc}")
             self._log(f"Ping failed with exception: {exc}")
             self.service.set_scope_verified(False)
             self._on_scope_verified_changed(False)

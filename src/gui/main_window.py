@@ -1,7 +1,5 @@
 """Main Window of the application"""
 
-from typing import List
-
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -51,9 +49,9 @@ class MainWindow(QMainWindow):
         self.splitter: ExpandingSplitter | None = None
         self.sidebar: QWidget | None = None
         self.list_view: HidingListView | None = None
-        self.actions: List[ActionDescriptor] | None = None
+        self.actions: list[ActionDescriptor] | None = None
         self.presenter: ActionsPresenter | None = None
-        self.buttons: List[SidebarButton] = build_tool_buttons(self, HARDWARE)
+        self.buttons: list[SidebarButton] = build_tool_buttons(self, HARDWARE)
         self.stacked_widget = self.ui.stackedWidget
         self.setup_splitter()
         self.presenter.connect_actions_and_stacked_view(self.actions)
@@ -105,7 +103,8 @@ class MainWindow(QMainWindow):
             else:
                 self.dragging = True
                 self.drag_position = (
-                event.globalPosition().toPoint() - self.frameGeometry().topLeft())
+                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                )
             event.accept()
 
     def mouseMoveEvent(self, event):

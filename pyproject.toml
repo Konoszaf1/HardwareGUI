@@ -1,5 +1,37 @@
 [tool.ruff]
 line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "D",      # pydocstyle
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "D100",   # Missing docstring in public module
+    "D101",   # Missing docstring in public class
+    "D102",   # Missing docstring in public method
+    "D103",   # Missing docstring in public function
+    "D104",   # Missing docstring in public package
+    "D105",   # Missing docstring in magic method
+    "D107",   # Missing docstring in __init__
+    "D200",   # One-line docstring should fit on one line
+    "D205",   # 1 blank line required between summary and description
+    "D212",   # Multi-line docstring summary should start at first line
+    "D415",   # First line should end with punctuation
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
 
 [tool.mypy]
 strict = true
@@ -7,6 +39,7 @@ strict = true
 [project]
 name = "HardwareGUI"
 version = "0.0.1"
+requires-python = ">=3.12"
 dependencies = [
     "cython==3.2.0",
     "h5py>=3.15.1",
@@ -42,5 +75,12 @@ dev = [
     "ruff==0.12.3",
     "shiboken6==6.9.1",
     "numpy",
-    "matplotlib"
+    "matplotlib",
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "pytest-cov>=4.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

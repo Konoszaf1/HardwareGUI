@@ -6,19 +6,19 @@ from PySide6.QtCore import (
     QEvent,
     QEasingCurve,
     QVariantAnimation,
-    QAbstractAnimation, QPropertyAnimation,
+    QAbstractAnimation,
 )
+
+from src.config import config
 
 
 class ExpandingSplitter(QSplitter):
-    """
-    An expanding sidebar that shows button text over the side list on hover
-    """
+    """An expanding sidebar that shows button text over the side list on hover"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._collapsed_width = 30
-        self._expanded_width = 250
+        self._collapsed_width = config.ui.sidebar_collapsed_width
+        self._expanded_width = config.ui.sidebar_expanded_width
         self.setMinimumWidth(self._collapsed_width)
         self.setMaximumWidth(self._expanded_width)
         self.buttons = []
@@ -32,7 +32,7 @@ class ExpandingSplitter(QSplitter):
         # Button's description will expand after timer timeout
         self.expand_timer = QTimer(self)
         self.expand_timer.setSingleShot(True)
-        self.expand_timer.setInterval(350)
+        self.expand_timer.setInterval(config.ui.expand_hover_delay_ms)
         self.expand_timer.timeout.connect(self.expand)
         # Button's description will collapse after timer timeout
         self.collapse_timer = QTimer()
@@ -40,20 +40,20 @@ class ExpandingSplitter(QSplitter):
         self.collapse_timer.timeout.connect(self.collapse)
         # Animation for expanding
         self._animation = QVariantAnimation(self)
-        self._animation.setDuration(500)
+        self._animation.setDuration(config.ui.animation_duration_ms)
         self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        # Track connected signal handler to avoid disconnect warnings
+        self._animation_value_connected = False
 
     def set_sidebar(self, sidebar: QWidget):
-        """
-        Sidebar attribute setter
+        """Sidebar attribute setter
         :param sidebar: The sidebar Widget that contains all SidebarButtons
         """
         self.sidebar = sidebar
         self.setCollapsible(0, False)
 
     def set_listview(self, listview: QListView):
-        """
-        ListView attribute setter
+        """ListView attribute setter
         :param listview: The QListView Widget that contains all actions
         """
         self.listview = listview
@@ -92,46 +92,61 @@ class ExpandingSplitter(QSplitter):
         self.expand_timer.stop()
         if self._animation.state() == QAbstractAnimation.State.Running:
             self._animation.stop()
-        self.collapse_timer.start(200)
+        self.collapse_timer.start(config.ui.collapse_hover_delay_ms)
 
     def expand(self):
-        """Expand the sidebar and hide the list view"""
+        """Expand the sidebar and hide the list view.
+
+        Animates the splitter to show the full sidebar width and updates
+        button states to show text labels.
+        """
         if self._is_expanded:
             return
-        # Disconnect previous connections to prevent signal accumulation
-        try:
+        # Disconnect previous connection only if it was connected
+        if self._animation_value_connected:
             self._animation.valueChanged.disconnect()
-        except RuntimeError:
-            pass  # Not connected yet
+            self._animation_value_connected = False
         self._animation.setStartValue(self.sizes()[1])
         self._animation.setEndValue(0)
         self._animation.valueChanged.connect(lambda v: self.expand_sidebar(v))
+        self._animation_value_connected = True
         self._animation.start()
         # Update button states to show text
         for button in self.buttons:
             button.set_collapsed(False)
 
     def expand_sidebar(self, value):
-        """Handle resizing of the splitter for expansion animation"""
+        """Handle resizing of the splitter for expansion animation.
+
+        Args:
+            value: Current animation value for splitter sizing.
+        """
         self.setSizes([int(self.width() - value), int(value)])
         if value == 0:
             self._is_expanded = True
 
     def collapse_sidebar(self, value):
-        """Handle resizing of the splitter for collapse animation"""
+        """Handle resizing of the splitter for collapse animation.
+
+        Args:
+            value: Current animation value for splitter sizing.
+        """
         self.setSizes([int(self.width() - value), int(value)])
 
-
     def collapse(self):
-        """Collapse the sidebar and show the list view"""
-        # Disconnect previous connections to prevent signal accumulation
-        try:
+        """Collapse the sidebar and show the list view.
+
+        Animates the splitter to show only the collapsed sidebar width
+        and updates button states to hide text labels.
+        """
+        # Disconnect previous connection only if it was connected
+        if self._animation_value_connected:
             self._animation.valueChanged.disconnect()
-        except RuntimeError:
-            pass  # Not connected yet
+            self._animation_value_connected = False
         self._animation.setStartValue(self.sizes()[1])
-        self._animation.setEndValue(self.width()-self._collapsed_width)
+        self._animation.setEndValue(self.width() - self._collapsed_width)
         self._animation.valueChanged.connect(lambda v: self.collapse_sidebar(v))
+        self._animation_value_connected = True
         self._animation.start()
         self._is_expanded = False
 

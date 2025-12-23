@@ -1,16 +1,28 @@
 # gallery_mre.py
 from __future__ import annotations
-import os, sys
+import os
+import sys
 
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QImageReader, QPixmap, QIcon, QAction
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QListWidget, QListWidgetItem,
-    QSplitter, QLabel, QVBoxLayout, QFileDialog, QToolBar, QDialog,
-    QDialogButtonBox, QSizePolicy
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QListWidget,
+    QListWidgetItem,
+    QSplitter,
+    QLabel,
+    QVBoxLayout,
+    QFileDialog,
+    QToolBar,
+    QDialog,
+    QDialogButtonBox,
+    QSizePolicy,
 )
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
+
 
 class ImagePreviewDialog(QDialog):
     def __init__(self, path: str, parent=None):
@@ -34,6 +46,7 @@ class ImagePreviewDialog(QDialog):
         layout.addWidget(self.label)
         layout.addWidget(btns)
         self.resize(900, 700)
+
 
 class GalleryWindow(QMainWindow):
     def __init__(self):
@@ -142,6 +155,7 @@ class GalleryWindow(QMainWindow):
         path = item.data(Qt.UserRole)
         if path:
             ImagePreviewDialog(path, self).exec()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

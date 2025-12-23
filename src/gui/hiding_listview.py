@@ -2,7 +2,7 @@
 size.
 """
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QSizePolicy, QListView
 
 

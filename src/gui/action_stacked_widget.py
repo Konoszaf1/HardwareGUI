@@ -1,6 +1,10 @@
-from typing import Callable, Dict, Optional
-from PySide6.QtCore import Qt, QModelIndex, QObject, Signal, Slot, QItemSelectionModel
+from collections.abc import Callable
+from PySide6.QtCore import Qt, QModelIndex, Signal, Slot, QItemSelectionModel
 from PySide6.QtWidgets import QWidget, QStackedWidget
+
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ActionStackedWidget(QStackedWidget):
@@ -9,7 +13,7 @@ class ActionStackedWidget(QStackedWidget):
     Features
     --------
     - Map arbitrary string IDs to page *factories* (lazy creation)
-    - Switch by ID: calls page.leave() on the old page and page.enter() on the new page if they exist
+    - Switch by ID: calls page.leave() on old page, page.enter() on new page
     - Signal currentPageChanged(id, widget)
     - Convenience: bind_to_selection(selectionModel, role) to route from a QListView/QTreeView
     - get_page(id) to access the live page instance (if created)
@@ -18,11 +22,11 @@ class ActionStackedWidget(QStackedWidget):
 
     currentPageIdChanged = Signal(str, QWidget)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.factories: Dict[str, Callable[[], QWidget]] = {}
-        self.ids_by_index: Dict[int, str] = {}
-        self.index_by_id: Dict[str, int] = {}
+        self.factories: dict[str, Callable[[], QWidget]] = {}
+        self.ids_by_index: dict[int, str] = {}
+        self.index_by_id: dict[str, int] = {}
 
     # ---- Registration ----
     def register_page(self, page_id: str, factory: Callable[[], QWidget]) -> None:
@@ -51,12 +55,16 @@ class ActionStackedWidget(QStackedWidget):
         self.ids_by_index.clear()
         self.index_by_id.clear()
 
-    def bind_to_selection(self, selection_model: QItemSelectionModel, role: int = Qt.ItemDataRole.UserRole) -> None:
+    def bind_to_selection(
+        self, selection_model: QItemSelectionModel, role: int = Qt.ItemDataRole.UserRole
+    ) -> None:
         """Route QListView/QTreeView's currentChanged to show the corresponding page.
 
         The model is expected to store the router page_id at 'role'.
         """
-        selection_model.currentChanged.connect(lambda cur, prev: self.on_current_changed(cur, prev, role))
+        selection_model.currentChanged.connect(
+            lambda cur, prev: self.on_current_changed(cur, prev, role)
+        )
 
     def bind_to_listview(self, list_view, role: int = Qt.UserRole) -> None:
         """Bind after setting the model on a QListView/QTreeView."""
@@ -93,12 +101,12 @@ class ActionStackedWidget(QStackedWidget):
 
         self.setCurrentIndex(idx)
         cur_w = self.currentWidget()
-        print(f"current widget {cur_w}")
+        logger.debug(f"Switched to page: {page_id} -> {cur_w}")
         if cur_w is not None and hasattr(cur_w, "enter"):
             cur_w.show()
         self.currentPageIdChanged.emit(page_id, cur_w)
 
-    def get_page(self, page_id: str) -> Optional[QWidget]:
+    def get_page(self, page_id: str) -> QWidget | None:
         idx = self.index_by_id.get(page_id)
         if idx is None:
             return None

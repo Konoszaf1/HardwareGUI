@@ -1,24 +1,29 @@
+"""VoltageUnitService for hardware communication and task management."""
+
 from __future__ import annotations
 
-import os
+import functools
 import re
 import subprocess
 import threading
+import warnings
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+
+import dpi  # noqa: F401 - required to avoid circular imports
+import matplotlib
+import setup_cal
+import vxi11
+from dpimaincontrolunit.dpimaincontrolunit import DPIMainControlUnit
+from dpivoltageunit.dpivoltageunit import DPIVoltageUnit
 from PySide6.QtCore import QObject, Signal
 
+from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
-from src.logic.qt_workers import make_task, FunctionTask
-# noinspection PyUnusedImports
-import dpi # required to avoid circular imports
-from dpivoltageunit.dpivoltageunit import DPIVoltageUnit
-from dpimaincontrolunit.dpimaincontrolunit import DPIMainControlUnit
-import vxi11
+from src.logic.qt_workers import FunctionTask, make_task
 
-import matplotlib
 matplotlib.use("Agg")
-import setup_cal
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -27,6 +32,7 @@ class TargetIds:
     vu_interface: int = 0
     mcu_serial: int = 0
     mcu_interface: int = 0
+
 
 class VoltageUnitService(QObject):
     """Owns hardware connections and runs script commands in worker threads.
@@ -42,73 +48,113 @@ class VoltageUnitService(QObject):
 
     def __init__(self) -> None:
         super().__init__()
+        logger.debug("VoltageUnitService initializing")
         self._target_scope_ip: str | None = None
         self._targets: TargetIds = TargetIds()
-        self._vu: Optional[DPIVoltageUnit] = None
-        self._mcu: Optional[DPIMainControlUnit] = None
-        self._scope: Optional[vxi11.Instrument] = None
+        self._vu: DPIVoltageUnit | None = None
+        self._mcu: DPIMainControlUnit | None = None
+        self._scope: vxi11.Instrument | None = None
         # Local coeffs dict; we alias the script module's global to this dict
-        self._coeffs: Dict[str, List[float]] = {"CH1": [1.0, 0.0], "CH2": [1.0, 0.0], "CH3": [1.0, 0.0]}
+        self._coeffs: dict[str, list[float]] = {
+            "CH1": [1.0, 0.0],
+            "CH2": [1.0, 0.0],
+            "CH3": [1.0, 0.0],
+        }
         self._connected: bool = False
         self._scope_verified_state: bool = False
         self._hw_lock = threading.Lock()
         self._artifact_manager = ArtifactManager()
-        
+
         # Input redirection
         self._input_event = threading.Event()
         self._input_value: str = ""
+        logger.info("VoltageUnitService initialized")
 
     # ---- Configuration targets ----
-    def set_targets(self, scope_ip: str, vu_serial: int, vu_interface: int, mcu_serial: int, mcu_interface: int) -> None:
+    def set_targets(
+        self,
+        scope_ip: str,
+        vu_serial: int,
+        vu_interface: int,
+        mcu_serial: int,
+        mcu_interface: int,
+    ) -> None:
+        """Set hardware connection targets.
+
+        Args:
+            scope_ip: IP address of the oscilloscope.
+            vu_serial: VoltageUnit serial number.
+            vu_interface: VoltageUnit interface number.
+            mcu_serial: MainControlUnit serial number.
+            mcu_interface: MainControlUnit interface number.
+        """
         self._target_scope_ip = scope_ip or getattr(self, "_target_scope_ip", "")
         self._targets = TargetIds(vu_serial, vu_interface, mcu_serial, mcu_interface)
 
     def set_scope_ip(self, ip: str) -> None:
+        """Set the oscilloscope IP address.
+
+        Resets verification state if the IP changes.
+
+        Args:
+            ip: New IP address for the oscilloscope.
+        """
         if not self._target_scope_ip or self._target_scope_ip != ip:
             self._target_scope_ip = ip
             self.set_scope_verified(False)
 
     def set_scope_verified(self, verified: bool) -> None:
+        """Update scope verification state and emit signal if changed.
+
+        Args:
+            verified: Whether the scope connection is verified.
+        """
         if self._scope_verified_state != verified:
             self._scope_verified_state = verified
             self.scopeVerified.emit(verified)
 
     def require_scope_ip(func):
         """Decorator to check if scope IP is set before running a task.
-        
+
         Returns None with a warning if scope IP is not configured.
         Callers should check for None return values.
         """
-        import functools
-        import warnings
-        
+
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             if not getattr(self, "_target_scope_ip", ""):
                 warnings.warn(
                     f"{func.__name__}() requires scope IP to be configured. "
                     "Call set_scope_ip() first.",
-                    stacklevel=2
+                    stacklevel=2,
                 )
                 return None
             with self._hw_lock:
                 self._ensure_connected()
                 return func(self, *args, **kwargs)
+
         return wrapper
 
     def ping_scope(self) -> bool:
-        """Pings the scope IP address. Returns True if reachable."""
+        """Ping the scope IP address to verify connectivity.
+
+        Returns:
+            True if the scope is reachable, False otherwise.
+        """
+        logger.info(f"Pinging scope at {self._target_scope_ip}")
         try:
             # -c 1: send 1 packet
             # -W 1: wait 1 second for response
             subprocess.check_call(
                 ["ping", "-c", "1", "-W", "1", self._target_scope_ip],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
             )
+            logger.info("Scope ping successful")
             self.set_scope_verified(True)
             return True
         except subprocess.CalledProcessError:
+            logger.warning(f"Scope ping failed for {self._target_scope_ip}")
             self.set_scope_verified(False)
             return False
 
@@ -122,7 +168,7 @@ class VoltageUnitService(QObject):
         return self._scope_verified_state
 
     @property
-    def coeffs(self) -> Dict[str, List[float]]:
+    def coeffs(self) -> dict[str, list[float]]:
         return self._coeffs
 
     # ---- Internals ----
@@ -139,8 +185,12 @@ class VoltageUnitService(QObject):
 
         if vu_serial == 0 or mcu_serial == 0:
             # Linux-specific discovery, mirrors script
-            vu = subprocess.check_output('lsusb -v | grep "Voltage Unit" -A1', shell=True, text=True)
-            mu = subprocess.check_output('lsusb -v | grep "Main Control Unit" -A1', shell=True, text=True)
+            vu = subprocess.check_output(
+                'lsusb -v | grep "Voltage Unit" -A1', shell=True, text=True
+            )
+            mu = subprocess.check_output(
+                'lsusb -v | grep "Main Control Unit" -A1', shell=True, text=True
+            )
             vu_serial, vu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", vu)[0])
             mcu_serial, mcu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", mu)[0])
 
@@ -164,13 +214,14 @@ class VoltageUnitService(QObject):
             self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
         setup_cal.coeffs = self._coeffs
         self._connected = True
+        logger.info(f"Hardware connected: VU serial={setup_cal.VU_SERIAL}")
         self.connectedChanged.emit(True)
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
         return self._artifact_manager.get_artifact_dir(setup_cal.VU_SERIAL)
 
-    def _collect_artifacts(self) -> List[str]:
+    def _collect_artifacts(self) -> list[str]:
         """Collect all artifact files for the current voltage unit."""
         return self._artifact_manager.collect_artifacts(setup_cal.VU_SERIAL)
 
@@ -181,9 +232,10 @@ class VoltageUnitService(QObject):
             self._ensure_connected()
             # Touch scope to read IDN (side effect: prints to log via worker capture)
             try:
-                _ = self._scope.ask("*IDN?")
-            except Exception:
-                pass
+                idn = self._scope.ask("*IDN?")
+                logger.debug(f"Scope IDN: {idn}")
+            except Exception as e:
+                logger.warning(f"Failed to read scope IDN: {e}")
             return {"coeffs": self._coeffs}
 
         return make_task("connect_and_read", job)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from src.config import config
 from src.gui.scripts.base_page import BaseHardwarePage
 from src.logic.vu_service import VoltageUnitService
 
@@ -61,7 +62,9 @@ class GuardPage(BaseHardwarePage):
         self.grid.addItem(spacer, 4, 0, 1, 1)
 
         # ==== Right: console (from base class) ====
-        self.grid.addWidget(self._create_console(max_block_count=10000), 2, 1, 3, 1)
+        self.grid.addWidget(
+            self._create_console(max_block_count=config.console.max_block_count_small), 2, 1, 3, 1
+        )
 
         self.grid.setColumnStretch(1, 1)
         self.grid.setRowStretch(3, 2)
@@ -93,7 +96,8 @@ class GuardPage(BaseHardwarePage):
             QMessageBox.question(
                 self,
                 "Confirm Guard",
-                "Make sure the scope is not connected when setting a signal to the guard!\n\nProceed?",
+                "Make sure the scope is not connected when setting "
+                "a signal to the guard!\n\nProceed?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )

@@ -16,25 +16,27 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
+from src.config import config
 from src.gui.styles import Styles
 
 
-def create_console_widget(max_block_count: int = 20000) -> QPlainTextEdit:
+def create_console_widget(max_block_count: int | None = None) -> QPlainTextEdit:
     """Create a read-only console widget with Dracula theme styling.
 
     Args:
-        max_block_count: Maximum number of lines to retain in the console.
+        max_block_count: Maximum number of lines to retain. Defaults to config value.
 
     Returns:
         Configured QPlainTextEdit widget.
     """
+    if max_block_count is None:
+        max_block_count = config.console.max_block_count
+
     console = QPlainTextEdit()
     console.setObjectName("console")
     console.setReadOnly(True)
     console.setUndoRedoEnabled(False)
-    console.setTextInteractionFlags(
-        Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard
-    )
+    console.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
     console.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
     console.setMaximumBlockCount(max_block_count)
     console.setStyleSheet(Styles.CONSOLE)
@@ -42,20 +44,28 @@ def create_console_widget(max_block_count: int = 20000) -> QPlainTextEdit:
 
 
 def create_artifact_list_widget(
-    icon_size: QSize = QSize(128, 128),
-    grid_size: QSize = QSize(140, 160),
-    spacing: int = 10,
+    icon_size: QSize | None = None,
+    grid_size: QSize | None = None,
+    spacing: int | None = None,
 ) -> QListWidget:
     """Create a horizontal icon-mode list for artifact thumbnails.
 
     Args:
-        icon_size: Size of thumbnail icons.
-        grid_size: Size of grid cells.
-        spacing: Spacing between items.
+        icon_size: Size of thumbnail icons. Defaults to config value.
+        grid_size: Size of grid cells. Defaults to config value.
+        spacing: Spacing between items. Defaults to config value.
 
     Returns:
         Configured QListWidget widget.
     """
+    cfg = config.thumbnails
+    if icon_size is None:
+        icon_size = QSize(cfg.icon_size, cfg.icon_size)
+    if grid_size is None:
+        grid_size = QSize(cfg.grid_width, cfg.grid_height)
+    if spacing is None:
+        spacing = cfg.spacing
+
     list_widget = QListWidget()
     list_widget.setObjectName("artifacts")
     list_widget.setMovement(QListView.Movement.Static)

@@ -1,42 +1,55 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit
 
+from src.config import config
 
-THUMBNAIL_SIZE = QSize(128, 128)
+THUMBNAIL_SIZE = QSize(config.thumbnails.icon_size, config.thumbnails.icon_size)
+
+# ANSI escape code to HTML span mapping
+# Maps common terminal color codes to styled HTML spans
+_ANSI_TO_HTML = {
+    "\033[31m": '<span style="color: #ff5555;">',  # Red
+    "\033[32m": '<span style="color: #50fa7b;">',  # Green
+    "\033[33m": '<span style="color: #f1fa8c;">',  # Yellow
+    "\033[34m": '<span style="color: #8be9fd;">',  # Blue
+    "\033[35m": '<span style="color: #ff79c6;">',  # Magenta
+    "\033[36m": '<span style="color: #8be9fd;">',  # Cyan
+    "\033[1m": '<span style="font-weight: bold; color: #ffffff;">',  # Bold
+    "\033[0m": "</span>",  # Reset
+}
+
+
+def _convert_ansi_to_html(text: str) -> str:
+    """Convert ANSI escape codes to HTML spans.
+
+    Args:
+        text: Text potentially containing ANSI escape codes.
+
+    Returns:
+        Text with ANSI codes replaced by HTML spans.
+    """
+    for ansi_code, html_span in _ANSI_TO_HTML.items():
+        text = text.replace(ansi_code, html_span)
+    return text
 
 
 def append_log(console: QPlainTextEdit, text: str) -> None:
     """Append a line to a QPlainTextEdit, parsing ANSI color codes."""
     if not console:
         return
-    
-    # Basic ANSI to HTML conversion
-    # This is a simplified parser for common colors used in the script
+
     line = text.rstrip("\n")
-    
-    # Replace ANSI color codes with HTML spans
-    # Red
-    line = line.replace("\033[31m", '<span style="color: #ff5555;">')
-    # Green
-    line = line.replace("\033[32m", '<span style="color: #50fa7b;">')
-    # Bold / Bright (often used for headers)
-    line = line.replace("\033[1m", '<span style="font-weight: bold; color: #ffffff;">')
-    # Reset
-    line = line.replace("\033[0m", '</span>')
-    
-    # Handle newlines for HTML
+    line = _convert_ansi_to_html(line)
     line = line.replace("\n", "<br>")
-    
     console.appendHtml(line)
 
 
-def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: Optional[str] = None) -> None:
+def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: str | None = None) -> None:
     """Add or update a thumbnail item for an image file to the given QListWidget.
 
     - Uses IconMode settings already configured by the page.

@@ -6,27 +6,31 @@ artifact watching, and service signal handling.
 """
 
 import os
-from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget,
-    QPlainTextEdit,
     QLineEdit,
     QListWidget,
+    QPlainTextEdit,
     QPushButton,
+    QWidget,
 )
 
 import setup_cal
-from src.gui.utils.gui_helpers import append_log
+from src.config import config
 from src.gui.utils.artifact_watcher import ArtifactWatcher
+from src.gui.utils.gui_helpers import append_log
+from src.gui.utils.image_viewer import ImageViewerDialog
 from src.gui.utils.widget_factories import (
-    create_console_widget,
     create_artifact_list_widget,
+    create_console_widget,
     create_input_field,
 )
+from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, run_in_thread
 from src.logic.vu_service import VoltageUnitService
+
+logger = get_logger(__name__)
 
 
 class BaseHardwarePage(QWidget):
@@ -49,27 +53,29 @@ class BaseHardwarePage(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
-        service: Optional[VoltageUnitService] = None,
+        parent: QWidget | None = None,
+        service: VoltageUnitService | None = None,
     ):
         super().__init__(parent)
         self.service = service
-        self._active_task: Optional[FunctionTask] = None
-        self._artifact_watcher: Optional[ArtifactWatcher] = None
+        self._active_task: FunctionTask | None = None
+        self._artifact_watcher: ArtifactWatcher | None = None
         self._busy = False
 
         # Widgets to be added to subclass layouts
-        self.console: Optional[QPlainTextEdit] = None
-        self.le_input: Optional[QLineEdit] = None
-        self.listWidget: Optional[QListWidget] = None
+        self.console: QPlainTextEdit | None = None
+        self.le_input: QLineEdit | None = None
+        self.listWidget: QListWidget | None = None
 
         # Buttons to enable/disable during task execution
         self._action_buttons: list[QPushButton] = []
 
     # ---- Widget factories ----
 
-    def _create_console(self, max_block_count: int = 20000) -> QPlainTextEdit:
+    def _create_console(self, max_block_count: int | None = None) -> QPlainTextEdit:
         """Create and return a styled console widget."""
+        if max_block_count is None:
+            max_block_count = config.console.max_block_count
         self.console = create_console_widget(max_block_count)
         return self.console
 
@@ -88,7 +94,14 @@ class BaseHardwarePage(QWidget):
     # ---- Busy state management ----
 
     def _set_busy(self, busy: bool) -> None:
-        """Enable/disable action buttons based on busy state."""
+        """Enable or disable action buttons based on busy state.
+
+        When busy, all registered action buttons are disabled to prevent
+        concurrent task execution.
+
+        Args:
+            busy: True to enter busy state, False to enable buttons.
+        """
         self._busy = busy
         for btn in self._action_buttons:
             btn.setEnabled(not busy)
@@ -96,7 +109,11 @@ class BaseHardwarePage(QWidget):
     # ---- Task lifecycle ----
 
     def _ensure_artifact_watcher(self) -> None:
-        """Set up artifact watcher if VU_SERIAL is known."""
+        """Set up artifact watcher if VU_SERIAL is known and list widget exists.
+
+        Creates an ArtifactWatcher to monitor the calibration artifact directory
+        for file changes and update thumbnails accordingly.
+        """
         if self._artifact_watcher or not setup_cal.VU_SERIAL:
             return
         if self.listWidget is None:
@@ -106,15 +123,17 @@ class BaseHardwarePage(QWidget):
         self._artifact_watcher = ArtifactWatcher(self.listWidget, self)
         self._artifact_watcher.setup(artifact_dir)
 
-    def _start_task(self, task: Optional[FunctionTask]) -> None:
+    def _start_task(self, task: FunctionTask | None) -> None:
         """Start a task with signal connections and lifecycle management.
 
         Args:
             task: FunctionTask instance from VoltageUnitService, or None.
         """
         if not task:
+            logger.warning("_start_task called with None task")
             return
 
+        logger.info(f"Starting task: {task}")
         self._active_task = task
         self._ensure_artifact_watcher()
 
@@ -123,7 +142,9 @@ class BaseHardwarePage(QWidget):
 
         signals.started.connect(lambda: self._log("Started."))
         signals.log.connect(lambda s: append_log(self.console, s))
-        signals.error.connect(lambda e: self._log(f"Error: {e}"))
+        signals.error.connect(
+            lambda e: (logger.error(f"Task error: {e}"), self._log(f"Error: {e}"))
+        )
 
         def _finished(result):
             self._set_busy(False)
@@ -159,8 +180,6 @@ class BaseHardwarePage(QWidget):
         """Open image viewer dialog for the clicked thumbnail."""
         path = item.data(Qt.UserRole)
         if path:
-            from src.gui.utils.image_viewer import ImageViewerDialog
-
             dlg = ImageViewerDialog(path, self)
             dlg.exec()
 

@@ -6,7 +6,6 @@ generated during calibration, following Single Responsibility Principle.
 
 import glob
 import os
-from typing import List
 
 
 class ArtifactManager:
@@ -33,11 +32,9 @@ class ArtifactManager:
         Returns:
             Absolute path to the artifact directory.
         """
-        return os.path.abspath(
-            os.path.join(self._base_dir, f"calibration_vu{vu_serial}")
-        )
+        return os.path.abspath(os.path.join(self._base_dir, f"calibration_vu{vu_serial}"))
 
-    def collect_artifacts(self, vu_serial: int) -> List[str]:
+    def collect_artifacts(self, vu_serial: int) -> list[str]:
         """Collect all PNG artifacts for a voltage unit.
 
         Priority files (output.png, ramp.png, transient.png) are listed first,
@@ -50,7 +47,7 @@ class ArtifactManager:
             List of absolute paths to artifact files, deduplicated.
         """
         artifact_dir = self.get_artifact_dir(vu_serial)
-        paths: List[str] = []
+        paths: list[str] = []
 
         # Priority files first
         for name in ("output.png", "ramp.png", "transient.png"):
@@ -63,7 +60,7 @@ class ArtifactManager:
 
         # Deduplicate while preserving order
         seen = set()
-        unique: List[str] = []
+        unique: list[str] = []
         for p in paths:
             if p not in seen:
                 unique.append(p)
