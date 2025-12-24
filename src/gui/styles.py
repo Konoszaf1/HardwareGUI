@@ -44,3 +44,15 @@ class Styles:
     BUTTON_SUCCESS = "background-color: #50fa7b; color: #282a36; font-weight: bold;"
     BUTTON_ERROR = "background-color: #ff5555; color: white; font-weight: bold;"
     BUTTON_ACCENT = "background-color: #6272a4; color: white; font-weight: bold;"
+
+    # Sidebar tooltip (VS Code-like style with Dracula theme)
+    SIDEBAR_TOOLTIP = """
+        QLabel {
+            background-color: #1e1e2e;
+            color: #f8f8f2;
+            border: none;
+            border-left: 3px solid #8be9fd;
+            padding: 4px 8px;
+            font-size: 10pt;
+        }
+    """

@@ -94,7 +94,7 @@ graph TD
     Service -->|Spawns| Workers
     Workers -->|I/O| Hardware
     Workers -->|Signals| Presenter
-    Model -->|Proivdes Structure| View
+    Model -->|Provides Structure| View
 ```
 
 ### Component Roles

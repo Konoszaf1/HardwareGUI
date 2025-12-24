@@ -22,10 +22,11 @@ class UIConfig:
     sidebar_expanded_width: int = 250
     sidebar_collapsed_width: int = 50
     animation_duration_ms: int = 500
-    expand_hover_delay_ms: int = 350
+    expand_hover_delay_ms: int = 10000
     collapse_hover_delay_ms: int = 200
     window_min_width: int = 900
     window_min_height: int = 600
+    sidebar_button_icon_size: int = 24
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,14 @@ class DialogConfig:
     image_viewer_height: int = 600
 
 
+@dataclass(frozen=True)
+class TooltipConfig:
+    """Sidebar tooltip configuration."""
+
+    show_delay_ms: int = 400
+    grace_period_ms: int = 300
+
+
 @dataclass
 class AppConfig:
     """Root application configuration.
@@ -79,6 +88,7 @@ class AppConfig:
     thumbnails: ThumbnailConfig = field(default_factory=ThumbnailConfig)
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
     dialogs: DialogConfig = field(default_factory=DialogConfig)
+    tooltip: TooltipConfig = field(default_factory=TooltipConfig)
 
     # Logging configuration (can be overridden by env vars)
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))

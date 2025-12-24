@@ -1,78 +1,101 @@
-"""Custom Button Type to handle expansion and collapse of the sidebar"""
+"""Custom Button Type to handle expansion and collapse of the sidebar."""
 
-from PySide6.QtWidgets import QToolButton, QSizePolicy
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtWidgets import QSizePolicy, QToolButton
 
 from src.config import config
+from src.gui.animation_mixin import AnimatedPropertyMixin
+from src.gui.sidebar_tooltip import TooltipManager
 
 
-class SidebarButton(QToolButton):
-    """Custom implementation consists of expanding and collapsing animation"""
+class SidebarButton(QToolButton, AnimatedPropertyMixin):
+    """Sidebar button with animated expand/collapse behavior.
+
+    Uses configuration values for icon size and collapsed width to ensure
+    consistency across the application. Tooltip timing is managed by TooltipManager.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._full_text = ""
-        self.setIconSize(QSize(24, 24))
-        self.size_policy = self.create_size_policy()
+        self._original_text: str | None = None
+        self._tooltip_registered: bool = False
+
+        # Use config for icon size instead of hardcoded value
+        icon_size = config.ui.sidebar_button_icon_size
+        self.setIconSize(QSize(icon_size, icon_size))
+
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.setCheckable(True)
         self.setChecked(False)
         self.setAutoExclusive(True)
         self.setAutoRaise(False)
-        self.setSizePolicy(self.size_policy)
+        self.setSizePolicy(self._create_size_policy())
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._original_text = None
-        # Animation for smooth text appearance
-        self.animation = QPropertyAnimation(self, b"minimumWidth")
-        self.animation.setDuration(config.ui.animation_duration_ms)
-        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        # Track connected signal handlers to avoid disconnect warnings
-        self._animation_finished_connected = False
-        self._animation_state_connected = False
 
-    def set_collapsed(self, collapsed):
-        """Start expansion and collapse animations"""
-        # Disconnect previous connections only if they were connected
-        if self._animation_finished_connected:
-            self.animation.finished.disconnect()
-            self._animation_finished_connected = False
-        if self._animation_state_connected:
-            self.animation.stateChanged.disconnect()
-            self._animation_state_connected = False
+        # Setup animation using mixin
+        self.setup_property_animation(b"minimumWidth")
 
-        if collapsed:
-            super().setText("")
-            self.animation.setStartValue(self.width())
-            self.animation.setEndValue(50)
-            self.animation.start()
-            self.animation.finished.connect(self.finish_collapse_animation)
-            self.animation.stateChanged.connect(self.finish_collapse_animation)
-            self._animation_finished_connected = True
-            self._animation_state_connected = True
-        else:
-            self.animation.setStartValue(self.width())
-            self.animation.start()
-            self.animation.finished.connect(self.finish_expand_animation)
-            self._animation_finished_connected = True
-
-    def finish_collapse_animation(self):
-        """Remove text from button to only show icon"""
-        super().setText("")
-
-    def finish_expand_animation(self):
-        """After full expansion show button text"""
-        super().setText(f" {self._original_text}")
-
-    def create_size_policy(self):
-        """Custom size policy that enables resizing"""
+    def _create_size_policy(self) -> QSizePolicy:
+        """Create custom size policy that enables resizing."""
         size_policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         size_policy.setHorizontalStretch(0)
         size_policy.setVerticalStretch(0)
-        size_policy.setHeightForWidth(self.parent().hasHeightForWidth())
+        if self.parent():
+            size_policy.setHeightForWidth(self.parent().hasHeightForWidth())
         return size_policy
 
-    def setText(self, text):
-        """Handle setting and unsetting and storing button text"""
+    def _ensure_registered(self) -> None:
+        """Register with tooltip manager if not already done."""
+        if not self._tooltip_registered and self._original_text:
+            TooltipManager.instance().register_button(self, self._original_text)
+            self._tooltip_registered = True
+
+    def enterEvent(self, event: QEvent) -> None:
+        """Show tooltip when mouse enters button."""
+        self._ensure_registered()
+        TooltipManager.instance().on_button_enter(self)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:
+        """Hide tooltip when mouse leaves button."""
+        TooltipManager.instance().on_button_leave(self)
+        super().leaveEvent(event)
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Animate button between collapsed and expanded states.
+
+        Args:
+            collapsed: True to collapse (icon only), False to expand (show text).
+        """
+        if collapsed:
+            super().setText("")
+            self.animate_property(
+                start_value=self.width(),
+                end_value=config.ui.sidebar_collapsed_width,
+                on_finished=self._on_collapse_finished,
+            )
+        else:
+            self.animate_property(
+                start_value=self.width(),
+                end_value=config.ui.sidebar_expanded_width,
+                on_finished=self._on_expand_finished,
+            )
+
+    def _on_collapse_finished(self) -> None:
+        """Clear text after collapse animation completes."""
+        super().setText("")
+
+    def _on_expand_finished(self) -> None:
+        """Restore text after expand animation completes."""
+        if self._original_text:
+            super().setText(f" {self._original_text}")
+
+    def setText(self, text: str) -> None:
+        """Store original text and set button text.
+
+        Args:
+            text: The text to display on the button.
+        """
         if not self._original_text:
             self._original_text = text
         super().setText(text)

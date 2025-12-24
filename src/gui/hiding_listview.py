@@ -1,13 +1,13 @@
-"""Custom QListView Wrapper that hides when collapsed by returning a zero hint
+"""Custom QListView subclass that hides when collapsed by returning a zero hint
 size.
 """
 
 from PySide6.QtCore import QSize
-from PySide6.QtWidgets import QSizePolicy, QListView
+from PySide6.QtWidgets import QListView, QSizePolicy
 
 
 class HidingListView(QListView):
-    """QListView variant that can shrink to zero width within a splitter."""
+    """QListView subclass that can shrink to zero width within a splitter."""
 
     def __init__(self, child, parent=None):
         """Initialize the list view with expanding policies.
