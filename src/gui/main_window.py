@@ -1,10 +1,12 @@
 """Main Window of the application"""
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QMainWindow,
+    QMenu,
+    QMenuBar,
     QWidget,
 )
 
@@ -67,6 +69,12 @@ class MainWindow(QMainWindow):
 
         # Connect scope verification to status bar (global, not per-page)
         self.presenter.service.scopeVerified.connect(self._on_scope_status_changed)
+
+        # Menu bar setup
+        self._setup_menu_bar()
+
+        # Title bar styling
+        self._style_title_bar()
 
         # Window Specific Setup
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
@@ -146,3 +154,67 @@ class MainWindow(QMainWindow):
     def _on_hardware_selected(self, hardware_id: int) -> None:
         """Handle hardware selection changes for status bar state."""
         StatusBarService.instance().set_active_hardware(hardware_id)
+
+    def _setup_menu_bar(self) -> None:
+        """Create and configure the application menu bar."""
+        # Create menu bar (custom, since window is frameless)
+        menu_bar = QMenuBar(self)
+        menu_bar.setStyleSheet(Styles.MENU_BAR)
+        menu_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        # File menu
+        file_menu = QMenu("File", self)
+
+        # Settings action
+        settings_action = QAction("Settings...", self)
+        settings_action.triggered.connect(self._on_settings)
+        file_menu.addAction(settings_action)
+
+        file_menu.addSeparator()
+
+        # Exit action
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        menu_bar.addMenu(file_menu)
+
+        # Edit menu (placeholder for future)
+        edit_menu = QMenu("Edit", self)
+        menu_bar.addMenu(edit_menu)
+
+        # View menu (placeholder for future)
+        view_menu = QMenu("View", self)
+        menu_bar.addMenu(view_menu)
+
+        # Help menu (placeholder for future)
+        help_menu = QMenu("Help", self)
+        menu_bar.addMenu(help_menu)
+
+        # Insert menu bar at the start of the title bar layout
+        self.ui.titleBar.insertWidget(0, menu_bar)
+
+    def _on_settings(self) -> None:
+        """Open settings dialog (placeholder)."""
+        # TODO: Implement settings dialog
+        pass
+
+    def _style_title_bar(self) -> None:
+        """Apply consistent styling to title bar buttons (qt-material dark_blue theme)."""
+        button_style = """
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #4f5b62;
+            }
+            QPushButton:pressed {
+                background-color: #448aff;
+            }
+        """
+        self.ui.minimizePushButton.setStyleSheet(button_style)
+        self.ui.maximizePushButton.setStyleSheet(button_style)
+        self.ui.closePushButton.setStyleSheet(button_style)

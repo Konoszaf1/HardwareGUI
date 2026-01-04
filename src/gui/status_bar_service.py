@@ -31,6 +31,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QStatusBar
 
 from src.config import config
+from src.gui.styles import Styles
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -198,11 +199,11 @@ class StatusBarService:
 
         is_connected = self._hardware_scope_states.get(self._active_hardware_id, False)
         if is_connected:
-            self._scope_label.setText("🔗 Scope: Connected")
-            self._scope_label.setStyleSheet("color: #50fa7b; padding: 0 8px;")  # Green
+            self._scope_label.setText("Scope: Connected")
+            self._scope_label.setStyleSheet(Styles.SCOPE_CONNECTED)
         else:
-            self._scope_label.setText("⚠ Scope: Disconnected")
-            self._scope_label.setStyleSheet("color: #ffb86c; padding: 0 8px;")  # Orange
+            self._scope_label.setText("Scope: Disconnected")
+            self._scope_label.setStyleSheet(Styles.SCOPE_DISCONNECTED)
 
     # ---- Animation ----
 
