@@ -157,46 +157,28 @@ class MainWindow(QMainWindow):
 
     def _setup_menu_bar(self) -> None:
         """Create and configure the application menu bar."""
-        # Create menu bar (custom, since window is frameless)
         menu_bar = QMenuBar(self)
         menu_bar.setStyleSheet(Styles.MENU_BAR)
         menu_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        # File menu
         file_menu = QMenu("File", self)
-
-        # Settings action
         settings_action = QAction("Settings...", self)
         settings_action.triggered.connect(self._on_settings)
         file_menu.addAction(settings_action)
-
         file_menu.addSeparator()
 
-        # Exit action
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
         menu_bar.addMenu(file_menu)
+        menu_bar.addMenu(QMenu("Edit", self))
+        menu_bar.addMenu(QMenu("View", self))
+        menu_bar.addMenu(QMenu("Help", self))
 
-        # Edit menu (placeholder for future)
-        edit_menu = QMenu("Edit", self)
-        menu_bar.addMenu(edit_menu)
-
-        # View menu (placeholder for future)
-        view_menu = QMenu("View", self)
-        menu_bar.addMenu(view_menu)
-
-        # Help menu (placeholder for future)
-        help_menu = QMenu("Help", self)
-        menu_bar.addMenu(help_menu)
-
-        # Insert menu bar at the start of the title bar layout
         self.ui.titleBar.insertWidget(0, menu_bar)
 
     def _on_settings(self) -> None:
-        """Open settings dialog (placeholder)."""
-        # TODO: Implement settings dialog
         pass
 
     def _style_title_bar(self) -> None:

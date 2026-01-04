@@ -31,7 +31,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QStatusBar
 
 from src.config import config
-from src.gui.styles import Styles
+from src.gui.styles import Colors, Styles
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -72,12 +72,14 @@ class StatusBarService:
 
         # Create status labels
         instance._app_label = QLabel()
-        instance._app_label.setStyleSheet("color: #f8f8f2; padding: 0 8px;")
+        instance._app_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; padding: 0 8px;")
 
         instance._scope_label = QLabel()
-        instance._scope_label.setStyleSheet("color: #f8f8f2; padding: 0 8px;")
+        instance._scope_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; padding: 0 8px;")
 
-        # Add permanent widgets (right-aligned)
+        # Add widgets
+        # app_label on the left, scope_label as permanent on the right
+        statusbar.insertWidget(0, instance._app_label)
         statusbar.addPermanentWidget(instance._scope_label)
 
         # Animation timer
@@ -163,7 +165,7 @@ class StatusBarService:
         was_animating = self._animation_timer.isActive()
         self._stop_animation()
 
-        self._statusbar.showMessage(message, timeout_ms)
+        self._app_label.setText(message)
 
         if was_animating:
             QTimer.singleShot(timeout_ms, self._restore_state)
@@ -179,14 +181,14 @@ class StatusBarService:
 
     def _update_app_display(self) -> None:
         """Update the app status display (left side)."""
-        if self._statusbar is None:
+        if self._app_label is None:
             return
 
         if self._app_status == AppStatus.BUSY:
-            self._statusbar.showMessage(f"{self._busy_message}")
+            self._app_label.setText(f"{self._busy_message}")
         elif self._app_status == AppStatus.READY:
             dots = "." * self._dot_count
-            self._statusbar.showMessage(f"Ready {dots}")
+            self._app_label.setText(f"Ready {dots}")
 
     def _update_scope_display(self) -> None:
         """Update the scope connection display (right side)."""
