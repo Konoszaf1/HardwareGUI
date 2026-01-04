@@ -75,6 +75,14 @@ class TooltipConfig:
     grace_period_ms: int = 300
 
 
+@dataclass(frozen=True)
+class StatusBarConfig:
+    """Status bar configuration."""
+
+    default_timeout_ms: int = 5000
+    animation_interval_ms: int = 500  # Dots animation speed
+
+
 @dataclass
 class AppConfig:
     """Root application configuration.
@@ -89,6 +97,7 @@ class AppConfig:
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
     dialogs: DialogConfig = field(default_factory=DialogConfig)
     tooltip: TooltipConfig = field(default_factory=TooltipConfig)
+    status_bar: StatusBarConfig = field(default_factory=StatusBarConfig)
 
     # Logging configuration (can be overridden by env vars)
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))

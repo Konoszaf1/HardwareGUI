@@ -7,6 +7,7 @@ artifact watching, and service signal handling.
 
 import os
 
+import setup_cal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QLineEdit,
@@ -16,7 +17,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import setup_cal
 from src.config import config
 from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.gui_helpers import append_log
@@ -29,6 +29,28 @@ from src.gui.utils.widget_factories import (
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, run_in_thread
 from src.logic.vu_service import VoltageUnitService
+
+# Import status bar service lazily to avoid circular imports
+_status_bar_service = None
+
+
+def _get_status_bar():
+    """Lazily get the StatusBarService instance.
+
+    Returns the service if initialized, None otherwise.
+    Does not cache None to allow retry on subsequent calls.
+    """
+    global _status_bar_service
+    if _status_bar_service is not None:
+        return _status_bar_service
+    try:
+        from src.gui.status_bar_service import StatusBarService
+
+        _status_bar_service = StatusBarService.instance()
+        return _status_bar_service
+    except RuntimeError:
+        return None  # Service not initialized yet, don't cache
+
 
 logger = get_logger(__name__)
 
@@ -141,9 +163,16 @@ class BaseHardwarePage(QWidget):
         self._set_busy(True)
 
         signals.started.connect(lambda: self._log("Started."))
+        signals.started.connect(
+            lambda: _get_status_bar() and _get_status_bar().set_busy(f"Running: {task.name}")
+        )
         signals.log.connect(lambda s: append_log(self.console, s))
         signals.error.connect(
-            lambda e: (logger.error(f"Task error: {e}"), self._log(f"Error: {e}"))
+            lambda e: (
+                logger.error(f"Task error: {e}"),
+                self._log(f"Error: {e}"),
+                _get_status_bar() and _get_status_bar().show_temporary(f"Error: {task.name}"),
+            )
         )
 
         def _finished(result):
@@ -164,6 +193,9 @@ class BaseHardwarePage(QWidget):
                             self._log(f"Coeff {ch}: k={vals[0]:.6f}, d={vals[1]:.6f}")
 
             self._log("Finished.")
+            status_svc = _get_status_bar()
+            if status_svc:
+                status_svc.set_ready()
 
         signals.finished.connect(_finished)
         run_in_thread(task)
@@ -204,9 +236,14 @@ class BaseHardwarePage(QWidget):
             self.service.provide_input(text)
 
     def _on_scope_verified(self, verified: bool) -> None:
-        """Handle scope verification state changes."""
+        """Handle scope verification state changes.
+
+        Note: Status bar updates are handled globally by MainWindow.
+        This method manages page-local button states and logging.
+        """
         for btn in self._action_buttons:
             btn.setEnabled(verified)
+
         if not verified:
             self._log("Actions disabled: Scope not verified.")
         else:

@@ -13,6 +13,8 @@ from src.gui.button_factory import build_tool_buttons
 from src.gui.expanding_splitter import ExpandingSplitter
 from src.gui.hiding_listview import HidingListView
 from src.gui.sidebar_button import SidebarButton
+from src.gui.status_bar_service import StatusBarService
+from src.gui.styles import Styles
 from src.logic.action_dataclass import ActionDescriptor
 from src.logic.presenter import ActionsPresenter
 from src.populate_items import ACTIONS, HARDWARE
@@ -57,6 +59,15 @@ class MainWindow(QMainWindow):
         self.setup_splitter()
         self.presenter.connect_actions_and_stacked_view(self.actions)
 
+        # Status bar setup - ensure visible with frameless window
+        self.ui.statusbar.setStyleSheet(Styles.STATUS_BAR)
+        self.ui.statusbar.setVisible(True)
+        self.ui.statusbar.setSizeGripEnabled(False)  # No grip for frameless window
+        StatusBarService.init(self.ui.statusbar)
+
+        # Connect scope verification to status bar (global, not per-page)
+        self.presenter.service.scopeVerified.connect(self._on_scope_status_changed)
+
         # Window Specific Setup
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -84,10 +95,15 @@ class MainWindow(QMainWindow):
         self.presenter = ActionsPresenter(self, self.buttons, self.actions)
         self.splitter.set_sidebar(self.ui.sidebar)
         self.splitter.set_listview(self.list_view)
-        # Add buttons to sidebar
+        # Add buttons to sidebar and track hardware selection
         for button in self.buttons:
             self.sidebar.layout().insertWidget(button.property("order"), button)
             self.splitter.add_button(button)
+            # Track hardware selection for status bar
+            button.toggled.connect(
+                lambda checked, btn=button: checked
+                and self._on_hardware_selected(btn.property("id"))
+            )
 
     def toggle_max_restore(self):
         """Handles maximize button logic"""
@@ -120,3 +136,13 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             event.accept()
+
+    def _on_scope_status_changed(self, verified: bool) -> None:
+        """Handle global scope verification status changes."""
+        StatusBarService.instance().set_scope_connected(connected=verified)
+        if verified:
+            StatusBarService.instance().set_ready()
+
+    def _on_hardware_selected(self, hardware_id: int) -> None:
+        """Handle hardware selection changes for status bar state."""
+        StatusBarService.instance().set_active_hardware(hardware_id)

@@ -56,3 +56,17 @@ class Styles:
             font-size: 10pt;
         }
     """
+
+    # Status bar (opaque, Dracula theme)
+    STATUS_BAR = """
+        QStatusBar {
+            background-color: #21222c;
+            color: #f8f8f2;
+            border-top: 1px solid #44475a;
+            font-size: 9pt;
+            padding: 2px 8px;
+        }
+        QStatusBar::item {
+            border: none;
+        }
+    """
