@@ -11,25 +11,26 @@ from src.gui.scripts.voltage_unit.calibration import CalibrationPage
 from src.gui.scripts.voltage_unit.guard import GuardPage
 from src.gui.scripts.voltage_unit.session_and_coeffs import SessionAndCoeffsPage
 from src.gui.scripts.voltage_unit.tests import TestsPage
-from src.logging_config import get_logger
-from src.logic.vu_service import VoltageUnitService
+from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.sidebar_button import SidebarButton
+from src.logging_config import get_logger
 from src.logic.action_dataclass import ActionDescriptor
 from src.logic.model.actions_model import ActionModel, ActionsByHardwareProxy
+from src.logic.vu_service import VoltageUnitService
 
 logger = get_logger(__name__)
 
 
-# Page factory type: takes parent widget and service, returns page widget
-PageFactory = Callable[[QWidget, VoltageUnitService], QWidget]
+# Page factory type: takes parent widget, service, and shared panels
+PageFactory = Callable[[QWidget, VoltageUnitService, SharedPanelsWidget], QWidget]
 
 # Registry mapping page_id to factory function
 # To add a new page, simply add an entry here - no if-elif changes needed (OCP)
 PAGE_FACTORIES: dict[str, PageFactory] = {
-    "workbench": lambda parent, svc: SessionAndCoeffsPage(parent, svc),
-    "calibration": lambda parent, svc: CalibrationPage(parent, svc),
-    "test": lambda parent, svc: TestsPage(parent, svc),
-    "guard": lambda parent, svc: GuardPage(parent, svc),
+    "workbench": lambda parent, svc, panels: SessionAndCoeffsPage(parent, svc, panels),
+    "calibration": lambda parent, svc, panels: CalibrationPage(parent, svc, panels),
+    "test": lambda parent, svc, panels: TestsPage(parent, svc, panels),
+    "guard": lambda parent, svc, panels: GuardPage(parent, svc, panels),
 }
 
 
@@ -41,11 +42,13 @@ class ActionsPresenter(QObject):
         widget,
         buttons: list[SidebarButton],
         actions: list[ActionDescriptor],
+        shared_panels: SharedPanelsWidget | None = None,
     ):
         super().__init__(widget)
         logger.debug("ActionsPresenter initializing")
         self.widget = widget
         self.service = VoltageUnitService()
+        self.shared_panels = shared_panels
         self.model = ActionModel(actions)
         self.proxy = ActionsByHardwareProxy()
         self.proxy.setSourceModel(self.model)
@@ -63,13 +66,19 @@ class ActionsPresenter(QObject):
         Uses PAGE_FACTORIES registry instead of if-elif chain, making it easy
         to add new pages without modifying this method (Open/Closed Principle).
         """
+        # Configure stacked widget with shared panels
+        if self.shared_panels:
+            self.widget.stacked_widget.set_shared_panels(self.shared_panels)
+
         for action in actions:
             factory = PAGE_FACTORIES.get(action.page_id)
             if factory:
-                # Capture factory in closure to avoid late binding issues
+                # Capture factory and shared_panels in closure
                 self.widget.stacked_widget.register_page(
                     action.page_id,
-                    lambda f=factory: f(self.widget.stacked_widget, self.service),
+                    lambda f=factory: f(
+                        self.widget.stacked_widget, self.service, self.shared_panels
+                    ),
                 )
                 logger.debug(f"Registered page factory: {action.page_id}")
             else:

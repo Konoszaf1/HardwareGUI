@@ -31,6 +31,9 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         self.setAutoRaise(False)
         self.setSizePolicy(self._create_size_policy())
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Ensure button never shrinks below icon size + padding
+        min_size = config.ui.sidebar_button_icon_size
+        self.setMinimumSize(min_size, min_size)
 
         # Setup animation using mixin
         self.setup_property_animation(b"minimumWidth")
@@ -62,19 +65,21 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         super().leaveEvent(event)
 
     def set_collapsed(self, collapsed: bool) -> None:
-        """Animate button between collapsed and expanded states.
+        """Collapse or expand the button.
 
         Args:
             collapsed: True to collapse (icon only), False to expand (show text).
         """
         if collapsed:
             super().setText("")
+            self.setMaximumWidth(config.ui.sidebar_collapsed_width)
             self.animate_property(
                 start_value=self.width(),
                 end_value=config.ui.sidebar_collapsed_width,
                 on_finished=self._on_collapse_finished,
             )
         else:
+            self.setMaximumWidth(16777215)  # QWIDGETSIZE_MAX
             self.animate_property(
                 start_value=self.width(),
                 end_value=config.ui.sidebar_expanded_width,

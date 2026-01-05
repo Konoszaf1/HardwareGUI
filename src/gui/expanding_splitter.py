@@ -65,7 +65,8 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
             button: The SidebarButton to add.
         """
         self.buttons.append(button)
-        button.set_collapsed(True)
+        # Clear text immediately without animation
+        button.setText("")
         button.installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -79,7 +80,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
                 self._handle_hover_leave()
                 return False
         elif obj == self.parent() and event.type() == QEvent.Type.Resize:
-            self.collapse()
+            self.collapse_immediate()
 
         return super().eventFilter(obj, event)
 
@@ -112,6 +113,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
 
         # Update button states to show text
         for button in self.buttons:
+            button.setMaximumWidth(16777215)
             button.set_collapsed(False)
 
     def collapse(self) -> None:
@@ -133,6 +135,36 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         # Update button states to hide text
         for button in self.buttons:
             button.set_collapsed(True)
+
+    def collapse_immediate(self) -> None:
+        """Collapse immediately without animation.
+
+        Used during window resize to avoid fighting with the resize operation.
+        Respects minimum widths set on sidebar.
+        """
+        # Get minimum width of sidebar (first widget)
+        sidebar_min_width = config.ui.sidebar_collapsed_width
+        if self.sidebar:
+            sidebar_min_width = max(sidebar_min_width, self.sidebar.minimumWidth())
+
+        # Set sizes directly without animation
+        # Ensure we always give at least sidebar_min_width to the sidebar
+        current_width = self.width()
+        if current_width > 0:
+            list_width = max(0, current_width - sidebar_min_width)
+            self.setSizes([sidebar_min_width, list_width])
+        else:
+            # If not yet shown, use a reasonable default ratio or just the min widths
+            self.setSizes([sidebar_min_width, 150])
+
+        self._is_expanded = False
+
+        # Clear button text WITHOUT animation (set_collapsed would animate)
+        for button in self.buttons:
+            button.setText("")
+            # Also ensure button itself doesn't try to be larger than collapsed width
+            button.setMinimumWidth(config.ui.sidebar_collapsed_width)
+            button.setMaximumWidth(config.ui.sidebar_collapsed_width)
 
     def _on_resize_animation(self, value: int) -> None:
         """Handle resizing of the splitter during animation.

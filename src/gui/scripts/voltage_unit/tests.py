@@ -2,15 +2,18 @@
 """Tests page for voltage unit validation."""
 
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
+)
+from PySide6.QtWidgets import (
     QWidget as QW,
 )
 
-from src.gui.styles import Styles
 from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.styles import Styles
 from src.gui.utils.widget_factories import create_test_card
 from src.logic.vu_service import VoltageUnitService
 
@@ -19,12 +22,17 @@ class TestsPage(BaseHardwarePage):
     """Test execution page for voltage unit validation.
 
     Provides controls to run individual tests (outputs, ramp, transient) or all tests
-    together. Displays test results in a console and shows generated plots as thumbnails
-    that update in real-time during test execution.
+    together. Test results are logged to the shared console panel and generated plots
+    appear in the shared artifacts panel.
     """
 
-    def __init__(self, parent=None, service: VoltageUnitService | None = None):
-        super().__init__(parent, service)
+    def __init__(
+        self,
+        parent=None,
+        service: VoltageUnitService | None = None,
+        shared_panels: SharedPanelsWidget | None = None,
+    ):
+        super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout (Vertical) ====
         mainLayout = QVBoxLayout(self)
@@ -35,7 +43,7 @@ class TestsPage(BaseHardwarePage):
         title.setObjectName("title")
         mainLayout.addWidget(title)
 
-        # ==== Top Section: Test Cards ====
+        # ==== Test Cards ====
         cardsWidget = QW()
         cardsLayout = QHBoxLayout(cardsWidget)
         cardsLayout.setContentsMargins(0, 0, 0, 0)
@@ -81,14 +89,8 @@ class TestsPage(BaseHardwarePage):
         cardsLayout.addStretch()
         mainLayout.addWidget(cardsWidget)
 
-        # ==== Middle Section: Console (from base class) ====
-        mainLayout.addWidget(self._create_console(), 1)
-
-        # Input field (from base class)
-        mainLayout.addWidget(self._create_input_field())
-
-        # ==== Bottom Section: Images (from base class) ====
-        mainLayout.addWidget(self._create_artifact_list(), 1)
+        # Stretch to fill remaining space
+        mainLayout.addStretch()
 
         # Register action buttons for busy state management
         self._action_buttons = [

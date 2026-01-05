@@ -1,7 +1,7 @@
 """Base class for hardware control pages with common functionality.
 
 This module provides an abstract base class that consolidates common patterns
-used across hardware control pages, including console management, task lifecycle,
+used across hardware control pages, including shared panel access, task lifecycle,
 artifact watching, and service signal handling.
 """
 
@@ -10,22 +10,13 @@ import os
 import setup_cal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QLineEdit,
-    QListWidget,
-    QPlainTextEdit,
     QPushButton,
     QWidget,
 )
 
-from src.config import config
+from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.utils.artifact_watcher import ArtifactWatcher
-from src.gui.utils.gui_helpers import append_log
 from src.gui.utils.image_viewer import ImageViewerDialog
-from src.gui.utils.widget_factories import (
-    create_artifact_list_widget,
-    create_console_widget,
-    create_input_field,
-)
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, run_in_thread
 from src.logic.vu_service import VoltageUnitService
@@ -59,17 +50,15 @@ class BaseHardwarePage(QWidget):
     """Abstract base class for hardware control pages.
 
     Provides common functionality:
-    - Console widget creation and logging
-    - Artifact list with file watcher
-    - Input field for interactive prompts
+    - Shared panel access (console, artifacts, input field)
     - Task lifecycle management with busy states
+    - Artifact watching for file updates
     - Scope verification handling
 
     Subclasses should:
-    - Call super().__init__(parent, service)
-    - Set up their specific UI layout
+    - Call super().__init__(parent, service, shared_panels)
+    - Set up their specific UI layout (without console/artifacts)
     - Populate self._action_buttons with buttons to enable/disable
-    - Add self.console, self.listWidget, self.le_input to their layouts
     - Call self._connect_service_signals() at end of __init__ if needed
     """
 
@@ -77,41 +66,43 @@ class BaseHardwarePage(QWidget):
         self,
         parent: QWidget | None = None,
         service: VoltageUnitService | None = None,
+        shared_panels: SharedPanelsWidget | None = None,
     ):
         super().__init__(parent)
         self.service = service
+        self._shared_panels = shared_panels
         self._active_task: FunctionTask | None = None
         self._artifact_watcher: ArtifactWatcher | None = None
         self._busy = False
 
-        # Widgets to be added to subclass layouts
-        self.console: QPlainTextEdit | None = None
-        self.le_input: QLineEdit | None = None
-        self.listWidget: QListWidget | None = None
-
         # Buttons to enable/disable during task execution
         self._action_buttons: list[QPushButton] = []
 
-    # ---- Widget factories ----
+        # Connect input field if available
+        if self._shared_panels and self._shared_panels.input_field:
+            self._shared_panels.input_field.returnPressed.connect(self._on_input_return)
 
-    def _create_console(self, max_block_count: int | None = None) -> QPlainTextEdit:
-        """Create and return a styled console widget."""
-        if max_block_count is None:
-            max_block_count = config.console.max_block_count
-        self.console = create_console_widget(max_block_count)
-        return self.console
+    # ---- Shared panel accessors ----
 
-    def _create_artifact_list(self) -> QListWidget:
-        """Create and return an artifact thumbnail list widget."""
-        self.listWidget = create_artifact_list_widget()
-        self.listWidget.itemDoubleClicked.connect(self._on_image_double_clicked)
-        return self.listWidget
+    @property
+    def shared_panels(self) -> SharedPanelsWidget | None:
+        """Return the shared panels widget."""
+        return self._shared_panels
 
-    def _create_input_field(self) -> QLineEdit:
-        """Create and return a hidden input field widget."""
-        self.le_input = create_input_field()
-        self.le_input.returnPressed.connect(self._on_input_return)
-        return self.le_input
+    @property
+    def console(self):
+        """Return the console widget from shared panels."""
+        return self._shared_panels.console if self._shared_panels else None
+
+    @property
+    def listWidget(self):
+        """Return the artifacts list from shared panels."""
+        return self._shared_panels.artifacts if self._shared_panels else None
+
+    @property
+    def le_input(self):
+        """Return the input field from shared panels."""
+        return self._shared_panels.input_field if self._shared_panels else None
 
     # ---- Busy state management ----
 
@@ -138,11 +129,11 @@ class BaseHardwarePage(QWidget):
         """
         if self._artifact_watcher or not setup_cal.VU_SERIAL:
             return
-        if self.listWidget is None:
+        if not self._shared_panels:
             return
 
         artifact_dir = os.path.abspath(f"calibration_vu{setup_cal.VU_SERIAL}")
-        self._artifact_watcher = ArtifactWatcher(self.listWidget, self)
+        self._artifact_watcher = ArtifactWatcher(self._shared_panels.artifacts, self)
         self._artifact_watcher.setup(artifact_dir)
 
     def _start_task(self, task: FunctionTask | None) -> None:
@@ -166,7 +157,7 @@ class BaseHardwarePage(QWidget):
         signals.started.connect(
             lambda: _get_status_bar() and _get_status_bar().set_busy(f"Running: {task.name}")
         )
-        signals.log.connect(lambda s: append_log(self.console, s))
+        signals.log.connect(lambda s: self._log(s))
         signals.error.connect(
             lambda e: (
                 logger.error(f"Task error: {e}"),
@@ -203,8 +194,9 @@ class BaseHardwarePage(QWidget):
     # ---- Logging ----
 
     def _log(self, msg: str) -> None:
-        """Append a message to the console."""
-        append_log(self.console, msg)
+        """Append a message to the shared console."""
+        if self._shared_panels:
+            self._shared_panels.log(msg)
 
     # ---- Event handlers ----
 
@@ -217,21 +209,19 @@ class BaseHardwarePage(QWidget):
 
     def _on_input_requested(self, prompt: str) -> None:
         """Show input field when service requests input."""
-        if not self.isVisible() or self.le_input is None:
+        if not self.isVisible() or not self._shared_panels:
             return
         self._log(f"<b>Input requested:</b> {prompt}")
-        self.le_input.setVisible(True)
-        self.le_input.setPlaceholderText(prompt if prompt else "Type input here...")
-        self.le_input.setFocus()
+        self._shared_panels.show_input(prompt)
 
     def _on_input_return(self) -> None:
         """Handle Enter key in input field."""
-        if self.le_input is None:
+        if not self._shared_panels or not self._shared_panels.input_field:
             return
-        text = self.le_input.text()
+        text = self._shared_panels.input_field.text()
         self._log(f"> {text}")
-        self.le_input.clear()
-        self.le_input.setVisible(False)
+        self._shared_panels.input_field.clear()
+        self._shared_panels.input_field.setVisible(False)
         if self.service and hasattr(self.service, "provide_input"):
             self.service.provide_input(text)
 

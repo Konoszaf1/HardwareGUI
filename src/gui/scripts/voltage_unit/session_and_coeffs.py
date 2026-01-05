@@ -1,4 +1,4 @@
-# session_and_coeffs_page_min.py
+# session_and_coeffs_page.py
 """Session management and coefficient control page for voltage unit."""
 
 from PySide6.QtCore import QRegularExpression, Qt
@@ -16,16 +16,15 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStyle,
     QVBoxLayout,
-    QWidget,
 )
 from PySide6.QtWidgets import (
     QWidget as QW,
 )
 
 from src.config import config
+from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Styles
-from src.gui.utils.gui_helpers import append_log
-from src.gui.utils.widget_factories import create_console_widget
 from src.logging_config import get_logger
 from src.logic.qt_workers import run_in_thread
 from src.logic.vu_service import VoltageUnitService
@@ -33,7 +32,7 @@ from src.logic.vu_service import VoltageUnitService
 logger = get_logger(__name__)
 
 
-class SessionAndCoeffsPage(QWidget):
+class SessionAndCoeffsPage(BaseHardwarePage):
     """Session management and coefficient control page.
 
     Provides controls for:
@@ -43,25 +42,23 @@ class SessionAndCoeffsPage(QWidget):
     - Coefficient write (to EEPROM)
 
     The page validates scope connectivity before enabling coefficient operations.
-
-    Note: This page has unique busy state logic and doesn't inherit from
-    BaseHardwarePage because of its specialized UI state management.
     """
 
-    def __init__(self, parent=None, service: VoltageUnitService | None = None):
-        super().__init__(parent)
-        self.service = service
-        self._busy = False
-        self._active_task = None
+    def __init__(
+        self,
+        parent=None,
+        service: VoltageUnitService | None = None,
+        shared_panels: SharedPanelsWidget | None = None,
+    ):
+        super().__init__(parent, service, shared_panels)
 
-        # ==== Root grid ====
-        self.grid = QGridLayout(self)
-        self.grid.setObjectName("grid")
+        # ==== Main Layout ====
+        mainLayout = QVBoxLayout(self)
 
         # ==== Title ====
-        title = QLabel("Voltage Unit – Session (Minimal)")
+        title = QLabel("Voltage Unit – Session")
         title.setObjectName("title")
-        self.grid.addWidget(title, 0, 0, 1, 1)
+        mainLayout.addWidget(title)
 
         # ==== Top: Compact Configuration ====
         topWidget = QW()
@@ -132,14 +129,16 @@ class SessionAndCoeffsPage(QWidget):
         topLayout.addWidget(actBox)
         topLayout.addStretch()
 
-        self.grid.addWidget(topWidget, 1, 0, 1, 1, Qt.AlignTop)
-        self.grid.setVerticalSpacing(20)  # Spacing between top widget and console
+        mainLayout.addWidget(topWidget)
 
-        # ==== Console (using factory) ====
-        self.console = create_console_widget(max_block_count=config.console.max_block_count_small)
-        self.grid.addWidget(self.console, 2, 0, 1, 1)
+        # Stretch to fill remaining space
+        mainLayout.addStretch()
 
-        self.grid.setRowStretch(2, 1)
+        # Register action buttons for busy state management
+        self._action_buttons = [
+            self.btn_reset_coeffs,
+            self.btn_write_coeffs,
+        ]
 
         # Wire backend actions
         self.btn_test_scope.clicked.connect(self._on_test_scope)
@@ -262,7 +261,7 @@ class SessionAndCoeffsPage(QWidget):
             return
 
         signals.started.connect(lambda: self._log("Resetting coefficients (RAM)..."))
-        signals.log.connect(lambda s: append_log(self.console, s))
+        signals.log.connect(lambda s: self._log(s))
         signals.error.connect(lambda e: self._log(f"Error: {e}"))
 
         def _finished(_result):
@@ -291,7 +290,7 @@ class SessionAndCoeffsPage(QWidget):
             return
 
         signals.started.connect(lambda: self._log("Writing coefficients (EEPROM)..."))
-        signals.log.connect(lambda s: append_log(self.console, s))
+        signals.log.connect(lambda s: self._log(s))
         signals.error.connect(lambda e: self._log(f"Error: {e}"))
 
         def _finished(_result):
@@ -301,6 +300,3 @@ class SessionAndCoeffsPage(QWidget):
 
         signals.finished.connect(_finished)
         run_in_thread(task)
-
-    def _log(self, msg: str) -> None:
-        append_log(self.console, msg)

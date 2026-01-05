@@ -143,7 +143,7 @@ class TooltipManager:
         button_rect = button.rect()
         top_right = button.mapToGlobal(QPoint(button_rect.width(), 0))
 
-        x = top_right.x() + 4
+        x = top_right.x()
         y = top_right.y() + (button_rect.height() - tooltip.height()) // 2
 
         logger.debug(f"Showing tooltip '{text}' at ({x}, {y})")

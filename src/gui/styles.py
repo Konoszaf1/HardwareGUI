@@ -174,3 +174,44 @@ class Styles:
             background-color: {Colors.ACCENT};
         }}
     """
+
+    # Collapsible panel container
+    COLLAPSIBLE_PANEL = f"""
+        background-color: {Colors.BG_DARK};
+        border: none;
+    """
+
+    # Panel toggle button
+    PANEL_TOGGLE_BUTTON = f"""
+        QPushButton {{
+            background-color: {Colors.BG_DARK};
+            color: {Colors.TEXT_MUTED};
+            border: none;
+            border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            font-size: 9pt;
+            font-weight: bold;
+            text-align: left;
+            padding: 4px 8px;
+        }}
+        QPushButton:hover {{
+            background-color: {Colors.BG_ELEVATED};
+            color: {Colors.TEXT_PRIMARY};
+        }}
+    """
+
+    # Vertical panel toggle button (for side panels)
+    PANEL_TOGGLE_BUTTON_VERTICAL = f"""
+        QPushButton {{
+            background-color: {Colors.BG_DARK};
+            color: {Colors.TEXT_MUTED};
+            border: none;
+            border-left: 1px solid {Colors.BORDER_SUBTLE};
+            font-size: 9pt;
+            font-weight: bold;
+            padding: 4px;
+        }}
+        QPushButton:hover {{
+            background-color: {Colors.BG_ELEVATED};
+            color: {Colors.TEXT_PRIMARY};
+        }}
+    """

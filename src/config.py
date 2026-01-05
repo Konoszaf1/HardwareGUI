@@ -20,13 +20,19 @@ class UIConfig:
     """UI-related configuration."""
 
     sidebar_expanded_width: int = 250
-    sidebar_collapsed_width: int = 50
+    sidebar_collapsed_width: int = 70
     animation_duration_ms: int = 500
     expand_hover_delay_ms: int = 10000
     collapse_hover_delay_ms: int = 200
     window_min_width: int = 900
     window_min_height: int = 600
     sidebar_button_icon_size: int = 24
+
+    # Shared Panels
+    panel_toggle_size: int = 24  # Height/Width of the toggle header/bar
+    artifacts_expanded_width: int = 250  # Fixed width of the artifacts panel content
+    terminal_expanded_height: int = 200  # Default height of the terminal panel content
+    terminal_min_height: int = 100  # Minimum height when expanded
 
 
 @dataclass(frozen=True)
