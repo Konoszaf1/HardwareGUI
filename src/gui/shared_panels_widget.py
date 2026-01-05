@@ -80,7 +80,7 @@ class HorizontalCollapsiblePanel(QFrame):
         self._content.setVisible(expanded)
         if expanded:
             self.setMinimumHeight(config.ui.terminal_min_height)
-            self.setMaximumHeight(16777215)
+            self.setMaximumHeight(config.ui.max_widget_size)
         else:
             self.setMinimumHeight(config.ui.panel_toggle_size)
             self.setMaximumHeight(config.ui.panel_toggle_size)
@@ -147,17 +147,46 @@ class VerticalCollapsiblePanel(QFrame):
     def _on_toggle(self) -> None:
         self.set_expanded(not self._expanded)
 
-    def set_expanded(self, expanded: bool) -> None:
-        if self._expanded != expanded:
+    def set_expanded(self, expanded: bool, immediate: bool = False) -> None:
+        """Set the expanded state.
+
+        Args:
+            expanded: Target expanded state
+            immediate: If True, apply layout changes instantly. If False (default),
+                      allow flexible constraints for animation.
+        """
+        if self._expanded != expanded or immediate:
             self._expanded = expanded
             self._update_button()
-            self._content.setVisible(expanded)
-            if expanded:
-                self._content.setFixedWidth(config.ui.artifacts_expanded_width)
-                self.setFixedWidth(config.ui.artifacts_expanded_width + config.ui.panel_toggle_size)
+
+            if immediate:
+                self._content.setVisible(expanded)
+                if expanded:
+                    self._content.setMinimumWidth(0)
+                    self._content.setMaximumWidth(config.ui.artifacts_expanded_width)
+                    self.setFixedWidth(
+                        config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
+                    )
+                else:
+                    self._content.setFixedWidth(0)
+                    self.setFixedWidth(config.ui.panel_toggle_size)
+                    self.setMinimumWidth(config.ui.panel_toggle_size)
+                    self.setMaximumWidth(config.ui.panel_toggle_size)
             else:
-                self._content.setFixedWidth(0)
-                self.setFixedWidth(config.ui.panel_toggle_size)
+                # During transition, always keep content visible so it doesn't flicker
+                self._content.setVisible(True)
+
+                # IMPORTANT: Keep the content fixed at its expanded width even when shrinking.
+                # This allows the parent stack to 'mask' it, creating a sliding effect
+                # instead of a jagged squeezing effect.
+                self._content.setFixedWidth(config.ui.artifacts_expanded_width)
+
+                # Allow the parent stack/window to drive the outer width
+                self.setMinimumWidth(config.ui.panel_toggle_size)
+                self.setMaximumWidth(
+                    config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
+                )
+
             self.toggled.emit(expanded)
 
     @property

@@ -2,7 +2,7 @@
 
 import contextlib
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QEasingCurve, QPoint, Qt, QVariantAnimation
 from PySide6.QtGui import QAction, QColor, QKeySequence
 from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self.panels_service = SharedPanelsService.init()
         self._current_panels: QWidget | None = None
         self._artifacts_expanded: bool = False
+        self._artifacts_anim: QVariantAnimation | None = None
 
         self.setup_splitter()
         self.presenter.connect_actions_and_stacked_view(self.actions)
@@ -289,49 +290,103 @@ class MainWindow(QMainWindow):
 
     def _on_hardware_selected(self, hardware_id: int) -> None:
         """Handle hardware selection changes."""
-        StatusBarService.instance().set_active_hardware(hardware_id)
+        self.setUpdatesEnabled(False)
+        try:
+            StatusBarService.instance().set_active_hardware(hardware_id)
 
-        # Disconnect from old panels
-        if self._current_panels:
-            with contextlib.suppress(TypeError, RuntimeError):
-                self._current_panels.artifacts_toggled.disconnect(self._on_artifacts_panel_toggled)
+            # Disconnect from old panels
+            if self._current_panels:
+                with contextlib.suppress(TypeError, RuntimeError):
+                    self._current_panels.artifacts_toggled.disconnect(
+                        self._on_artifacts_panel_toggled
+                    )
 
-        # Get panels for this hardware
-        new_panels = self.panels_service.switch_hardware(hardware_id)
-        self._current_panels = new_panels
-        self._artifacts_expanded = new_panels.is_artifacts_visible()
+            # Get panels for this hardware
+            new_panels = self.panels_service.switch_hardware(hardware_id)
+            new_expanded = new_panels.is_artifacts_visible()
 
-        # Swap panels in the content container
-        if hasattr(self, "content_with_panels"):
-            self.content_with_panels.set_panels(new_panels)
-            # Reconnect toggle signal to new panels
-            new_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
+            # 1. Swap panels FIRST to prime constraints (sets QStackedWidget sizes)
+            if hasattr(self, "content_with_panels"):
+                self.content_with_panels.set_panels(new_panels)
+                # Reconnect toggle signal to new panels
+                new_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
 
-        # Update presenter's shared panels reference
-        if self.presenter:
-            self.presenter.shared_panels = new_panels
+            # 2. Force layout update so constraints are settled
+            self.centralWidget().layout().activate()
+
+            # 3. Synchronize window size AFTER panels are swapped and constraints are set
+            if new_expanded != self._artifacts_expanded:
+                self._on_artifacts_panel_toggled(new_expanded)
+
+            self._current_panels = new_panels
+
+            # Update presenter's shared panels reference
+            if self.presenter:
+                self.presenter.shared_panels = new_panels
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()  # Force final repaint
 
     def _on_artifacts_panel_toggled(self, expanded: bool) -> None:
-        """Handle artifact panel toggle by resizing window width."""
-        # Avoid redundant resizing
+        """Handle artifact panel toggle with a smooth animation."""
         if expanded == self._artifacts_expanded:
             return
         self._artifacts_expanded = expanded
 
         if self.isMaximized():
-            return  # Don't resize when maximized
+            return
 
-        # Get actual delta (space taken by content when expanded)
+        # Calculate dimensions
         total_width = self.content_with_panels.artifacts_expanded_total_width
-        delta = total_width - config.ui.panel_toggle_size  # Header/toggle width
+        start_w = config.ui.panel_toggle_size if expanded else total_width
+        end_w = total_width if expanded else config.ui.panel_toggle_size
+        delta = total_width - config.ui.panel_toggle_size
 
         geo = self.geometry()
-        if expanded:
-            geo.setWidth(geo.width() + delta)
-        else:
-            geo.setWidth(max(geo.width() - delta, self.minimumWidth()))
+        start_win_w = geo.width()
+        end_win_w = geo.width() + (delta if expanded else -delta)
 
-        self.setGeometry(geo)
+        # Cleanup existing animation
+        if self._artifacts_anim and self._artifacts_anim.state() == QVariantAnimation.State.Running:
+            self._artifacts_anim.stop()
+
+        # Create animation
+        self._artifacts_anim = QVariantAnimation(self)
+        self._artifacts_anim.setDuration(config.ui.panel_animation_duration_ms)
+
+        # Resolve easing curve from config
+        easing_type = getattr(
+            QEasingCurve.Type, config.ui.panel_animation_easing, QEasingCurve.Type.InOutQuad
+        )
+        self._artifacts_anim.setEasingCurve(easing_type)
+
+        self._artifacts_anim.setStartValue(0.0)
+        self._artifacts_anim.setEndValue(1.0)
+
+        def update_anim(value: float):
+            self.setUpdatesEnabled(False)
+            try:
+                # 1. Update internal panel width first
+                curr_panel_w = int(start_w + (end_w - start_w) * value)
+                if hasattr(self, "content_with_panels"):
+                    self.content_with_panels._artifacts_stack.setFixedWidth(curr_panel_w)
+
+                # 2. Update window width
+                curr_win_w = int(start_win_w + (end_win_w - start_win_w) * value)
+                self.setFixedWidth(curr_win_w)
+            finally:
+                self.setUpdatesEnabled(True)
+
+        self._artifacts_anim.valueChanged.connect(update_anim)
+
+        def finalize():
+            if hasattr(self, "content_with_panels") and self._current_panels:
+                self._current_panels._artifacts_panel.set_expanded(expanded, immediate=True)
+                final_w = total_width if expanded else config.ui.panel_toggle_size
+                self.content_with_panels._artifacts_stack.setFixedWidth(final_w)
+
+        self._artifacts_anim.finished.connect(finalize)
+        self._artifacts_anim.start()
 
     def _setup_menu_bar(self) -> None:
         """Create and configure the application menu bar."""

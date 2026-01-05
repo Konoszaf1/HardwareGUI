@@ -33,6 +33,9 @@ class UIConfig:
     artifacts_expanded_width: int = 250  # Fixed width of the artifacts panel content
     terminal_expanded_height: int = 200  # Default height of the terminal panel content
     terminal_min_height: int = 100  # Minimum height when expanded
+    panel_animation_duration_ms: int = 150  # even snappier
+    panel_animation_easing: str = "OutCubic"  # Responsive easing curve
+    max_widget_size: int = 16777215  # QWIDGETSIZE_MAX
 
 
 @dataclass(frozen=True)

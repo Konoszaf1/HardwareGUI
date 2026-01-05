@@ -7,7 +7,15 @@ persistent panels (terminal/artifacts) that stay visible across page switches.
 import contextlib
 from collections.abc import Callable
 
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, Qt, Signal, Slot
+from PySide6.QtCore import (
+    QEasingCurve,
+    QItemSelectionModel,
+    QModelIndex,
+    Qt,
+    QVariantAnimation,
+    Signal,
+    Slot,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QSplitter,
@@ -157,8 +165,23 @@ class ContentWithPanels(QWidget):
         self._stacked = stacked_widget
         self._panels = shared_panels
         self._last_console_height = config.ui.terminal_expanded_height
+        self._console_anim: QVariantAnimation | None = None
 
-        # Main horizontal layout (for artifacts panel on the right)
+        # Use stacks as permanent layout residents to eliminate flicker during swaps
+        self._console_stack = QStackedWidget()
+        self._artifacts_stack = QStackedWidget()
+
+        # Track panels in stacks
+        self._console_map: dict[int, int] = {
+            id(shared_panels): self._console_stack.addWidget(shared_panels._console_panel)
+        }
+        self._artifacts_map: dict[int, int] = {
+            id(shared_panels): self._artifacts_stack.addWidget(shared_panels._artifacts_panel)
+        }
+
+        # Set initial stack indices
+        self._console_stack.setCurrentIndex(0)
+        self._artifacts_stack.setCurrentIndex(0)
         self._main_layout = QHBoxLayout(self)
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
@@ -172,7 +195,7 @@ class ContentWithPanels(QWidget):
         )
 
         self._v_splitter.addWidget(stacked_widget)
-        self._v_splitter.addWidget(shared_panels._console_panel)
+        self._v_splitter.addWidget(self._console_stack)
 
         # Set stretch factors: stacked widget is flexible, console is fixed-ish but resizable
         self._v_splitter.setStretchFactor(0, 1)
@@ -183,10 +206,11 @@ class ContentWithPanels(QWidget):
 
         # Right: artifacts
         self._main_layout.addWidget(self._v_splitter, stretch=1)
-        self._main_layout.addWidget(shared_panels._artifacts_panel)
+        self._main_layout.addWidget(self._artifacts_stack)
 
         # Connect signals
         shared_panels.console_toggled.connect(self._on_console_toggled)
+        shared_panels.artifacts_toggled.connect(self._on_artifacts_toggled)
         self._v_splitter.splitterMoved.connect(self._on_splitter_moved)
 
         # Initial state: if console is already visible, try to apply height
@@ -209,11 +233,27 @@ class ContentWithPanels(QWidget):
                 self._last_console_height = sizes[1]
 
     def _on_console_toggled(self, expanded: bool) -> None:
-        """Handle console toggle by adjusting splitter sizes."""
+        """Handle console toggle by beginning the height animation."""
+        # During expansion, we need to allow the stack to be smaller than terminal_min_height
+        # to ensure a smooth animation from the toggle button height.
+        if expanded:
+            self._console_stack.setMinimumHeight(config.ui.panel_toggle_size)
+            self._console_stack.setMaximumHeight(config.ui.max_widget_size)
+        else:
+            # When collapsing, we can set the target constraints immediately
+            self._console_stack.setMinimumHeight(config.ui.panel_toggle_size)
+            self._console_stack.setMaximumHeight(config.ui.panel_toggle_size)
+
         self._apply_console_height(expanded)
 
+    def _on_artifacts_toggled(self, expanded: bool) -> None:
+        """Sync stack width and constraints using state-driven sizing."""
+        art_width = self.artifacts_expanded_total_width
+        self._artifacts_stack.setMinimumWidth(config.ui.panel_toggle_size)
+        self._artifacts_stack.setMaximumWidth(art_width)
+
     def _apply_console_height(self, expanded: bool) -> None:
-        """Update splitter sizes based on expanded state."""
+        """Update splitter sizes based on expanded state with animation."""
         if not self.isVisible():
             return
 
@@ -221,34 +261,101 @@ class ContentWithPanels(QWidget):
         if total_height <= 0:
             return
 
+        sizes = self._v_splitter.sizes()
+        if not sizes or len(sizes) < 2:
+            return
+
+        start_h = sizes[1]
         if expanded:
-            # Restore last height, ensuring it doesn't take over the whole screen
-            h = min(self._last_console_height, total_height - config.ui.terminal_min_height)
-            h = max(h, config.ui.terminal_min_height)  # Minimum usable height
-            self._v_splitter.setSizes([total_height - h, h])
+            target_h = min(self._last_console_height, total_height - config.ui.terminal_min_height)
+            target_h = max(target_h, config.ui.terminal_min_height)
         else:
-            # Collapse to button height (24px)
-            self._v_splitter.setSizes(
-                [total_height - config.ui.panel_toggle_size, config.ui.panel_toggle_size]
+            target_h = config.ui.panel_toggle_size
+
+        # Cleanup existing animation
+        if self._console_anim and self._console_anim.state() == QVariantAnimation.State.Running:
+            self._console_anim.stop()
+
+        self._console_anim = QVariantAnimation(self)
+        self._console_anim.setDuration(config.ui.panel_animation_duration_ms)
+
+        # Resolve easing curve from config
+        easing_type = getattr(
+            QEasingCurve.Type, config.ui.panel_animation_easing, QEasingCurve.Type.InOutQuad
+        )
+        self._console_anim.setEasingCurve(easing_type)
+
+        self._console_anim.setStartValue(float(start_h))
+        self._console_anim.setEndValue(float(target_h))
+
+        def update_sizes(value: float):
+            h = int(value)
+            self._v_splitter.setSizes([total_height - h, h])
+
+        self._console_anim.valueChanged.connect(update_sizes)
+
+        if expanded:
+            self._v_splitter.handle(1).setEnabled(True)
+            # Restore minimum usable height after animation finished
+            self._console_anim.finished.connect(
+                lambda: self._console_stack.setMinimumHeight(config.ui.terminal_min_height)
             )
+        else:
+            self._v_splitter.handle(1).setEnabled(False)
+
+        self._console_anim.start()
 
     def set_panels(self, new_panels: SharedPanelsWidget) -> None:
-        """Swap panels when hardware is changed."""
+        """Swap panels when hardware is changed using QStackedWidget to avoid flicker."""
+        if self._panels == new_panels:
+            return
+
         # Disconnect old signals
         with contextlib.suppress(TypeError, RuntimeError):
             self._panels.console_toggled.disconnect(self._on_console_toggled)
+            self._panels.artifacts_toggled.disconnect(self._on_artifacts_toggled)
 
-        # Remove old panels from layouts
-        self._v_splitter.replaceWidget(1, new_panels._console_panel)
-        self._main_layout.removeWidget(self._panels._artifacts_panel)
-        self._panels._artifacts_panel.setParent(None)
+        # Add to stacks if not already there
+        panel_id = id(new_panels)
+        if panel_id not in self._console_map:
+            self._console_map[panel_id] = self._console_stack.addWidget(new_panels._console_panel)
+        if panel_id not in self._artifacts_map:
+            self._artifacts_map[panel_id] = self._artifacts_stack.addWidget(
+                new_panels._artifacts_panel
+            )
 
-        # Add new panels
+        # Switch stack indices
+        self._console_stack.setCurrentIndex(self._console_map[panel_id])
+        self._artifacts_stack.setCurrentIndex(self._artifacts_map[panel_id])
+
+        # Synchronize stack sizes and constraints using state-driven values
+        # This prevents "pollution" from hidden expanded panels without layout queries
+        con_expanded = new_panels.is_console_visible()
+        con_min_h = config.ui.terminal_min_height if con_expanded else config.ui.panel_toggle_size
+        con_max_h = config.ui.max_widget_size if con_expanded else config.ui.panel_toggle_size
+        self._console_stack.setMinimumHeight(con_min_h)
+        self._console_stack.setMaximumHeight(con_max_h)
+
+        art_expanded = new_panels.is_artifacts_visible()
+        art_width = (
+            config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
+            if art_expanded
+            else config.ui.panel_toggle_size
+        )
+
+        if art_expanded:
+            self._artifacts_stack.setMinimumWidth(config.ui.panel_toggle_size)
+            self._artifacts_stack.setMaximumWidth(art_width)
+        else:
+            self._artifacts_stack.setFixedWidth(art_width)
+            self._artifacts_stack.setMinimumWidth(art_width)
+            self._artifacts_stack.setMaximumWidth(art_width)
+
         self._panels = new_panels
-        self._main_layout.addWidget(new_panels._artifacts_panel)
 
         # Connect new signals
         new_panels.console_toggled.connect(self._on_console_toggled)
+        new_panels.artifacts_toggled.connect(self._on_artifacts_toggled)
 
         # Apply current state
         self._apply_console_height(new_panels.is_console_visible())
