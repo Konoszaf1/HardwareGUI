@@ -18,6 +18,7 @@ class HidingListView(QListView):
         """
         super().__init__(parent)
         self.setMinimumSize(0, 0)
+        self.setMinimumWidth(150)  # Default minimum width for actions list
         self.child = child
         # Use Preferred so it sizes to content, not greedy expansion
         size_policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)

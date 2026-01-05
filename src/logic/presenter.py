@@ -14,7 +14,7 @@ from src.gui.scripts.voltage_unit.guard import GuardPage
 from src.gui.scripts.voltage_unit.session_and_coeffs import SessionAndCoeffsPage
 from src.gui.scripts.voltage_unit.tests import TestsPage
 from src.gui.shared_panels_widget import SharedPanelsWidget
-from src.gui.sidebar_button import SidebarButton
+from src.gui.widgets.sidebar_button import SidebarButton
 from src.logging_config import get_logger
 from src.logic.action_dataclass import ActionDescriptor
 from src.logic.model.actions_model import ActionModel, ActionsByHardwareProxy

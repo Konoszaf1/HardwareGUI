@@ -35,7 +35,7 @@ def _get_status_bar():
     if _status_bar_service is not None:
         return _status_bar_service
     try:
-        from src.gui.status_bar_service import StatusBarService
+        from src.gui.services.status_bar_service import StatusBarService
 
         _status_bar_service = StatusBarService.instance()
         return _status_bar_service

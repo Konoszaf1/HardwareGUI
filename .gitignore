@@ -51,3 +51,4 @@ Thumbs.db
 *.swp
 
 implementation_plan.md
+.agent/*

@@ -50,7 +50,7 @@
       <property name="handleWidth">
        <number>0</number>
       </property>
-      <widget class="QWidget" name="sidebar" native="true">
+      <widget class="Sidebar" name="sidebar" native="true">
        <property name="sizePolicy">
         <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
          <horstretch>0</horstretch>
@@ -58,6 +58,21 @@
         </sizepolicy>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout" stretch="6">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <property name="spacing">
+         <number>0</number>
+        </property>
         <item>
          <spacer name="verticalSpacer">
           <property name="orientation">
@@ -205,19 +220,24 @@
   <customwidget>
    <class>ExpandingSplitter</class>
    <extends>QSplitter</extends>
-   <header>gui.expanding_splitter</header>
+   <header>gui.widgets.expanding_splitter</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>HidingListView</class>
    <extends>QListView</extends>
-   <header>gui.hiding_listview</header>
+   <header>gui.widgets.hiding_listview</header>
   </customwidget>
   <customwidget>
    <class>ActionStackedWidget</class>
    <extends>QStackedWidget</extends>
-   <header>gui.action_stacked_widget</header>
+   <header>gui.widgets.action_stacked_widget</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>Sidebar</class>
+   <extends>QWidget</extends>
+   <header>gui.widgets.sidebar</header>
   </customwidget>
  </customwidgets>
  <resources>

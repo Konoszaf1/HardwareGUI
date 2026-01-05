@@ -3,7 +3,7 @@
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget
 
-from src.gui.sidebar_button import SidebarButton
+from src.gui.widgets.sidebar_button import SidebarButton
 
 
 def build_tool_buttons(parent: QWidget, buttons):

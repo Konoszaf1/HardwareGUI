@@ -4,7 +4,7 @@ from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import QListView, QSplitter, QWidget
 
 from src.config import config
-from src.gui.animation_mixin import AnimatedWidgetMixin
+from src.gui.mixins.animation_mixin import AnimatedWidgetMixin
 
 
 class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
@@ -51,21 +51,23 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         self.setup_variant_animation()
 
     def set_sidebar(self, sidebar: QWidget) -> None:
-        """Set the sidebar widget.
+        """Set the sidebar widget and configure its splitter behavior.
 
         Args:
             sidebar (QWidget): The sidebar Widget that contains all SidebarButtons.
         """
         self.sidebar = sidebar
         self.setCollapsible(0, False)
+        self.setStretchFactor(0, 0)  # Sidebar doesn't stretch
 
     def set_listview(self, listview: QListView) -> None:
-        """Set the list view widget.
+        """Set the list view widget and configure its splitter behavior.
 
         Args:
             listview (QListView): The QListView Widget that contains all actions.
         """
         self.listview = listview
+        self.setStretchFactor(1, 0)  # Listview doesn't stretch either
 
     def add_button(self, button) -> None:
         """Add a button to the sidebar and register for event filtering.

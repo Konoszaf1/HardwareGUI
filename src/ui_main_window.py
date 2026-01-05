@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.1
+## Created by: Qt User Interface Compiler version 6.10.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -20,9 +20,10 @@ from PySide6.QtWidgets import (QAbstractScrollArea, QApplication, QFrame, QGridL
     QSizePolicy, QSpacerItem, QStatusBar, QVBoxLayout,
     QWidget)
 
-from gui.action_stacked_widget import ActionStackedWidget
-from gui.expanding_splitter import ExpandingSplitter
-from gui.hiding_listview import HidingListView
+from gui.widgets.action_stacked_widget import ActionStackedWidget
+from gui.widgets.expanding_splitter import ExpandingSplitter
+from gui.widgets.hiding_listview import HidingListView
+from gui.widgets.sidebar import Sidebar
 import icons_rc
 
 class Ui_MainWindow(object):
@@ -47,7 +48,7 @@ class Ui_MainWindow(object):
         self.splitter.setLineWidth(0)
         self.splitter.setOrientation(Qt.Orientation.Horizontal)
         self.splitter.setHandleWidth(0)
-        self.sidebar = QWidget(self.splitter)
+        self.sidebar = Sidebar(self.splitter)
         self.sidebar.setObjectName(u"sidebar")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
         sizePolicy1.setHorizontalStretch(0)
@@ -55,7 +56,9 @@ class Ui_MainWindow(object):
         sizePolicy1.setHeightForWidth(self.sidebar.sizePolicy().hasHeightForWidth())
         self.sidebar.setSizePolicy(sizePolicy1)
         self.verticalLayout = QVBoxLayout(self.sidebar)
+        self.verticalLayout.setSpacing(0)
         self.verticalLayout.setObjectName(u"verticalLayout")
+        self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer)

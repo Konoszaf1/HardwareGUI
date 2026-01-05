@@ -4,7 +4,7 @@ from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtWidgets import QSizePolicy, QToolButton
 
 from src.config import config
-from src.gui.animation_mixin import AnimatedPropertyMixin
+from src.gui.mixins.animation_mixin import AnimatedPropertyMixin
 from src.gui.sidebar_tooltip import TooltipManager
 
 

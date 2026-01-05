@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import config
-from src.gui.action_stacked_widget import ContentWithPanels
 from src.gui.button_factory import build_tool_buttons
-from src.gui.shared_panels_service import SharedPanelsService
-from src.gui.status_bar_service import StatusBarService
+from src.gui.services.shared_panels_service import SharedPanelsService
+from src.gui.services.status_bar_service import StatusBarService
 from src.gui.styles import Styles
+from src.gui.widgets.action_stacked_widget import ContentWithPanels
 from src.logic.presenter import ActionsPresenter
 from src.populate_items import ACTIONS, HARDWARE
 from src.ui_main_window import Ui_MainWindow
@@ -76,13 +76,9 @@ class MainWindow(QMainWindow):
         self.buttons = build_tool_buttons(self, HARDWARE)
         self.stacked_widget = self.ui.stackedWidget
 
-        # Resize state
+        # Window drag state
         self.dragging = False
         self.drag_position = QPoint()
-        self._resize_edge = None
-        self._resize_margin = 10
-        self._resize_start_pos = None
-        self._resize_start_geo = None
 
     def _init_services(self) -> None:
         """Initialize application services."""
@@ -102,7 +98,7 @@ class MainWindow(QMainWindow):
             self.presenter.service.scopeVerified.connect(self._on_scope_status_changed)
 
     def _setup_window_properties(self) -> None:
-        """Configure window flags, resize behavior, and effects."""
+        """Configure window flags and effects."""
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMinimumSize(config.ui.window_min_width, config.ui.window_min_height)
@@ -113,8 +109,6 @@ class MainWindow(QMainWindow):
 
         self.ui.maximizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ui.minimizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-
-        self.setMouseTracking(True)
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(20)
@@ -129,11 +123,8 @@ class MainWindow(QMainWindow):
         self.sidebar = self.ui.sidebar
         self.actions = ACTIONS
 
-        self.sidebar.setMinimumWidth(70)
-        self.sidebar.layout().setContentsMargins(0, 0, 0, 0)
-        self.sidebar.layout().setSpacing(0)
-        self.list_view.setMinimumWidth(150)
-        self.splitter.setMinimumWidth(70 + 150)
+        # Splitter minimum width = sidebar collapsed + list view minimum
+        self.splitter.setMinimumWidth(config.ui.sidebar_collapsed_width + 150)
 
         shared_panels = self.panels_service.get_panels(1)
         self._current_panels = shared_panels
@@ -141,10 +132,15 @@ class MainWindow(QMainWindow):
         shared_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
 
         self.content_with_panels = ContentWithPanels(self.stacked_widget, shared_panels, self)
+
+        # Enable mouse tracking on central widget to propagate hover events to MainWindow
+        self.ui.centralwidget.setMouseTracking(True)
+
         self.content_with_panels.setVisible(False)
 
         parent_widget = self.ui.centralwidget
         grid_layout = parent_widget.layout()
+        grid_layout.setContentsMargins(0, 0, 0, 0)  # No margins - borderless
         grid_layout.removeWidget(self.stacked_widget)
         grid_layout.addWidget(self.content_with_panels, 1, 1)
         grid_layout.setColumnStretch(0, 0)
@@ -153,10 +149,9 @@ class MainWindow(QMainWindow):
         self.presenter = ActionsPresenter(self, self.buttons, self.actions, shared_panels)
         self.stacked_widget.currentPageIdChanged.connect(self._on_page_changed)
 
+        # Configure splitter with sidebar and listview (stretch factors set in those methods)
         self.splitter.set_sidebar(self.ui.sidebar)
         self.splitter.set_listview(self.list_view)
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 0)
 
         for button in self.buttons:
             self.sidebar.layout().insertWidget(button.property("order"), button)
@@ -187,50 +182,8 @@ class MainWindow(QMainWindow):
         if not self.content_with_panels.isVisible():
             self.content_with_panels.setVisible(True)
 
-    def _get_resize_edge(self, pos: QPoint) -> tuple[str, ...] | None:
-        """Determine which edge(s) the mouse is near for resizing.
-
-        Args:
-            pos (QPoint): Position of the mouse.
-
-        Returns:
-            tuple[str, ...] | None: Tuple of edges or None.
-        """
-        rect = self.rect()
-        m = self._resize_margin
-        edges = []
-
-        if pos.x() <= m:
-            edges.append("left")
-        elif pos.x() >= rect.width() - m:
-            edges.append("right")
-
-        if pos.y() <= m:
-            edges.append("top")
-        elif pos.y() >= rect.height() - m:
-            edges.append("bottom")
-
-        return tuple(edges) if edges else None
-
-    def _update_cursor(self, edges: tuple[str, ...] | None) -> None:
-        """Update cursor based on resize edges."""
-        if not edges:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            return
-
-        if edges == ("left",) or edges == ("right",):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
-        elif edges == ("top",) or edges == ("bottom",):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif edges in [("left", "top"), ("right", "bottom")]:
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif edges in [("right", "top"), ("left", "bottom")]:
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle window drag or resize start.
+        """Handle window drag start.
 
         Args:
             event (QMouseEvent): The mouse event.
@@ -238,66 +191,27 @@ class MainWindow(QMainWindow):
         if event.button() != Qt.MouseButton.LeftButton:
             return
 
-        pos = event.position().toPoint()
-        edges = self._get_resize_edge(pos)
-
-        if edges:
-            self._resize_edge = edges
-            self._resize_start_pos = event.globalPosition().toPoint()
-            self._resize_start_geo = self.geometry()
-            event.accept()
-        else:
-            # Dragging
-            if self.windowHandle().startSystemMove():
-                return
-            self.dragging = True
-            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
+        # Use system move if available
+        if self.windowHandle().startSystemMove():
+            return
+        self.dragging = True
+        self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Handle window drag or resize.
+        """Handle window drag.
 
         Args:
             event (QMouseEvent): The mouse event.
         """
-        pos = event.position().toPoint()
-
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            if self._resize_edge:
-                # Resizing
-                delta = event.globalPosition().toPoint() - self._resize_start_pos
-                geo = self._resize_start_geo
-                new_geo = geo
-
-                if "left" in self._resize_edge:
-                    new_geo = new_geo.adjusted(delta.x(), 0, 0, 0)
-                if "right" in self._resize_edge:
-                    new_geo = new_geo.adjusted(0, 0, delta.x(), 0)
-                if "top" in self._resize_edge:
-                    new_geo = new_geo.adjusted(0, delta.y(), 0, 0)
-                if "bottom" in self._resize_edge:
-                    new_geo = new_geo.adjusted(0, 0, 0, delta.y())
-
-                # Enforce minimum size
-                if (
-                    new_geo.width() >= self.minimumWidth()
-                    and new_geo.height() >= self.minimumHeight()
-                ):
-                    self.setGeometry(new_geo)
-                event.accept()
-            elif self.dragging:
-                self.move(event.globalPosition().toPoint() - self.drag_position)
-                event.accept()
-        else:
-            # Update cursor for resize edges
-            edges = self._get_resize_edge(pos)
-            self._update_cursor(edges)
+        if event.buttons() == Qt.MouseButton.LeftButton and self.dragging:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Handle window drag or resize end."""
+        """Handle window drag end."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
-            self._resize_edge = None
             event.accept()
 
     def _on_scope_status_changed(self, verified: bool) -> None:
