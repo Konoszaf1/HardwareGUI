@@ -17,7 +17,25 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class UIConfig:
-    """UI-related configuration."""
+    """UI-related configuration.
+
+    Attributes:
+        sidebar_expanded_width (int): Width of the sidebar when expanded.
+        sidebar_collapsed_width (int): Width of the sidebar when collapsed.
+        animation_duration_ms (int): Duration of sidebar animations in milliseconds.
+        expand_hover_delay_ms (int): Delay before sidebar expands on hover.
+        collapse_hover_delay_ms (int): Delay before sidebar collapses on mouse leave.
+        window_min_width (int): Minimum window width.
+        window_min_height (int): Minimum window height.
+        sidebar_button_icon_size (int): Size of icons in sidebar buttons.
+        panel_toggle_size (int): Height/Width of the toggle header/bar.
+        artifacts_expanded_width (int): Fixed width of the artifacts panel content.
+        terminal_expanded_height (int): Default height of the terminal panel content.
+        terminal_min_height (int): Minimum height when expanded.
+        panel_animation_duration_ms (int): Duration of panel animations.
+        panel_animation_easing (str): Easing curve for panel animations.
+        max_widget_size (int): Maximum widget size (QWIDGETSIZE_MAX).
+    """
 
     sidebar_expanded_width: int = 250
     sidebar_collapsed_width: int = 70
@@ -29,18 +47,23 @@ class UIConfig:
     sidebar_button_icon_size: int = 24
 
     # Shared Panels
-    panel_toggle_size: int = 24  # Height/Width of the toggle header/bar
-    artifacts_expanded_width: int = 250  # Fixed width of the artifacts panel content
-    terminal_expanded_height: int = 200  # Default height of the terminal panel content
-    terminal_min_height: int = 100  # Minimum height when expanded
-    panel_animation_duration_ms: int = 150  # even snappier
-    panel_animation_easing: str = "OutCubic"  # Responsive easing curve
-    max_widget_size: int = 16777215  # QWIDGETSIZE_MAX
+    panel_toggle_size: int = 24
+    artifacts_expanded_width: int = 250
+    terminal_expanded_height: int = 200
+    terminal_min_height: int = 100
+    panel_animation_duration_ms: int = 150
+    panel_animation_easing: str = "OutCubic"
+    max_widget_size: int = 16777215
 
 
 @dataclass(frozen=True)
 class ConsoleConfig:
-    """Console widget configuration."""
+    """Console widget configuration.
+
+    Attributes:
+        max_block_count (int): Maximum lines in the console buffer.
+        max_block_count_small (int): Reduced buffer size for constrained environments.
+    """
 
     max_block_count: int = 20000
     max_block_count_small: int = 10000
@@ -48,7 +71,15 @@ class ConsoleConfig:
 
 @dataclass(frozen=True)
 class ThumbnailConfig:
-    """Artifact thumbnail configuration."""
+    """Artifact thumbnail configuration.
+
+    Attributes:
+        icon_size (int): Size of the thumbnail icon (square).
+        grid_width (int): Width of the thumbnail grid item.
+        grid_height (int): Height of the thumbnail grid item.
+        spacing (int): Spacing between grid items.
+        refresh_debounce_ms (int): Debounce time for refreshing thumbnails.
+    """
 
     icon_size: int = 128
     grid_width: int = 140
@@ -59,7 +90,15 @@ class ThumbnailConfig:
 
 @dataclass(frozen=True)
 class HardwareConfig:
-    """Hardware connection defaults."""
+    """Hardware connection defaults.
+
+    Attributes:
+        default_scope_ip (str): Default IP address for the oscilloscope.
+        vu_serial_max (int): Maximum value for VU serial number.
+        vu_interface_max (int): Maximum value for VU interface ID.
+        mcu_serial_max (int): Maximum value for MCU serial number.
+        mcu_interface_max (int): Maximum value for MCU interface ID.
+    """
 
     default_scope_ip: str = "192.168.68.154"
     vu_serial_max: int = 9999
@@ -70,7 +109,12 @@ class HardwareConfig:
 
 @dataclass(frozen=True)
 class DialogConfig:
-    """Dialog window defaults."""
+    """Dialog window defaults.
+
+    Attributes:
+        image_viewer_width (int): Default width for the image viewer dialog.
+        image_viewer_height (int): Default height for the image viewer dialog.
+    """
 
     image_viewer_width: int = 800
     image_viewer_height: int = 600
@@ -78,7 +122,12 @@ class DialogConfig:
 
 @dataclass(frozen=True)
 class TooltipConfig:
-    """Sidebar tooltip configuration."""
+    """Sidebar tooltip configuration.
+
+    Attributes:
+        show_delay_ms (int): Delay before showing the tooltip.
+        grace_period_ms (int): Time period to keep tooltip active when moving between buttons.
+    """
 
     show_delay_ms: int = 400
     grace_period_ms: int = 300
@@ -86,10 +135,15 @@ class TooltipConfig:
 
 @dataclass(frozen=True)
 class StatusBarConfig:
-    """Status bar configuration."""
+    """Status bar configuration.
+
+    Attributes:
+        default_timeout_ms (int): Default timeout for status messages.
+        animation_interval_ms (int): Interval for status bar animations (e.g., dots).
+    """
 
     default_timeout_ms: int = 5000
-    animation_interval_ms: int = 500  # Dots animation speed
+    animation_interval_ms: int = 500
 
 
 @dataclass
@@ -98,6 +152,17 @@ class AppConfig:
 
     Groups all configuration categories and provides optional
     environment variable overrides for logging settings.
+
+    Attributes:
+        ui (UIConfig): UI configuration.
+        console (ConsoleConfig): Console configuration.
+        thumbnails (ThumbnailConfig): Thumbnail configuration.
+        hardware (HardwareConfig): Hardware configuration.
+        dialogs (DialogConfig): Dialog configuration.
+        tooltip (TooltipConfig): Tooltip configuration.
+        status_bar (StatusBarConfig): Status bar configuration.
+        log_level (str): Logging level (e.g., "INFO", "DEBUG").
+        log_file (str | None): Path to the log file, or None if logging to stdout.
     """
 
     ui: UIConfig = field(default_factory=UIConfig)

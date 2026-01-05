@@ -21,11 +21,15 @@ class TooltipManager:
     - Initial show delay (configured via config.tooltip.show_delay_ms)
     - "Grace period" for instant switching between adjacent buttons
     - Tooltip lifecycle management (creation, showing, hiding, destruction)
+
+    Attributes:
+        _instance (TooltipManager | None): Singleton instance.
     """
 
     _instance: "TooltipManager | None" = None
 
     def __init__(self) -> None:
+        """Initialize the tooltip manager."""
         self._tooltips: dict[QWidget, str] = {}  # button -> tooltip text
         self._current_button: QWidget | None = None
         self._is_warm: bool = False
@@ -42,18 +46,31 @@ class TooltipManager:
         self._grace_timer.timeout.connect(self._on_grace_expired)
 
     def is_warm(self) -> bool:
-        """Return True if the tooltip manager is in the warm state."""
+        """Return True if the tooltip manager is in the warm state.
+
+        Returns:
+            bool: True if warm, False otherwise.
+        """
         return self._is_warm
 
     @classmethod
     def instance(cls) -> "TooltipManager":
-        """Get or create the singleton manager instance."""
+        """Get or create the singleton manager instance.
+
+        Returns:
+            TooltipManager: The singleton instance.
+        """
         if cls._instance is None:
             cls._instance = TooltipManager()
         return cls._instance
 
     def register_button(self, button: QWidget, text: str) -> None:
-        """Register a button with its tooltip text (stores text only, not tooltip)."""
+        """Register a button with its tooltip text (stores text only, not tooltip).
+
+        Args:
+            button (QWidget): Button to register.
+            text (str): Tooltip text.
+        """
         if button not in self._tooltips:
             # Store just the text - we'll create fresh tooltips each time
             self._tooltips[button] = text
@@ -63,11 +80,11 @@ class TooltipManager:
         """Create a styled tooltip label for a button.
 
         Args:
-            text: The text to display in the tooltip.
-            parent: Optional parent widget (usually the button).
+            text (str): The text to display in the tooltip.
+            parent (QWidget | None): Optional parent widget (usually the button).
 
         Returns:
-            A QLabel configured as a tooltip window.
+            QLabel: A QLabel configured as a tooltip window.
         """
         tooltip = QLabel()
         tooltip.setWindowFlags(
@@ -83,7 +100,11 @@ class TooltipManager:
         return tooltip
 
     def on_button_enter(self, button: QWidget) -> None:
-        """Called when mouse enters a button."""
+        """Called when mouse enters a button.
+
+        Args:
+            button (QWidget): The button that was entered.
+        """
         # Stop any pending operations
         self._grace_timer.stop()
         self._show_timer.stop()
@@ -105,7 +126,11 @@ class TooltipManager:
             self._show_timer.start(delay)
 
     def on_button_leave(self, button: QWidget) -> None:
-        """Called when mouse leaves a button."""
+        """Called when mouse leaves a button.
+
+        Args:
+            button (QWidget): The button that was left.
+        """
         # Stop show timer if it was pending
         self._show_timer.stop()
         self._grace_timer.stop()
@@ -128,7 +153,11 @@ class TooltipManager:
                 self._current_button = None
 
     def _show_tooltip(self, button: QWidget) -> None:
-        """Show the tooltip for a button (creates fresh tooltip each time)."""
+        """Show the tooltip for a button (creates fresh tooltip each time).
+
+        Args:
+            button (QWidget): The button to show tooltip for.
+        """
         text = self._tooltips.get(button)
         if text is None or not button.isVisible():
             return

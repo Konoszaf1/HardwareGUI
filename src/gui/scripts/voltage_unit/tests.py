@@ -1,4 +1,3 @@
-# tests_page_min.py
 """Tests page for voltage unit validation."""
 
 from PySide6.QtWidgets import (
@@ -6,9 +5,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QVBoxLayout,
-)
-from PySide6.QtWidgets import (
-    QWidget as QW,
+    QWidget,
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
@@ -28,26 +25,33 @@ class TestsPage(BaseHardwarePage):
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the TestsPage.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+            service (VoltageUnitService | None): Service for voltage unit operations.
+            shared_panels (SharedPanelsWidget | None): Shared panels for logs/artifacts.
+        """
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout (Vertical) ====
-        mainLayout = QVBoxLayout(self)
-        mainLayout.setSpacing(15)
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(15)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Tests")
         title.setObjectName("title")
-        mainLayout.addWidget(title)
+        main_layout.addWidget(title)
 
         # ==== Test Cards ====
-        cardsWidget = QW()
-        cardsLayout = QHBoxLayout(cardsWidget)
-        cardsLayout.setContentsMargins(0, 0, 0, 0)
-        cardsLayout.setSpacing(15)
+        cards_widget = QWidget()
+        cards_layout = QHBoxLayout(cards_widget)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(15)
 
         # -- Card 1: Outputs --
         self.btn_test_outputs = QPushButton("Run Test")
@@ -56,7 +60,7 @@ class TestsPage(BaseHardwarePage):
             ["Points: 5000", "Scale: 0.2 V/div", "Time: 1e-2 s/div"],
             self.btn_test_outputs,
         )
-        cardsLayout.addWidget(card_outputs)
+        cards_layout.addWidget(card_outputs)
 
         # -- Card 2: Ramp --
         self.btn_test_ramp = QPushButton("Run Test")
@@ -65,7 +69,7 @@ class TestsPage(BaseHardwarePage):
             ["Range: 500 ms", "Slope: ~20 V/s", "Sync: 1 MHz"],
             self.btn_test_ramp,
         )
-        cardsLayout.addWidget(card_ramp)
+        cards_layout.addWidget(card_ramp)
 
         # -- Card 3: Transient --
         self.btn_test_transient = QPushButton("Run Test")
@@ -74,7 +78,7 @@ class TestsPage(BaseHardwarePage):
             ["Amp: 1 V", "Step: Auto (5-20µs)", "Rec: 5000 pts"],
             self.btn_test_transient,
         )
-        cardsLayout.addWidget(card_transient)
+        cards_layout.addWidget(card_transient)
 
         # -- Card 4: All --
         self.btn_test_all = QPushButton("Run All")
@@ -84,13 +88,13 @@ class TestsPage(BaseHardwarePage):
             ["Runs all tests", "Generates all plots", "Verifies results"],
             self.btn_test_all,
         )
-        cardsLayout.addWidget(card_all)
+        cards_layout.addWidget(card_all)
 
-        cardsLayout.addStretch()
-        mainLayout.addWidget(cardsWidget)
+        cards_layout.addStretch()
+        main_layout.addWidget(cards_widget)
 
         # Stretch to fill remaining space
-        mainLayout.addStretch()
+        main_layout.addStretch()
 
         # Register action buttons for busy state management
         self._action_buttons = [

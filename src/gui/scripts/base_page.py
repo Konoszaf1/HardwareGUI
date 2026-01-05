@@ -28,8 +28,8 @@ _status_bar_service = None
 def _get_status_bar():
     """Lazily get the StatusBarService instance.
 
-    Returns the service if initialized, None otherwise.
-    Does not cache None to allow retry on subsequent calls.
+    Returns:
+        StatusBarService: The service instance if initialized, else None.
     """
     global _status_bar_service
     if _status_bar_service is not None:
@@ -55,11 +55,8 @@ class BaseHardwarePage(QWidget):
     - Artifact watching for file updates
     - Scope verification handling
 
-    Subclasses should:
-    - Call super().__init__(parent, service, shared_panels)
-    - Set up their specific UI layout (without console/artifacts)
-    - Populate self._action_buttons with buttons to enable/disable
-    - Call self._connect_service_signals() at end of __init__ if needed
+    Attributes:
+        service (VoltageUnitService | None): Service for hardware operations.
     """
 
     def __init__(
@@ -68,6 +65,13 @@ class BaseHardwarePage(QWidget):
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the base page.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+            service (VoltageUnitService | None): Hardware service instance.
+            shared_panels (SharedPanelsWidget | None): Shared panels widget.
+        """
         super().__init__(parent)
         self.service = service
         self._shared_panels = shared_panels
@@ -86,22 +90,38 @@ class BaseHardwarePage(QWidget):
 
     @property
     def shared_panels(self) -> SharedPanelsWidget | None:
-        """Return the shared panels widget."""
+        """Return the shared panels widget.
+
+        Returns:
+            SharedPanelsWidget | None: The shared panels widget.
+        """
         return self._shared_panels
 
     @property
     def console(self):
-        """Return the console widget from shared panels."""
+        """Return the console widget from shared panels.
+
+        Returns:
+            QPlainTextEdit | None: The console widget.
+        """
         return self._shared_panels.console if self._shared_panels else None
 
     @property
     def listWidget(self):
-        """Return the artifacts list from shared panels."""
+        """Return the artifacts list from shared panels.
+
+        Returns:
+            QListWidget | None: The artifacts list widget.
+        """
         return self._shared_panels.artifacts if self._shared_panels else None
 
     @property
     def le_input(self):
-        """Return the input field from shared panels."""
+        """Return the input field from shared panels.
+
+        Returns:
+            QLineEdit | None: The input field widget.
+        """
         return self._shared_panels.input_field if self._shared_panels else None
 
     # ---- Busy state management ----
@@ -113,7 +133,7 @@ class BaseHardwarePage(QWidget):
         concurrent task execution.
 
         Args:
-            busy: True to enter busy state, False to enable buttons.
+            busy (bool): True to enter busy state, False to enable buttons.
         """
         self._busy = busy
         for btn in self._action_buttons:
@@ -140,7 +160,7 @@ class BaseHardwarePage(QWidget):
         """Start a task with signal connections and lifecycle management.
 
         Args:
-            task: FunctionTask instance from VoltageUnitService, or None.
+            task (FunctionTask | None): FunctionTask instance from VoltageUnitService.
         """
         if not task:
             logger.warning("_start_task called with None task")
@@ -166,49 +186,66 @@ class BaseHardwarePage(QWidget):
             )
         )
 
-        def _finished(result):
-            self._set_busy(False)
-            self._active_task = None
-            self._ensure_artifact_watcher()
-
-            if self._artifact_watcher:
-                self._artifact_watcher.refresh_thumbnails()
-
-            # Handle coefficient updates if present
-            data = getattr(result, "data", None)
-            if isinstance(data, dict):
-                coeffs = data.get("coeffs")
-                if coeffs:
-                    for ch, vals in coeffs.items():
-                        if len(vals) >= 2:
-                            self._log(f"Coeff {ch}: k={vals[0]:.6f}, d={vals[1]:.6f}")
-
-            self._log("Finished.")
-            status_svc = _get_status_bar()
-            if status_svc:
-                status_svc.set_ready()
-
-        signals.finished.connect(_finished)
+        signals.finished.connect(lambda result: self._on_task_finished(result))
         run_in_thread(task)
+
+    def _on_task_finished(self, result) -> None:
+        """Handle task completion.
+
+        Args:
+            result: The result of the task.
+        """
+        self._set_busy(False)
+        self._active_task = None
+        self._ensure_artifact_watcher()
+
+        if self._artifact_watcher:
+            self._artifact_watcher.refresh_thumbnails()
+
+        # Handle coefficient updates if present
+        data = getattr(result, "data", None)
+        if isinstance(data, dict):
+            coeffs = data.get("coeffs")
+            if coeffs:
+                for ch, vals in coeffs.items():
+                    if len(vals) >= 2:
+                        self._log(f"Coeff {ch}: k={vals[0]:.6f}, d={vals[1]:.6f}")
+
+        self._log("Finished.")
+        status_svc = _get_status_bar()
+        if status_svc:
+            status_svc.set_ready()
 
     # ---- Logging ----
 
     def _log(self, msg: str) -> None:
-        """Append a message to the shared console."""
+        """Append a message to the shared console.
+
+        Args:
+            msg (str): Message to log.
+        """
         if self._shared_panels:
             self._shared_panels.log(msg)
 
     # ---- Event handlers ----
 
     def _on_image_double_clicked(self, item) -> None:
-        """Open image viewer dialog for the clicked thumbnail."""
+        """Open image viewer dialog for the clicked thumbnail.
+
+        Args:
+            item (QListWidgetItem): The double-clicked item.
+        """
         path = item.data(Qt.UserRole)
         if path:
             dlg = ImageViewerDialog(path, self)
             dlg.exec()
 
     def _on_input_requested(self, prompt: str) -> None:
-        """Show input field when service requests input."""
+        """Show input field when service requests input.
+
+        Args:
+            prompt (str): Prompt text to display.
+        """
         if not self.isVisible() or not self._shared_panels:
             return
         self._log(f"<b>Input requested:</b> {prompt}")
@@ -230,6 +267,9 @@ class BaseHardwarePage(QWidget):
 
         Note: Status bar updates are handled globally by MainWindow.
         This method manages page-local button states and logging.
+
+        Args:
+            verified (bool): True if scope is verified, False otherwise.
         """
         for btn in self._action_buttons:
             btn.setEnabled(verified)

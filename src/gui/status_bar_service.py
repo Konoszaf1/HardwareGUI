@@ -55,20 +55,37 @@ class StatusBarService:
         if StatusBarService._instance is not None:
             raise RuntimeError("Use StatusBarService.instance() instead")
 
+        self._app_status = AppStatus.READY
+        self._busy_message = ""
+        self._dot_count = 1
+
+        # Hardware-specific scope states: {hardware_id: is_connected}
+        self._hardware_scope_states: dict[int, bool] = {}
+        self._active_hardware_id: int | None = None
+
+        self._app_label: QLabel | None = None
+        self._scope_label: QLabel | None = None
+        self._animation_timer: QTimer = QTimer()
+
     @classmethod
     def init(cls, statusbar: QStatusBar) -> None:
-        """Initialize the service with the status bar widget."""
+        """Initialize the service with the status bar widget.
+
+        Args:
+            statusbar (QStatusBar): The status bar widget.
+        """
         cls._statusbar = statusbar
         instance = cls.__new__(cls)
+        # Manually call __init__-like setup since __new__ bypasses it
+        # or we could just instantiate normally if we adjusted the pattern.
+        # But to stick to the existing pattern:
 
-        # App status (left side)
         instance._app_status = AppStatus.READY
         instance._busy_message = ""
         instance._dot_count = 1
 
-        # Hardware-specific scope states: {hardware_id: is_connected}
-        instance._hardware_scope_states: dict[int, bool] = {}
-        instance._active_hardware_id: int | None = None
+        instance._hardware_scope_states = {}
+        instance._active_hardware_id = None
 
         # Create status labels
         instance._app_label = QLabel()
@@ -94,7 +111,14 @@ class StatusBarService:
 
     @classmethod
     def instance(cls) -> StatusBarService:
-        """Get the singleton instance."""
+        """Get the singleton instance.
+
+        Returns:
+            StatusBarService: The singleton instance.
+
+        Raises:
+            RuntimeError: If init() has not been called.
+        """
         if cls._instance is None:
             raise RuntimeError("StatusBarService.init() must be called first")
         return cls._instance
@@ -108,7 +132,11 @@ class StatusBarService:
         logger.info("Status: Ready")
 
     def set_busy(self, message: str) -> None:
-        """Set app status to busy with a task message."""
+        """Set app status to busy with a task message.
+
+        Args:
+            message (str): Busy message.
+        """
         self._app_status = AppStatus.BUSY
         self._busy_message = message
         self._stop_animation()
@@ -121,6 +149,9 @@ class StatusBarService:
         """Set the currently active hardware unit.
 
         This restores the scope connection state for the selected hardware.
+
+        Args:
+            hardware_id (int): Hardware ID.
         """
         self._active_hardware_id = hardware_id
         # Initialize state if not exists
@@ -135,8 +166,8 @@ class StatusBarService:
         """Set the scope connection state for a hardware unit.
 
         Args:
-            hardware_id: Hardware ID (defaults to active hardware)
-            connected: Whether scope is connected/verified
+            hardware_id (int | None): Hardware ID (defaults to active hardware).
+            connected (bool): Whether scope is connected/verified.
         """
         if hardware_id is None:
             hardware_id = self._active_hardware_id
@@ -156,8 +187,13 @@ class StatusBarService:
     # ---- Temporary messages ----
 
     def show_temporary(self, message: str, timeout_ms: int | None = None) -> None:
-        """Show a temporary message in the main status area."""
-        if self._statusbar is None:
+        """Show a temporary message in the main status area.
+
+        Args:
+            message (str): Message to show.
+            timeout_ms (int | None): Timeout in ms.
+        """
+        if self._statusbar is None or self._app_label is None:
             return
         if timeout_ms is None:
             timeout_ms = config.status_bar.default_timeout_ms

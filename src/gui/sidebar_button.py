@@ -13,17 +13,23 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
 
     Uses configuration values for icon size and collapsed width to ensure
     consistency across the application. Tooltip timing is managed by TooltipManager.
+
+    Attributes:
+        _original_text (str | None): Original text of the button.
+        _tooltip_registered (bool): Whether the button is registered with the tooltip manager.
     """
 
     def __init__(self, parent=None):
+        """Initialize the sidebar button.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self._original_text: str | None = None
         self._tooltip_registered: bool = False
-
-        # Use config for icon size instead of hardcoded value
         icon_size = config.ui.sidebar_button_icon_size
         self.setIconSize(QSize(icon_size, icon_size))
-
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.setCheckable(True)
         self.setChecked(False)
@@ -34,12 +40,14 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         # Ensure button never shrinks below icon size + padding
         min_size = config.ui.sidebar_button_icon_size
         self.setMinimumSize(min_size, min_size)
-
-        # Setup animation using mixin
         self.setup_property_animation(b"minimumWidth")
 
     def _create_size_policy(self) -> QSizePolicy:
-        """Create custom size policy that enables resizing."""
+        """Create custom size policy that enables resizing.
+
+        Returns:
+            QSizePolicy: Size policy with fixed horizontal stretch and preferred vertical.
+        """
         size_policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         size_policy.setHorizontalStretch(0)
         size_policy.setVerticalStretch(0)
@@ -54,13 +62,21 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
             self._tooltip_registered = True
 
     def enterEvent(self, event: QEvent) -> None:
-        """Show tooltip when mouse enters button."""
+        """Show tooltip when mouse enters button.
+
+        Args:
+            event (QEvent): Enter event.
+        """
         self._ensure_registered()
         TooltipManager.instance().on_button_enter(self)
         super().enterEvent(event)
 
     def leaveEvent(self, event: QEvent) -> None:
-        """Hide tooltip when mouse leaves button."""
+        """Hide tooltip when mouse leaves button.
+
+        Args:
+            event (QEvent): Leave event.
+        """
         TooltipManager.instance().on_button_leave(self)
         super().leaveEvent(event)
 
@@ -68,7 +84,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         """Collapse or expand the button.
 
         Args:
-            collapsed: True to collapse (icon only), False to expand (show text).
+            collapsed (bool): True to collapse (icon only), False to expand (show text).
         """
         if collapsed:
             super().setText("")
@@ -99,7 +115,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         """Store original text and set button text.
 
         Args:
-            text: The text to display on the button.
+            text (str): The text to display on the button.
         """
         if not self._original_text:
             self._original_text = text

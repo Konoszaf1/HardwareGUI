@@ -34,19 +34,26 @@ logger = get_logger(__name__)
 class ActionStackedWidget(QStackedWidget):
     """A pragmatic subclass of QStackedWidget that routes by string IDs.
 
-    Features
-    --------
+    Features:
     - Map arbitrary string IDs to page *factories* (lazy creation)
     - Switch by ID: calls page.leave() on old page, page.enter() on new page
     - Signal currentPageChanged(id, widget)
-    - Convenience: bind_to_selection(selectionModel, role) to route from a QListView/QTreeView
+    - Convenience: bind_to_selection(selectionModel, role) to route from a QListView
     - get_page(id) to access the live page instance (if created)
     - unregister/clear APIs for cleanup
+
+    Attributes:
+        currentPageIdChanged (Signal): Signal emitted when the current page changes (id, widget).
     """
 
     currentPageIdChanged = Signal(str, QWidget)
 
     def __init__(self, parent: QWidget | None = None):
+        """Initialize the ActionStackedWidget.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self.factories: dict[str, Callable[[], QWidget]] = {}
         self.ids_by_index: dict[int, str] = {}
@@ -54,15 +61,29 @@ class ActionStackedWidget(QStackedWidget):
         self._shared_panels: SharedPanelsWidget | None = None
 
     def set_shared_panels(self, panels: SharedPanelsWidget) -> None:
-        """Set the shared panels instance to use for all pages."""
+        """Set the shared panels instance to use for all pages.
+
+        Args:
+            panels (SharedPanelsWidget): The shared panels instance.
+        """
         self._shared_panels = panels
 
     # ---- Registration ----
     def register_page(self, page_id: str, factory: Callable[[], QWidget]) -> None:
-        """Register a page factory for an ID. Does not instantiate immediately."""
+        """Register a page factory for an ID. Does not instantiate immediately.
+
+        Args:
+            page_id (str): Unique ID for the page.
+            factory (Callable[[], QWidget]): Function that returns the page widget.
+        """
         self.factories[page_id] = factory
 
     def unregister_page(self, page_id: str) -> None:
+        """Unregister a page and remove it if instantiated.
+
+        Args:
+            page_id (str): The ID of the page to unregister.
+        """
         idx = self.index_by_id.get(page_id)
         if idx is not None:
             w = self.widget(idx)
@@ -87,16 +108,25 @@ class ActionStackedWidget(QStackedWidget):
     def bind_to_selection(
         self, selection_model: QItemSelectionModel, role: int = Qt.ItemDataRole.UserRole
     ) -> None:
-        """Route QListView/QTreeView's currentChanged to show the corresponding page.
+        """Route QListView currentChanged to show the corresponding page.
 
         The model is expected to store the router page_id at 'role'.
+
+        Args:
+            selection_model (QItemSelectionModel): The selection model to monitor.
+            role (int): The data role containing the page ID.
         """
         selection_model.currentChanged.connect(
             lambda cur, prev: self.on_current_changed(cur, prev, role)
         )
 
-    def bind_to_listview(self, list_view, role: int = Qt.UserRole) -> None:
-        """Bind after setting the model on a QListView/QTreeView."""
+    def bind_to_listview(self, list_view, role: int = Qt.ItemDataRole.UserRole) -> None:
+        """Bind after setting the model on a QListView/QTreeView.
+
+        Args:
+            list_view (QAbstractItemView): The view to bind to.
+            role (int): The data role containing the page ID.
+        """
         sel = getattr(list_view, "selectionModel", None)
         sel = sel() if callable(sel) else sel
         if sel is not None:
@@ -104,7 +134,13 @@ class ActionStackedWidget(QStackedWidget):
 
     @Slot(QModelIndex, QModelIndex)
     def on_current_changed(self, current: QModelIndex, previous: QModelIndex, role: int) -> None:
-        """Change the shown page when the selection changes."""
+        """Change the shown page when the selection changes.
+
+        Args:
+            current (QModelIndex): The new current index.
+            previous (QModelIndex): The previous current index.
+            role (int): The role to query for page ID.
+        """
         if not current.isValid():
             return
 
@@ -113,7 +149,11 @@ class ActionStackedWidget(QStackedWidget):
             self.show_page(page_id)
 
     def show_page(self, page_id: str) -> None:
-        """Show (and lazily create) the page mapped to page_id."""
+        """Show (and lazily create) the page mapped to page_id.
+
+        Args:
+            page_id (str): The ID of the page to show.
+        """
         if page_id not in self.factories and page_id not in self.index_by_id:
             return
 
@@ -139,6 +179,14 @@ class ActionStackedWidget(QStackedWidget):
         self.currentPageIdChanged.emit(page_id, cur_w)
 
     def get_page(self, page_id: str) -> QWidget | None:
+        """Get the instantiated page widget for an ID.
+
+        Args:
+            page_id (str): The page ID.
+
+        Returns:
+            QWidget | None: The page widget if it exists, else None.
+        """
         idx = self.index_by_id.get(page_id)
         if idx is None:
             return None
@@ -161,6 +209,13 @@ class ContentWithPanels(QWidget):
         shared_panels: SharedPanelsWidget,
         parent: QWidget | None = None,
     ):
+        """Initialize the container.
+
+        Args:
+            stacked_widget (QStackedWidget): The main content stack.
+            shared_panels (SharedPanelsWidget): The shared panels source.
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self._stacked = stacked_widget
         self._panels = shared_panels
@@ -187,8 +242,7 @@ class ContentWithPanels(QWidget):
         self._main_layout.setSpacing(0)
 
         # Left: splitter for stacked widget + terminal (vertical)
-
-        self._v_splitter = QSplitter(Qt.Vertical)
+        self._v_splitter = QSplitter(Qt.Orientation.Vertical)
         self._v_splitter.setHandleWidth(1)
         self._v_splitter.setStyleSheet(
             f"QSplitter::handle {{ background-color: {Colors.BORDER_SUBTLE}; }}"
@@ -218,7 +272,11 @@ class ContentWithPanels(QWidget):
             self._apply_console_height(True)
 
     def showEvent(self, event) -> None:
-        """Apply initial sizes when the widget is first shown."""
+        """Apply initial sizes when the widget is first shown.
+
+        Args:
+            event (QShowEvent): The show event.
+        """
         super().showEvent(event)
         # Force a small delay to ensure geometry is finalized
         from PySide6.QtCore import QTimer
@@ -226,14 +284,23 @@ class ContentWithPanels(QWidget):
         QTimer.singleShot(0, lambda: self._apply_console_height(self._panels.is_console_visible()))
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
-        """Store the console height when resized manually."""
+        """Store the console height when resized manually.
+
+        Args:
+            pos (int): New splitter handle position.
+            index (int): Index of the handle.
+        """
         if index == 1 and self._panels.is_console_visible():
             sizes = self._v_splitter.sizes()
             if len(sizes) > 1:
                 self._last_console_height = sizes[1]
 
     def _on_console_toggled(self, expanded: bool) -> None:
-        """Handle console toggle by beginning the height animation."""
+        """Handle console toggle by beginning the height animation.
+
+        Args:
+            expanded (bool): Whether the console is expanded.
+        """
         # During expansion, we need to allow the stack to be smaller than terminal_min_height
         # to ensure a smooth animation from the toggle button height.
         if expanded:
@@ -247,13 +314,36 @@ class ContentWithPanels(QWidget):
         self._apply_console_height(expanded)
 
     def _on_artifacts_toggled(self, expanded: bool) -> None:
-        """Sync stack width and constraints using state-driven sizing."""
+        """Sync stack width and constraints using state-driven sizing.
+
+        Args:
+            expanded (bool): Whether the artifacts panel is expanded.
+        """
         art_width = self.artifacts_expanded_total_width
         self._artifacts_stack.setMinimumWidth(config.ui.panel_toggle_size)
         self._artifacts_stack.setMaximumWidth(art_width)
 
+    def _get_target_console_height(self, expanded: bool, total_height: int) -> int:
+        """Calculate target height for console.
+
+        Args:
+            expanded (bool): Desired state.
+            total_height (int): Total available height.
+
+        Returns:
+            int: Target height in pixels.
+        """
+        if expanded:
+            target_h = min(self._last_console_height, total_height - config.ui.terminal_min_height)
+            return max(target_h, config.ui.terminal_min_height)
+        return config.ui.panel_toggle_size
+
     def _apply_console_height(self, expanded: bool) -> None:
-        """Update splitter sizes based on expanded state with animation."""
+        """Update splitter sizes based on expanded state with animation.
+
+        Args:
+            expanded (bool): Desired expansion state.
+        """
         if not self.isVisible():
             return
 
@@ -266,11 +356,7 @@ class ContentWithPanels(QWidget):
             return
 
         start_h = sizes[1]
-        if expanded:
-            target_h = min(self._last_console_height, total_height - config.ui.terminal_min_height)
-            target_h = max(target_h, config.ui.terminal_min_height)
-        else:
-            target_h = config.ui.panel_toggle_size
+        target_h = self._get_target_console_height(expanded, total_height)
 
         # Cleanup existing animation
         if self._console_anim and self._console_anim.state() == QVariantAnimation.State.Running:
@@ -306,7 +392,11 @@ class ContentWithPanels(QWidget):
         self._console_anim.start()
 
     def set_panels(self, new_panels: SharedPanelsWidget) -> None:
-        """Swap panels when hardware is changed using QStackedWidget to avoid flicker."""
+        """Swap panels when hardware is changed using QStackedWidget to avoid flicker.
+
+        Args:
+            new_panels (SharedPanelsWidget): The new panels to display.
+        """
         if self._panels == new_panels:
             return
 
@@ -362,13 +452,27 @@ class ContentWithPanels(QWidget):
 
     @property
     def stacked_widget(self) -> QStackedWidget:
+        """Return the internal stacked widget.
+
+        Returns:
+            QStackedWidget: The stacked widget.
+        """
         return self._stacked
 
     @property
     def panels(self) -> SharedPanelsWidget:
+        """Return the current shared panels.
+
+        Returns:
+            SharedPanelsWidget: The current panels.
+        """
         return self._panels
 
     @property
     def artifacts_expanded_total_width(self) -> int:
-        """Return the width of the artifacts panel including toggle button when expanded."""
+        """Return the width of the artifacts panel including toggle button when expanded.
+
+        Returns:
+            int: Total width in pixels.
+        """
         return config.ui.artifacts_expanded_width + config.ui.panel_toggle_size

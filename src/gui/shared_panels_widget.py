@@ -27,11 +27,22 @@ from src.gui.utils.widget_factories import (
 
 
 class HorizontalCollapsiblePanel(QFrame):
-    """Collapsible panel that expands/collapses vertically (for bottom panel)."""
+    """Collapsible panel that expands/collapses vertically (for bottom panel).
+
+    Attributes:
+        toggled (Signal): Signal emitted when panel is toggled (bool expanded).
+    """
 
     toggled = Signal(bool)
 
-    def __init__(self, title: str, start_collapsed: bool = False, parent=None):
+    def __init__(self, title: str, start_collapsed: bool = False, parent: QWidget | None = None):
+        """Initialize the horizontal collapsible panel.
+
+        Args:
+            title (str): Title of the panel.
+            start_collapsed (bool): Whether to start in collapsed state.
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self._expanded = not start_collapsed
         self._title = title
@@ -45,7 +56,7 @@ class HorizontalCollapsiblePanel(QFrame):
         # Toggle button (horizontal bar)
         self._toggle_btn = QPushButton()
         self._toggle_btn.setFixedHeight(config.ui.panel_toggle_size)
-        self._toggle_btn.setCursor(Qt.PointingHandCursor)
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self._on_toggle)
         self._update_button()
         self._style_button()
@@ -64,17 +75,25 @@ class HorizontalCollapsiblePanel(QFrame):
             self._content.setVisible(False)
 
     def _style_button(self) -> None:
+        """Apply styles to the toggle button."""
         self._toggle_btn.setStyleSheet(Styles.PANEL_TOGGLE_BUTTON)
 
     def _update_button(self) -> None:
+        """Update toggle button text/icon based on state."""
         icon = "▼" if self._expanded else "▲"
         self._toggle_btn.setText(f"{icon}  {self._title}")
 
     def _on_toggle(self) -> None:
+        """Handle toggle button click."""
         self.set_expanded(not self._expanded)
         self.toggled.emit(self._expanded)
 
     def set_expanded(self, expanded: bool) -> None:
+        """Set the expanded state of the panel.
+
+        Args:
+            expanded (bool): True to expand, False to collapse.
+        """
         self._expanded = expanded
         self._update_button()
         self._content.setVisible(expanded)
@@ -87,18 +106,40 @@ class HorizontalCollapsiblePanel(QFrame):
 
     @property
     def is_expanded(self) -> bool:
+        """Return whether the panel is currently expanded.
+
+        Returns:
+            bool: True if expanded.
+        """
         return self._expanded
 
     def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
+        """Add a widget to the content area.
+
+        Args:
+            widget (QWidget): Widget to add.
+            stretch (int): Stretch factor.
+        """
         self._content_layout.addWidget(widget, stretch)
 
 
 class VerticalCollapsiblePanel(QFrame):
-    """Collapsible panel that expands/collapses horizontally (for side panel)."""
+    """Collapsible panel that expands/collapses horizontally (for side panel).
+
+    Attributes:
+        toggled (Signal): Signal emitted when panel is toggled (bool expanded).
+    """
 
     toggled = Signal(bool)
 
-    def __init__(self, title: str, start_collapsed: bool = False, parent=None):
+    def __init__(self, title: str, start_collapsed: bool = False, parent: QWidget | None = None):
+        """Initialize the vertical collapsible panel.
+
+        Args:
+            title (str): Title of the panel.
+            start_collapsed (bool): Whether to start in collapsed state.
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self._expanded = not start_collapsed
         self._title = title
@@ -112,7 +153,7 @@ class VerticalCollapsiblePanel(QFrame):
         # Toggle button (vertical bar on left side)
         self._toggle_btn = QPushButton()
         self._toggle_btn.setFixedWidth(config.ui.panel_toggle_size)
-        self._toggle_btn.setCursor(Qt.PointingHandCursor)
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self._on_toggle)
         self._update_button()
         self._style_button()
@@ -137,23 +178,25 @@ class VerticalCollapsiblePanel(QFrame):
             self.setFixedWidth(config.ui.artifacts_expanded_width + config.ui.panel_toggle_size)
 
     def _style_button(self) -> None:
+        """Apply styles to the toggle button."""
         self._toggle_btn.setStyleSheet(Styles.PANEL_TOGGLE_BUTTON_VERTICAL)
 
     def _update_button(self) -> None:
+        """Update toggle button text/icon based on state."""
         # Use simple arrow that doesn't need rotation
         icon = "◀" if self._expanded else "▶"
         self._toggle_btn.setText(icon)
 
     def _on_toggle(self) -> None:
+        """Handle toggle button click."""
         self.set_expanded(not self._expanded)
 
     def set_expanded(self, expanded: bool, immediate: bool = False) -> None:
         """Set the expanded state.
 
         Args:
-            expanded: Target expanded state
-            immediate: If True, apply layout changes instantly. If False (default),
-                      allow flexible constraints for animation.
+            expanded (bool): Target expanded state.
+            immediate (bool): If True, apply layout changes instantly.
         """
         if self._expanded != expanded or immediate:
             self._expanded = expanded
@@ -191,9 +234,20 @@ class VerticalCollapsiblePanel(QFrame):
 
     @property
     def is_expanded(self) -> bool:
+        """Return whether the panel is currently expanded.
+
+        Returns:
+            bool: True if expanded.
+        """
         return self._expanded
 
     def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
+        """Add a widget to the content area.
+
+        Args:
+            widget (QWidget): Widget to add.
+            stretch (int): Stretch factor.
+        """
         self._content_layout.addWidget(widget, stretch)
 
 
@@ -202,12 +256,21 @@ class SharedPanelsWidget(QWidget):
 
     When panels are collapsed, they hide completely leaving only a small
     toggle button. Content expands to fill available space.
+
+    Attributes:
+        console_toggled (Signal): Signal emitted when console is toggled.
+        artifacts_toggled (Signal): Signal emitted when artifacts are toggled.
     """
 
     console_toggled = Signal(bool)
     artifacts_toggled = Signal(bool)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the shared panels widget.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
 
         # Console panel (bottom, horizontal collapse)
@@ -236,21 +299,37 @@ class SharedPanelsWidget(QWidget):
 
     @property
     def console(self) -> QPlainTextEdit:
-        """Return the console widget."""
+        """Return the console widget.
+
+        Returns:
+            QPlainTextEdit: The console.
+        """
         return self._console
 
     @property
     def artifacts(self) -> QListWidget:
-        """Return the artifacts list widget."""
+        """Return the artifacts list widget.
+
+        Returns:
+            QListWidget: The artifacts list.
+        """
         return self._artifacts
 
     @property
-    def input_field(self):
-        """Return the input field widget."""
+    def input_field(self) -> QPlainTextEdit:  # Assuming it returns a text edit or line edit
+        """Return the input field widget.
+
+        Returns:
+            QWidget: The input field.
+        """
         return self._input_field
 
     def log(self, msg: str) -> None:
-        """Append message to console, auto-scroll if expanded."""
+        """Append message to console, auto-scroll if expanded.
+
+        Args:
+            msg (str): Message to log.
+        """
         append_log(self._console, msg)
         if self._console_visible:
             self._scroll_console_to_end()
@@ -261,27 +340,49 @@ class SharedPanelsWidget(QWidget):
         self._artifacts.clear()
 
     def show_console(self, visible: bool) -> None:
-        """Show or collapse the console panel."""
+        """Show or collapse the console panel.
+
+        Args:
+            visible (bool): True to show, False to collapse.
+        """
         self._console_visible = visible
         self._console_panel.set_expanded(visible)
         if visible:
             self._scroll_console_to_end()
 
     def show_artifacts(self, visible: bool) -> None:
-        """Show or collapse the artifacts panel."""
+        """Show or collapse the artifacts panel.
+
+        Args:
+            visible (bool): True to show, False to collapse.
+        """
         self._artifacts_visible = visible
         self._artifacts_panel.set_expanded(visible)
 
     def is_console_visible(self) -> bool:
+        """Return whether the console is visible.
+
+        Returns:
+            bool: True if visible.
+        """
         return self._console_visible
 
     def is_artifacts_visible(self) -> bool:
+        """Return whether the artifacts panel is visible.
+
+        Returns:
+            bool: True if visible.
+        """
         return self._artifacts_visible
 
     # ---- Input handling ----
 
     def show_input(self, prompt: str = "") -> None:
-        """Show the input field with optional placeholder."""
+        """Show the input field with optional placeholder.
+
+        Args:
+            prompt (str): Placeholder text.
+        """
         self._input_field.setPlaceholderText(prompt or "Type input here...")
         self._input_field.setVisible(True)
         self._input_field.setFocus()
@@ -293,12 +394,22 @@ class SharedPanelsWidget(QWidget):
     # ---- Private ----
 
     def _on_console_toggled(self, expanded: bool) -> None:
+        """Handle console toggle signal.
+
+        Args:
+            expanded (bool): New state.
+        """
         self._console_visible = expanded
         if expanded:
             self._scroll_console_to_end()
         self.console_toggled.emit(expanded)
 
     def _on_artifacts_toggled(self, expanded: bool) -> None:
+        """Handle artifacts toggle signal.
+
+        Args:
+            expanded (bool): New state.
+        """
         self._artifacts_visible = expanded
         self.artifacts_toggled.emit(expanded)
 

@@ -12,9 +12,17 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
 
     Uses configuration values for timing and dimensions to ensure consistency
     across the application. Animation logic is provided by AnimatedWidgetMixin.
+
+    Attributes:
+        buttons (list): List of SidebarButtons managed by this splitter.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the expanding splitter.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+        """
         super().__init__(parent)
         self._collapsed_width = config.ui.sidebar_collapsed_width
         self._expanded_width = config.ui.sidebar_expanded_width
@@ -24,7 +32,8 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         self.widget: QWidget | None = None
         self.listview: QListView | None = None
         self.sidebar: QWidget | None = None
-        self.parent().installEventFilter(self)
+        if self.parent():
+            self.parent().installEventFilter(self)
         self.setHandleWidth(0)
         self.setContentsMargins(0, 0, 0, 0)
 
@@ -45,7 +54,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         """Set the sidebar widget.
 
         Args:
-            sidebar: The sidebar Widget that contains all SidebarButtons.
+            sidebar (QWidget): The sidebar Widget that contains all SidebarButtons.
         """
         self.sidebar = sidebar
         self.setCollapsible(0, False)
@@ -54,7 +63,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         """Set the list view widget.
 
         Args:
-            listview: The QListView Widget that contains all actions.
+            listview (QListView): The QListView Widget that contains all actions.
         """
         self.listview = listview
 
@@ -62,7 +71,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         """Add a button to the sidebar and register for event filtering.
 
         Args:
-            button: The SidebarButton to add.
+            button (SidebarButton): The SidebarButton to add.
         """
         self.buttons.append(button)
         # Clear text immediately without animation
@@ -70,7 +79,15 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         button.installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """Handle hover events for the sidebar and its buttons."""
+        """Handle hover events for the sidebar and its buttons.
+
+        Args:
+            obj (QObject): The object receiving the event.
+            event (QEvent): The event being dispatched.
+
+        Returns:
+            bool: True if the event was handled, False otherwise.
+        """
         if event.type() == QEvent.Type.HoverEnter:
             if obj in self.buttons or obj == self:
                 self._handle_hover_enter()
@@ -172,7 +189,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         Unified handler for both expand and collapse animations.
 
         Args:
-            value: Current animation value for splitter sizing.
+            value (int): Current animation value for splitter sizing.
         """
         self.setSizes([int(self.width() - value), int(value)])
         if value == 0:

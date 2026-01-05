@@ -3,18 +3,18 @@ size.
 """
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QListView, QSizePolicy
+from PySide6.QtWidgets import QListView, QSizePolicy, QWidget
 
 
 class HidingListView(QListView):
     """QListView subclass that can shrink to zero width within a splitter."""
 
-    def __init__(self, child, parent=None):
+    def __init__(self, child: QWidget | None = None, parent: QWidget | None = None):
         """Initialize the list view with expanding policies.
 
         Args:
-            child: Unused parameter kept for API parity with the UI loader.
-            parent: Optional parent widget that owns the list view.
+            child (QWidget | None): Unused parameter kept for API parity with the UI loader.
+            parent (QWidget | None): Optional parent widget that owns the list view.
         """
         super().__init__(parent)
         self.setMinimumSize(0, 0)
@@ -24,13 +24,19 @@ class HidingListView(QListView):
         self.setSizePolicy(size_policy)
 
     def minimumSizeHint(self) -> QSize:
-        """Override minimum SizeHint to Enable smooth animation while
-        collapsing to 0 width.
+        """Override minimum SizeHint to Enable smooth animation while collapsing.
+
+        Returns:
+            QSize: Zero size hint.
         """
         return QSize(0, 0)
 
     def sizeHint(self) -> QSize:
-        """Calculate size hint based on content width."""
+        """Calculate size hint based on content width.
+
+        Returns:
+            QSize: Calculated optimal size.
+        """
         if not self.model():
             return super().sizeHint()
 

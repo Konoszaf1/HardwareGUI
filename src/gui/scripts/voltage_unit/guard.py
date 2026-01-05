@@ -1,4 +1,3 @@
-# guard_page_min.py
 """Guard signal control page for voltage unit."""
 
 from PySide6.QtCore import Qt
@@ -9,6 +8,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
@@ -29,39 +29,46 @@ class GuardPage(BaseHardwarePage):
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the GuardPage.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+            service (VoltageUnitService | None): Service for voltage unit operations.
+            shared_panels (SharedPanelsWidget | None): Shared panels for logs/artifacts.
+        """
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout ====
-        mainLayout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Guard")
         title.setObjectName("title")
-        mainLayout.addWidget(title)
+        main_layout.addWidget(title)
 
         # ==== Info (from script) ====
-        infoBox = QGroupBox("Script Note")
-        infoForm = QFormLayout(infoBox)
-        infoForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        infoForm.addRow(
+        info_box = QGroupBox("Script Note")
+        info_form = QFormLayout(info_box)
+        info_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_form.addRow(
             "Warning:",
             QLabel("Make sure the scope is not connected when setting a signal to the guard!"),
         )
-        mainLayout.addWidget(infoBox)
+        main_layout.addWidget(info_box)
 
         # ==== Action buttons ====
         self.btn_guard_signal = QPushButton("Set Guard → Signal")
-        mainLayout.addWidget(self.btn_guard_signal)
+        main_layout.addWidget(self.btn_guard_signal)
 
         self.btn_guard_ground = QPushButton("Set Guard → Ground")
-        mainLayout.addWidget(self.btn_guard_ground)
+        main_layout.addWidget(self.btn_guard_ground)
 
         # Stretch to fill remaining space
-        mainLayout.addStretch()
+        main_layout.addStretch()
 
         # Register action buttons for busy state management
         self._action_buttons = [
@@ -91,10 +98,10 @@ class GuardPage(BaseHardwarePage):
                 "Confirm Guard",
                 "Make sure the scope is not connected when setting "
                 "a signal to the guard!\n\nProceed?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
-            != QMessageBox.Yes
+            != QMessageBox.StandardButton.Yes
         ):
             return
         self._start_task(self.service.set_guard_signal())

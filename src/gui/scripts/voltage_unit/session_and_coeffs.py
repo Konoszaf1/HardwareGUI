@@ -1,4 +1,3 @@
-# session_and_coeffs_page.py
 """Session management and coefficient control page for voltage unit."""
 
 from PySide6.QtCore import QRegularExpression, Qt
@@ -16,9 +15,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStyle,
     QVBoxLayout,
-)
-from PySide6.QtWidgets import (
-    QWidget as QW,
+    QWidget,
 )
 
 from src.config import config
@@ -46,29 +43,36 @@ class SessionAndCoeffsPage(BaseHardwarePage):
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the SessionAndCoeffsPage.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+            service (VoltageUnitService | None): Service for voltage unit operations.
+            shared_panels (SharedPanelsWidget | None): Shared panels for logs/artifacts.
+        """
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout ====
-        mainLayout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Session")
         title.setObjectName("title")
-        mainLayout.addWidget(title)
+        main_layout.addWidget(title)
 
         # ==== Top: Compact Configuration ====
-        topWidget = QW()
-        topLayout = QHBoxLayout(topWidget)
-        topLayout.setContentsMargins(0, 0, 0, 0)
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
 
         # Group 1: Connection
-        connBox = QGroupBox("Connection")
-        connLayout = QFormLayout(connBox)
-        connLayout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        conn_box = QGroupBox("Connection")
+        conn_layout = QFormLayout(conn_box)
+        conn_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self.le_scope_ip = QLineEdit(config.hardware.default_scope_ip)
         self.le_scope_ip.setSizePolicy(
@@ -81,14 +85,14 @@ class SessionAndCoeffsPage(BaseHardwarePage):
         self.le_scope_ip.setPlaceholderText("e.g. 192.168.0.10")
         self.btn_test_scope = QPushButton("Test Scope")
 
-        connLayout.addRow("Scope IP:", self.le_scope_ip)
-        connLayout.addRow(self.btn_test_scope)
+        conn_layout.addRow("Scope IP:", self.le_scope_ip)
+        conn_layout.addRow(self.btn_test_scope)
 
-        topLayout.addWidget(connBox)
+        top_layout.addWidget(conn_box)
 
         # Group 2: Hardware IDs
-        idBox = QGroupBox("Hardware IDs")
-        idLayout = QGridLayout(idBox)
+        id_box = QGroupBox("Hardware IDs")
+        id_layout = QGridLayout(id_box)
 
         hw = config.hardware
         self.sp_vu_serial = QSpinBox()
@@ -104,35 +108,35 @@ class SessionAndCoeffsPage(BaseHardwarePage):
         self.sp_mcu_interface.setRange(0, hw.mcu_interface_max)
         self.sp_mcu_interface.setValue(0)
 
-        idLayout.addWidget(QLabel("VU Serial:"), 0, 0)
-        idLayout.addWidget(self.sp_vu_serial, 0, 1)
-        idLayout.addWidget(QLabel("VU Interf:"), 0, 2)
-        idLayout.addWidget(self.sp_vu_interface, 0, 3)
+        id_layout.addWidget(QLabel("VU Serial:"), 0, 0)
+        id_layout.addWidget(self.sp_vu_serial, 0, 1)
+        id_layout.addWidget(QLabel("VU Interf:"), 0, 2)
+        id_layout.addWidget(self.sp_vu_interface, 0, 3)
 
-        idLayout.addWidget(QLabel("MCU Serial:"), 1, 0)
-        idLayout.addWidget(self.sp_mcu_serial, 1, 1)
-        idLayout.addWidget(QLabel("MCU Interf:"), 1, 2)
-        idLayout.addWidget(self.sp_mcu_interface, 1, 3)
+        id_layout.addWidget(QLabel("MCU Serial:"), 1, 0)
+        id_layout.addWidget(self.sp_mcu_serial, 1, 1)
+        id_layout.addWidget(QLabel("MCU Interf:"), 1, 2)
+        id_layout.addWidget(self.sp_mcu_interface, 1, 3)
 
-        topLayout.addWidget(idBox)
+        top_layout.addWidget(id_box)
 
         # Group 3: Coefficients Actions
-        actBox = QGroupBox("Coefficients")
-        actLayout = QVBoxLayout(actBox)
+        act_box = QGroupBox("Coefficients")
+        act_layout = QVBoxLayout(act_box)
 
         self.btn_reset_coeffs = QPushButton("Reset (RAM)")
         self.btn_write_coeffs = QPushButton("Write (EEPROM)")
 
-        actLayout.addWidget(self.btn_reset_coeffs)
-        actLayout.addWidget(self.btn_write_coeffs)
+        act_layout.addWidget(self.btn_reset_coeffs)
+        act_layout.addWidget(self.btn_write_coeffs)
 
-        topLayout.addWidget(actBox)
-        topLayout.addStretch()
+        top_layout.addWidget(act_box)
+        top_layout.addStretch()
 
-        mainLayout.addWidget(topWidget)
+        main_layout.addWidget(top_widget)
 
         # Stretch to fill remaining space
-        mainLayout.addStretch()
+        main_layout.addStretch()
 
         # Register action buttons for busy state management
         self._action_buttons = [
@@ -173,6 +177,11 @@ class SessionAndCoeffsPage(BaseHardwarePage):
         self.sp_mcu_interface.setEnabled(not self._busy)
 
     def _set_busy(self, busy: bool) -> None:
+        """Set the busy state of the page.
+
+        Args:
+            busy (bool): True if busy, False otherwise.
+        """
         self._busy = busy
         self._update_ui_state()
 
@@ -205,7 +214,7 @@ class SessionAndCoeffsPage(BaseHardwarePage):
 
         # Set loading icon
         style = QApplication.style()
-        self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_BrowserReload))
+        self.btn_test_scope.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
         self.btn_test_scope.setText("Testing...")
         self.btn_test_scope.setStyleSheet("")
 
@@ -228,16 +237,24 @@ class SessionAndCoeffsPage(BaseHardwarePage):
         self._set_busy(False)
 
     def _on_scope_verified_changed(self, verified: bool) -> None:
-        """Handle updates to scope verification state from service."""
+        """Handle updates to scope verification state from service.
+
+        Args:
+            verified (bool): Whether the scope is verified.
+        """
         style = QApplication.style()
         if verified:
             self._log("Scope verified.")
-            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogApplyButton))
+            self.btn_test_scope.setIcon(
+                style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+            )
             self.btn_test_scope.setStyleSheet(Styles.BUTTON_SUCCESS)
             self.btn_test_scope.setText("Connected")
         else:
             self._log("Scope verification failed or reset.")
-            self.btn_test_scope.setIcon(style.standardIcon(QStyle.SP_DialogCancelButton))
+            self.btn_test_scope.setIcon(
+                style.standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+            )
             self.btn_test_scope.setStyleSheet(Styles.BUTTON_ERROR)
             self.btn_test_scope.setText("Failed")
 

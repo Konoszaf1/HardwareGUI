@@ -13,7 +13,24 @@ Color Palette:
 
 
 class Colors:
-    """Application color palette."""
+    """Application color palette.
+
+    Attributes:
+        BG_DARKEST: Darkest background color, used for sidebars and tooltips.
+        BG_DARK: Dark background, used for main panels and status bars.
+        BG_BASE: Base background color, used for output areas.
+        BG_ELEVATED: Lightest background, used for cards (elevated).
+        BORDER_SUBTLE: Subtle border color.
+        BORDER_VISIBLE: More visible border.
+        TEXT_PRIMARY: Primary text color.
+        TEXT_MUTED: Muted text color.
+        ACCENT: Primary accent (blue).
+        ACCENT_HOVER: Hover state for accent.
+        ACCENT_ACTIVE: Active state for accent.
+        ACCENT_DIM: Dimmed accent.
+        STATUS_CONNECTED: Color for connected/success status.
+        STATUS_DISCONNECTED: Color for disconnected/neutral status.
+    """
 
     # Backgrounds (dark to light)
     BG_DARKEST = "#1e1e2e"
@@ -41,7 +58,26 @@ class Colors:
 
 
 class Styles:
-    """Application-wide style constants."""
+    """Application-wide style constants.
+
+    Attributes:
+        CONSOLE: Stylesheet for the console widget.
+        TEST_CARD: Stylesheet for test card frames.
+        CARD_TITLE: Inline style for test card titles.
+        CARD_INFO: Inline style for test card info lines.
+        BUTTON_SUCCESS: Inline style for success buttons.
+        BUTTON_ERROR: Inline style for error buttons.
+        BUTTON_ACCENT: Inline style for accent buttons.
+        SIDEBAR_TOOLTIP: Stylesheet for the sidebar tooltip.
+        STATUS_BAR: Stylesheet for the status bar.
+        SCOPE_CONNECTED: Inline style for connected scope label.
+        SCOPE_DISCONNECTED: Inline style for disconnected scope label.
+        MENU_BAR: Stylesheet for the QMenuBar and QMenu.
+        TITLE_BAR: Stylesheet for the title bar widget.
+        COLLAPSIBLE_PANEL: Stylesheet for collapsible panels.
+        PANEL_TOGGLE_BUTTON: Stylesheet for panel toggle buttons.
+        PANEL_TOGGLE_BUTTON_VERTICAL: Stylesheet for vertical panel toggle buttons.
+    """
 
     # Console widget
     CONSOLE = f"""
@@ -161,6 +197,21 @@ class Styles:
         QWidget {{
             background-color: {Colors.BG_DARK};
         }}
+        QPushButton {{
+            background-color: transparent;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }}
+        QPushButton:hover {{
+            background-color: {Colors.ACCENT_DIM};
+        }}
+        QPushButton:pressed {{
+            background-color: {Colors.ACCENT};
+        }}
+    """
+
+    TITLE_BAR_BUTTON = f"""
         QPushButton {{
             background-color: transparent;
             border: none;

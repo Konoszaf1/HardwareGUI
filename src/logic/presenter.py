@@ -1,5 +1,7 @@
-"""Presenter class that connects view events to model logic and acts as a bridge
-between graphical user interface and actual data.
+"""Presenter class that connects view events to model logic.
+
+This module acts as a bridge between the graphical user interface and the
+underlying business logic/services, following the MVP pattern.
 """
 
 from collections.abc import Callable
@@ -22,7 +24,7 @@ logger = get_logger(__name__)
 
 
 # Page factory type: takes parent widget, service, and shared panels
-PageFactory = Callable[[QWidget, VoltageUnitService, SharedPanelsWidget], QWidget]
+PageFactory = Callable[[QWidget, VoltageUnitService, SharedPanelsWidget | None], QWidget]
 
 # Registry mapping page_id to factory function
 # To add a new page, simply add an entry here - no if-elif changes needed (OCP)
@@ -35,15 +37,31 @@ PAGE_FACTORIES: dict[str, PageFactory] = {
 
 
 class ActionsPresenter(QObject):
-    """Handles model and view connections and logic."""
+    """Handles model and view connections and logic.
+
+    Attributes:
+        widget (QWidget): The main window widget.
+        service (VoltageUnitService): The backend service.
+        shared_panels (SharedPanelsWidget | None): The shared panels instance.
+        model (ActionModel): The model containing actions.
+        proxy (ActionsByHardwareProxy): Proxy model for filtering actions.
+    """
 
     def __init__(
         self,
-        widget,
+        widget: QWidget,
         buttons: list[SidebarButton],
         actions: list[ActionDescriptor],
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the ActionsPresenter.
+
+        Args:
+            widget (QWidget): The view widget utilizing this presenter.
+            buttons (list[SidebarButton]): List of sidebar buttons to connect.
+            actions (list[ActionDescriptor]): List of available actions.
+            shared_panels (SharedPanelsWidget | None): Shared panels widget.
+        """
         super().__init__(widget)
         logger.debug("ActionsPresenter initializing")
         self.widget = widget
@@ -65,6 +83,9 @@ class ActionsPresenter(QObject):
 
         Uses PAGE_FACTORIES registry instead of if-elif chain, making it easy
         to add new pages without modifying this method (Open/Closed Principle).
+
+        Args:
+            actions (list[ActionDescriptor]): Actions to register.
         """
         # Configure stacked widget with shared panels
         if self.shared_panels:

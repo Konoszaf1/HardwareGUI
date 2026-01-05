@@ -1,4 +1,3 @@
-# calibration_page_min.py
 """Calibration page for voltage unit autocalibration and testing."""
 
 from PySide6.QtCore import Qt
@@ -9,9 +8,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QVBoxLayout,
-)
-from PySide6.QtWidgets import (
-    QWidget as QW,
+    QWidget,
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
@@ -33,55 +30,62 @@ class CalibrationPage(BaseHardwarePage):
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
+        """Initialize the CalibrationPage.
+
+        Args:
+            parent (QWidget | None): Parent widget.
+            service (VoltageUnitService | None): Service for voltage unit operations.
+            shared_panels (SharedPanelsWidget | None): Shared panels for logs/artifacts.
+        """
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout (Vertical) ====
-        mainLayout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Calibration")
         title.setObjectName("title")
-        mainLayout.addWidget(title)
+        main_layout.addWidget(title)
 
         # ==== Top Section ====
-        topWidget = QW()
-        topLayout = QHBoxLayout(topWidget)
-        topLayout.setContentsMargins(0, 0, 0, 0)
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
 
         # -- Controls --
-        controlsBox = QGroupBox("Calibration Actions")
-        controlsLayout = QVBoxLayout(controlsBox)
+        controls_box = QGroupBox("Calibration Actions")
+        controls_layout = QVBoxLayout(controls_box)
 
         self.btn_run_autocal_python = QPushButton("Run Autocalibration (Python)")
         self.btn_run_autocal_onboard = QPushButton("Run Autocalibration (Onboard)")
         self.btn_test_all = QPushButton("Test: All")
 
-        controlsLayout.addWidget(self.btn_run_autocal_python)
-        controlsLayout.addWidget(self.btn_run_autocal_onboard)
-        controlsLayout.addWidget(self.btn_test_all)
-        controlsLayout.addStretch()
+        controls_layout.addWidget(self.btn_run_autocal_python)
+        controls_layout.addWidget(self.btn_run_autocal_onboard)
+        controls_layout.addWidget(self.btn_test_all)
+        controls_layout.addStretch()
 
         # Info box (compact)
-        infoBox = QGroupBox("Constants")
-        infoForm = QFormLayout(infoBox)
-        infoForm.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        infoForm.addRow("Max iter:", QLabel("10"))
-        infoForm.addRow("Offset:", QLabel("2 mV"))
-        infoForm.addRow("Slope err:", QLabel("0.1 %"))
+        info_box = QGroupBox("Constants")
+        info_form = QFormLayout(info_box)
+        info_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_form.addRow("Max iter:", QLabel("10"))
+        info_form.addRow("Offset:", QLabel("2 mV"))
+        info_form.addRow("Slope err:", QLabel("0.1 %"))
 
-        controlsLayout.addWidget(infoBox)
+        controls_layout.addWidget(info_box)
 
-        topLayout.addWidget(controlsBox)
-        topLayout.addStretch()
+        top_layout.addWidget(controls_box)
+        top_layout.addStretch()
 
-        mainLayout.addWidget(topWidget)
+        main_layout.addWidget(top_widget)
 
         # Stretch to fill remaining space
-        mainLayout.addStretch()
+        main_layout.addStretch()
 
         # Register action buttons for busy state management
         self._action_buttons = [
