@@ -4,6 +4,10 @@
 # Add DPI module paths to PYTHONPATH
 export PYTHONPATH="/measdata/dpi/voltageunit/python:${PYTHONPATH}"
 export PYTHONPATH="/measdata/dpi/voltageunit/python/dev:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/sourcemeasureunit/python:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/sourcemeasureunit/python/dev:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/samplingunit/python:${PYTHONPATH}"
+export PYTHONPATH="/measdata/dpi/samplingunit/python/dev:${PYTHONPATH}"
 export PYTHONPATH="/measdata/dpi/maincontrolunit/python:${PYTHONPATH}"
 export PYTHONPATH="/measdata/dpi/dpi:${PYTHONPATH}"
 

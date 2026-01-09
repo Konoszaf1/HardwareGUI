@@ -12,7 +12,7 @@ from src.gui.scripts.base_page import BaseHardwarePage
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Styles
 from src.gui.utils.widget_factories import create_test_card
-from src.logic.vu_service import VoltageUnitService
+from src.logic.services.vu_service import VoltageUnitService
 
 
 class TestsPage(BaseHardwarePage):

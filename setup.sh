@@ -32,20 +32,71 @@ fi
 echo "[OK] uv found: $(uv --version)"
 echo ""
 
-# Step 2: Create symlink for setup_cal.py
-echo "Creating setup_cal.py symlink..."
-SETUP_CAL_SOURCE="/measdata/dpi/voltageunit/python/dev/setup_cal.py"
-SETUP_CAL_LINK="$PROJECT_ROOT/src/setup_cal.py"
+# Step 2: Create device_scripts directory and symlinks
+SCRIPTS_DIR="$PROJECT_ROOT/src/device_scripts"
+mkdir -p "$SCRIPTS_DIR"
 
-if [ -f "$SETUP_CAL_SOURCE" ]; then
-    if [ -L "$SETUP_CAL_LINK" ] || [ -f "$SETUP_CAL_LINK" ]; then
-        rm -f "$SETUP_CAL_LINK"
+# Voltage Unit scripts
+echo "Creating VU script symlinks..."
+VU_DEV_DIR="/measdata/dpi/voltageunit/python/dev"
+VU_SCRIPTS=("setup_cal.py:setup_cal.py")
+
+for script_pair in "${VU_SCRIPTS[@]}"; do
+    LINK_NAME="${script_pair%%:*}"
+    SOURCE_NAME="${script_pair##*:}"
+    SOURCE_PATH="$VU_DEV_DIR/$SOURCE_NAME"
+    LINK_PATH="$SCRIPTS_DIR/$LINK_NAME"
+    
+    if [ -f "$SOURCE_PATH" ]; then
+        [ -L "$LINK_PATH" ] || [ -f "$LINK_PATH" ] && rm -f "$LINK_PATH"
+        ln -s "$SOURCE_PATH" "$LINK_PATH"
+        echo "[OK] $LINK_NAME symlink created"
+    else
+        echo "[WARN] $SOURCE_NAME not found at $SOURCE_PATH"
     fi
-    ln -s "$SETUP_CAL_SOURCE" "$SETUP_CAL_LINK"
-    echo "[OK] setup_cal.py symlink created"
-else
-    echo "[WARN] setup_cal.py not found at $SETUP_CAL_SOURCE"
-fi
+done
+echo ""
+
+# SMU scripts
+echo "Creating SMU script symlinks..."
+SMU_DEV_DIR="/measdata/dpi/sourcemeasureunit/python/dev"
+SMU_SCRIPTS=("smu_hw_setup.py:hw_setup.py" "smu_dev.py:dev.py" "smu_calibration_measure.py:calibration_measure.py" "smu_calibration_fit.py:calibration_fit.py")
+
+for script_pair in "${SMU_SCRIPTS[@]}"; do
+    LINK_NAME="${script_pair%%:*}"
+    SOURCE_NAME="${script_pair##*:}"
+    SOURCE_PATH="$SMU_DEV_DIR/$SOURCE_NAME"
+    LINK_PATH="$SCRIPTS_DIR/$LINK_NAME"
+    
+    if [ -f "$SOURCE_PATH" ]; then
+        [ -L "$LINK_PATH" ] || [ -f "$LINK_PATH" ] && rm -f "$LINK_PATH"
+        ln -s "$SOURCE_PATH" "$LINK_PATH"
+        echo "[OK] $LINK_NAME symlink created"
+    else
+        echo "[WARN] $SOURCE_NAME not found at $SOURCE_PATH"
+    fi
+done
+echo ""
+
+# SU (Sampling Unit) scripts
+echo "Creating SU script symlinks..."
+SU_DEV_DIR="/measdata/dpi/samplingunit/python/dev"
+SU_SCRIPTS=("su_hw_setup.py:hw_setup.py" "su_dev.py:dev.py" "su_calibration_measure.py:calibration_measure.py" "su_calibration_fit.py:calibration_fit.py")
+
+for script_pair in "${SU_SCRIPTS[@]}"; do
+    LINK_NAME="${script_pair%%:*}"
+    SOURCE_NAME="${script_pair##*:}"
+    SOURCE_PATH="$SU_DEV_DIR/$SOURCE_NAME"
+    LINK_PATH="$SCRIPTS_DIR/$LINK_NAME"
+    
+    if [ -f "$SOURCE_PATH" ]; then
+        [ -L "$LINK_PATH" ] || [ -f "$LINK_PATH" ] && rm -f "$LINK_PATH"
+        ln -s "$SOURCE_PATH" "$LINK_PATH"
+        echo "[OK] $LINK_NAME symlink created"
+    else
+        echo "[WARN] $SOURCE_NAME not found at $SOURCE_PATH"
+    fi
+done
 echo ""
 
 # Step 3: Sync dependencies (standard packages only)

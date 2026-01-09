@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from src.gui.scripts.base_page import BaseHardwarePage
 from src.gui.shared_panels_widget import SharedPanelsWidget
-from src.logic.vu_service import VoltageUnitService
+from src.logic.services.vu_service import VoltageUnitService
 
 
 class GuardPage(BaseHardwarePage):

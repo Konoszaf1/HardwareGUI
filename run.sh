@@ -34,7 +34,9 @@ DPI_PACKAGES=(
     "/measdata/dpi/maincontrolunit/python"
     "/measdata/dpi/powersupplyunit/python"
     "/measdata/dpi/samplingunit/python"
+    "/measdata/dpi/samplingunit/python/dev"
     "/measdata/dpi/sourcemeasureunit/python"
+    "/measdata/dpi/sourcemeasureunit/python/dev"
     "/measdata/dpi/voltageunit/python"
     "/measdata/dpi/voltageunit/python/dev"
 )

@@ -9,9 +9,9 @@ import threading
 import warnings
 from dataclasses import dataclass
 
+import device_scripts.setup_cal as setup_cal
 import dpi  # noqa: F401 - required to avoid circular imports
 import matplotlib
-import setup_cal
 import vxi11
 from dpimaincontrolunit.dpimaincontrolunit import DPIMainControlUnit
 from dpivoltageunit.dpivoltageunit import DPIVoltageUnit

@@ -24,7 +24,7 @@ from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Styles
 from src.logging_config import get_logger
 from src.logic.qt_workers import run_in_thread
-from src.logic.vu_service import VoltageUnitService
+from src.logic.services.vu_service import VoltageUnitService
 
 logger = get_logger(__name__)
 

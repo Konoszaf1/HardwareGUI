@@ -7,7 +7,7 @@ artifact watching, and service signal handling.
 
 import os
 
-import setup_cal
+import device_scripts.setup_cal as setup_cal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QPushButton,
@@ -19,7 +19,7 @@ from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.image_viewer import ImageViewerDialog
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, run_in_thread
-from src.logic.vu_service import VoltageUnitService
+from src.logic.services.vu_service import VoltageUnitService
 
 # Import status bar service lazily to avoid circular imports
 _status_bar_service = None
