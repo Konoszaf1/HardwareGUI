@@ -153,3 +153,55 @@ class ActionsPresenter(QObject):
         self.widget.stacked_widget.bind_to_listview(
             self.widget.list_view, role=ActionModel.page_id_role
         )
+
+        # Connect selection changes to track last action per hardware
+        self.widget.list_view.selectionModel().currentChanged.connect(
+            self._on_action_selection_changed
+        )
+
+    # ---- Action selection tracking ----
+
+    def _on_action_selection_changed(self, current, previous) -> None:
+        """Track action selection to remember last action per hardware.
+
+        Args:
+            current: Current model index.
+            previous: Previous model index.
+        """
+        if not current.isValid():
+            return
+
+        hardware_id = self.proxy.hardware_id
+        if hardware_id is None:
+            return
+
+        page_id = current.data(ActionModel.page_id_role)
+        if page_id:
+            from src.gui.services.shared_panels_service import SharedPanelsService
+
+            SharedPanelsService.instance().set_last_action(hardware_id, page_id)
+
+    def restore_last_action(self, hardware_id: int) -> None:
+        """Restore the last selected action for a hardware.
+
+        Called by MainWindow when hardware selection changes.
+
+        Args:
+            hardware_id: Hardware ID to restore action for.
+        """
+        from src.gui.services.shared_panels_service import SharedPanelsService
+
+        last_page_id = SharedPanelsService.instance().get_last_action(hardware_id)
+
+        if last_page_id:
+            # Find the row in proxy model that matches the page_id
+            for row in range(self.proxy.rowCount()):
+                idx = self.proxy.index(row, 0)
+                if idx.data(ActionModel.page_id_role) == last_page_id:
+                    self.widget.list_view.setCurrentIndex(idx)
+                    return
+
+        # If no last action or not found, select first action
+        if self.proxy.rowCount() > 0:
+            first_idx = self.proxy.index(0, 0)
+            self.widget.list_view.setCurrentIndex(first_idx)

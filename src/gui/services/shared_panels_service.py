@@ -12,6 +12,9 @@ class SharedPanelsService:
 
     Each hardware device gets its own panel instance, preserving logs and
     artifacts when switching between hardware selections.
+
+    Panel visibility state is owned by each SharedPanelsWidget instance,
+    not by this service. Query current_panels() for the authoritative state.
     """
 
     _instance: "SharedPanelsService | None" = None
@@ -21,8 +24,7 @@ class SharedPanelsService:
             raise RuntimeError("Use SharedPanelsService.instance() instead")
         self._panels: dict[int, SharedPanelsWidget] = {}
         self._current_hardware_id: int | None = None
-        self._console_visible: bool = False  # Start collapsed
-        self._artifacts_visible: bool = False  # Start collapsed
+        self._last_action_per_hardware: dict[int, str] = {}  # Track last action per hardware
 
     @classmethod
     def instance(cls) -> "SharedPanelsService":
@@ -40,9 +42,7 @@ class SharedPanelsService:
         """Get or create panels for a hardware ID."""
         if hardware_id not in self._panels:
             panels = SharedPanelsWidget()
-            # Apply current visibility state to new panels
-            panels.show_console(self._console_visible)
-            panels.show_artifacts(self._artifacts_visible)
+            # New panels start collapsed (default state in SharedPanelsWidget)
             self._panels[hardware_id] = panels
         return self._panels[hardware_id]
 
@@ -61,42 +61,38 @@ class SharedPanelsService:
             return None
         return self._panels.get(self._current_hardware_id)
 
-    def toggle_console(self, visible: bool | None = None) -> bool:
-        """Toggle or set console visibility across all panels.
+    # ---- Last action tracking ----
+
+    def set_last_action(self, hardware_id: int, page_id: str) -> None:
+        """Store the last selected action for a hardware.
 
         Args:
-            visible: If None, toggles current state. Otherwise sets state.
-
-        Returns:
-            New visibility state.
+            hardware_id: Hardware ID.
+            page_id: The page ID of the selected action.
         """
-        if visible is None:
-            visible = not self._console_visible
-        self._console_visible = visible
-        for panels in self._panels.values():
-            panels.show_console(visible)
-        return visible
+        self._last_action_per_hardware[hardware_id] = page_id
 
-    def toggle_artifacts(self, visible: bool | None = None) -> bool:
-        """Toggle or set artifacts visibility across all panels.
+    def get_last_action(self, hardware_id: int) -> str | None:
+        """Get the last selected action for a hardware.
 
         Args:
-            visible: If None, toggles current state. Otherwise sets state.
+            hardware_id: Hardware ID.
 
         Returns:
-            New visibility state.
+            The page_id of the last action, or None if none selected.
         """
-        if visible is None:
-            visible = not self._artifacts_visible
-        self._artifacts_visible = visible
-        for panels in self._panels.values():
-            panels.show_artifacts(visible)
-        return visible
+        return self._last_action_per_hardware.get(hardware_id)
+
+    # ---- Panel visibility (queries current panel state) ----
 
     @property
     def console_visible(self) -> bool:
-        return self._console_visible
+        """Return console visibility of current panels."""
+        panels = self.current_panels()
+        return panels.is_console_visible() if panels else False
 
     @property
     def artifacts_visible(self) -> bool:
-        return self._artifacts_visible
+        """Return artifacts visibility of current panels."""
+        panels = self.current_panels()
+        return panels.is_artifacts_visible() if panels else False

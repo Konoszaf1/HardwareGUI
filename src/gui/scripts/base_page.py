@@ -7,13 +7,13 @@ artifact watching, and service signal handling.
 
 import os
 
-import device_scripts.setup_cal as setup_cal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QPushButton,
     QWidget,
 )
 
+import device_scripts.setup_cal as setup_cal
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.image_viewer import ImageViewerDialog

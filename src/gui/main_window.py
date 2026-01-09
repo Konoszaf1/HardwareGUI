@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self._current_panels = None
         self._artifacts_expanded = False
         self._artifacts_anim = None
+        self._current_hardware_id: int | None = None
 
     def _setup_status_bar(self) -> None:
         """Configure the status bar and connect signals."""
@@ -130,6 +131,7 @@ class MainWindow(QMainWindow):
         self._current_panels = shared_panels
         self._artifacts_expanded = shared_panels.is_artifacts_visible()
         shared_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
+        shared_panels.console_toggled.connect(self._on_console_panel_toggled)
 
         self.content_with_panels = ContentWithPanels(self.stacked_widget, shared_panels, self)
 
@@ -232,6 +234,7 @@ class MainWindow(QMainWindow):
         """
         self.setUpdatesEnabled(False)
         try:
+            self._current_hardware_id = hardware_id
             StatusBarService.instance().set_active_hardware(hardware_id)
 
             # Disconnect from old panels
@@ -240,6 +243,8 @@ class MainWindow(QMainWindow):
                     self._current_panels.artifacts_toggled.disconnect(
                         self._on_artifacts_panel_toggled
                     )
+                with contextlib.suppress(TypeError, RuntimeError):
+                    self._current_panels.console_toggled.disconnect(self._on_console_panel_toggled)
 
             # Get panels for this hardware
             new_panels = self.panels_service.switch_hardware(hardware_id)
@@ -248,8 +253,9 @@ class MainWindow(QMainWindow):
             # 1. Swap panels FIRST to prime constraints (sets QStackedWidget sizes)
             if hasattr(self, "content_with_panels"):
                 self.content_with_panels.set_panels(new_panels)
-                # Reconnect toggle signal to new panels
+                # Reconnect toggle signals to new panels
                 new_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
+                new_panels.console_toggled.connect(self._on_console_panel_toggled)
 
             # 2. Force layout update so constraints are settled
             self.centralWidget().layout().activate()
@@ -263,6 +269,10 @@ class MainWindow(QMainWindow):
             # Update presenter's shared panels reference
             if self.presenter:
                 self.presenter.shared_panels = new_panels
+
+            # 4. Restore last selected action for this hardware
+            if self.presenter:
+                self.presenter.restore_last_action(hardware_id)
         finally:
             self.setUpdatesEnabled(True)
             self.update()  # Force final repaint
@@ -394,7 +404,8 @@ class MainWindow(QMainWindow):
         Args:
             checked (bool): New checked state.
         """
-        self.panels_service.toggle_console(checked)
+        if self._current_panels:
+            self._current_panels.show_console(checked)
 
     def _on_toggle_artifacts(self, checked: bool) -> None:
         """Toggle artifacts panel visibility.
@@ -402,7 +413,16 @@ class MainWindow(QMainWindow):
         Args:
             checked (bool): New checked state.
         """
-        self.panels_service.toggle_artifacts(checked)
+        if self._current_panels:
+            self._current_panels.show_artifacts(checked)
+
+    def _on_console_panel_toggled(self, expanded: bool) -> None:
+        """Sync menu action state when console panel button is clicked.
+
+        Args:
+            expanded (bool): New expanded state.
+        """
+        self.toggle_console_action.setChecked(expanded)
 
     def _style_title_bar(self) -> None:
         """Apply styling to title bar buttons."""
