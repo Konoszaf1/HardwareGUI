@@ -87,7 +87,7 @@ def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: str | None 
         item.setToolTip(tooltip)
 
     # Provide a reasonable size hint so items have visual space
-    # Width matches thumbnail, height allows for text
-    item.setSizeHint(QSize(THUMBNAIL_SIZE.width() + 10, THUMBNAIL_SIZE.height() + 40))
+    # Width matches thumbnail, height allows for compact text
+    item.setSizeHint(QSize(THUMBNAIL_SIZE.width() + 10, THUMBNAIL_SIZE.height() + 20))
 
     list_widget.addItem(item)

@@ -61,4 +61,4 @@ fi
 # 7. Run the application
 echo "Starting main.py..."
 echo ""
-uv run python main.py
+uv run python main.py "$@"

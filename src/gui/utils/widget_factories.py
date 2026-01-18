@@ -4,16 +4,16 @@ This module provides factory functions that create pre-configured widgets
 with consistent styling and behavior, reducing code duplication across pages.
 """
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
-    QPlainTextEdit,
-    QListWidget,
-    QListView,
-    QLineEdit,
     QFrame,
-    QVBoxLayout,
     QLabel,
+    QLineEdit,
+    QListView,
+    QListWidget,
+    QPlainTextEdit,
     QPushButton,
+    QVBoxLayout,
 )
 
 from src.config import config
@@ -48,7 +48,7 @@ def create_artifact_list_widget(
     grid_size: QSize | None = None,
     spacing: int | None = None,
 ) -> QListWidget:
-    """Create a horizontal icon-mode list for artifact thumbnails.
+    """Create a vertical icon-mode list for artifact thumbnails.
 
     Args:
         icon_size: Size of thumbnail icons. Defaults to config value.
@@ -72,7 +72,7 @@ def create_artifact_list_widget(
     list_widget.setProperty("isWrapping", False)
     list_widget.setResizeMode(QListView.ResizeMode.Adjust)
     list_widget.setViewMode(QListView.ViewMode.IconMode)
-    list_widget.setFlow(QListView.Flow.LeftToRight)
+    list_widget.setFlow(QListView.Flow.TopToBottom)
     list_widget.setIconSize(icon_size)
     list_widget.setGridSize(grid_size)
     list_widget.setSpacing(spacing)

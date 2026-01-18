@@ -2,6 +2,40 @@
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
+
+# =============================================================================
+# HARDWARE MODULE MOCKS
+# =============================================================================
+# These mocks must be installed BEFORE any imports that might trigger loading
+# of hardware-specific modules (dpi, vxi11, etc.) which aren't available in
+# the test environment.
+# =============================================================================
+
+# Create mock modules for hardware libraries
+_hardware_mocks = {
+    "dpi": MagicMock(),
+    "dpi.measurement": MagicMock(),
+    "dpi.utilities": MagicMock(),
+    "dpi.utilities.pycrv": MagicMock(),
+    "dpivoltageunit": MagicMock(),
+    "dpivoltageunit.dpivoltageunit": MagicMock(),
+    "dpimaincontrolunit": MagicMock(),
+    "dpimaincontrolunit.dpimaincontrolunit": MagicMock(),
+    "dpisourcemeasureunit": MagicMock(),
+    "dpisourcemeasureunit.dpisourcemeasureunit": MagicMock(),
+    "dpisamplingunit": MagicMock(),
+    "dpisamplingunit.dpisamplingunit": MagicMock(),
+    "vxi11": MagicMock(),
+    "device_scripts": MagicMock(),
+    "device_scripts.setup_cal": MagicMock(),
+    "device_scripts.su_calibration": MagicMock(),
+}
+
+# Install mocks into sys.modules
+for mod_name, mock_obj in _hardware_mocks.items():
+    if mod_name not in sys.modules:
+        sys.modules[mod_name] = mock_obj
 
 import pytest
 

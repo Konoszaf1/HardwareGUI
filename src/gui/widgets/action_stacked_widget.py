@@ -428,9 +428,7 @@ class ContentWithPanels(QWidget):
 
         art_expanded = new_panels.is_artifacts_visible()
         art_width = (
-            config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
-            if art_expanded
-            else config.ui.panel_toggle_size
+            self.artifacts_expanded_total_width if art_expanded else config.ui.panel_toggle_size
         )
 
         if art_expanded:
@@ -472,7 +470,12 @@ class ContentWithPanels(QWidget):
     def artifacts_expanded_total_width(self) -> int:
         """Return the width of the artifacts panel including toggle button when expanded.
 
+        Calculated dynamically based on thumbnail grid size.
+
         Returns:
             int: Total width in pixels.
         """
-        return config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
+        cfg = config.thumbnails
+        # grid_width + spacing on both sides + scrollbar margin + toggle button
+        content_width = cfg.grid_width + cfg.spacing * 2 + 20  # 20px scrollbar margin
+        return content_width + config.ui.panel_toggle_size

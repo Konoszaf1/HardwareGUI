@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -168,14 +169,26 @@ class VerticalCollapsiblePanel(QFrame):
         self._layout.addWidget(self._toggle_btn)
         self._layout.addWidget(self._content, 1)
 
+        # Calculate content width based on thumbnail grid size
+        self._content_width = self._calculate_content_width()
+
         # Apply initial collapsed state and enforce strict width
         if start_collapsed:
             self._content.setVisible(False)
             self._content.setFixedWidth(0)
             self.setFixedWidth(config.ui.panel_toggle_size)
         else:
-            self._content.setFixedWidth(config.ui.artifacts_expanded_width)
-            self.setFixedWidth(config.ui.artifacts_expanded_width + config.ui.panel_toggle_size)
+            self._content.setFixedWidth(self._content_width)
+            self.setFixedWidth(self._content_width + config.ui.panel_toggle_size)
+
+    def _calculate_content_width(self) -> int:
+        """Calculate content width based on thumbnail grid dimensions.
+
+        Returns:
+            int: Width to fit one thumbnail column with scrollbar.
+        """
+        cfg = config.thumbnails
+        return cfg.grid_width + cfg.spacing * 2
 
     def _style_button(self) -> None:
         """Apply styles to the toggle button."""
@@ -206,10 +219,8 @@ class VerticalCollapsiblePanel(QFrame):
                 self._content.setVisible(expanded)
                 if expanded:
                     self._content.setMinimumWidth(0)
-                    self._content.setMaximumWidth(config.ui.artifacts_expanded_width)
-                    self.setFixedWidth(
-                        config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
-                    )
+                    self._content.setMaximumWidth(self._content_width)
+                    self.setFixedWidth(self._content_width + config.ui.panel_toggle_size)
                 else:
                     self._content.setFixedWidth(0)
                     self.setFixedWidth(config.ui.panel_toggle_size)
@@ -222,13 +233,11 @@ class VerticalCollapsiblePanel(QFrame):
                 # IMPORTANT: Keep the content fixed at its expanded width even when shrinking.
                 # This allows the parent stack to 'mask' it, creating a sliding effect
                 # instead of a jagged squeezing effect.
-                self._content.setFixedWidth(config.ui.artifacts_expanded_width)
+                self._content.setFixedWidth(self._content_width)
 
                 # Allow the parent stack/window to drive the outer width
                 self.setMinimumWidth(config.ui.panel_toggle_size)
-                self.setMaximumWidth(
-                    config.ui.artifacts_expanded_width + config.ui.panel_toggle_size
-                )
+                self.setMaximumWidth(self._content_width + config.ui.panel_toggle_size)
 
             self.toggled.emit(expanded)
 
@@ -289,6 +298,7 @@ class SharedPanelsWidget(QWidget):
         self._artifacts_panel.toggled.connect(self._on_artifacts_toggled)
 
         self._artifacts = create_artifact_list_widget()
+        self._artifacts.itemDoubleClicked.connect(self._on_artifact_double_clicked)
         self._artifacts_panel.add_widget(self._artifacts, stretch=1)
 
         # Panel state (start collapsed)
@@ -417,3 +427,16 @@ class SharedPanelsWidget(QWidget):
         """Scroll console to the end."""
         scrollbar = self._console.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def _on_artifact_double_clicked(self, item: QListWidgetItem) -> None:
+        """Open image viewer dialog when an artifact is double-clicked.
+
+        Args:
+            item (QListWidgetItem): The clicked item.
+        """
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path:
+            from src.gui.utils.image_viewer import ImageViewerDialog
+
+            dialog = ImageViewerDialog(path, self)
+            dialog.exec()

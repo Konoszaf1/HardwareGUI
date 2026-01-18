@@ -77,6 +77,9 @@ class ActionsPresenter(QObject):
         buttons: list[SidebarButton],
         actions: list[ActionDescriptor],
         shared_panels: SharedPanelsWidget | None = None,
+        vu_service: VoltageUnitService | None = None,
+        smu_service: SourceMeasureUnitService | None = None,
+        su_service: SamplingUnitService | None = None,
     ):
         """Initialize the ActionsPresenter.
 
@@ -85,13 +88,17 @@ class ActionsPresenter(QObject):
             buttons (list[SidebarButton]): List of sidebar buttons to connect.
             actions (list[ActionDescriptor]): List of available actions.
             shared_panels (SharedPanelsWidget | None): Shared panels widget.
+            vu_service: Optional VU service (for simulation mode).
+            smu_service: Optional SMU service (for simulation mode).
+            su_service: Optional SU service (for simulation mode).
         """
         super().__init__(widget)
         logger.debug("ActionsPresenter initializing")
         self.widget = widget
-        self.vu_service = VoltageUnitService()
-        self.smu_service = SourceMeasureUnitService()
-        self.su_service = SamplingUnitService()
+        # Use injected services or create real ones
+        self.vu_service = vu_service or VoltageUnitService()
+        self.smu_service = smu_service or SourceMeasureUnitService()
+        self.su_service = su_service or SamplingUnitService()
         # Keep 'service' as alias to vu_service for backward compatibility
         self.service = self.vu_service
         self.shared_panels = shared_panels
