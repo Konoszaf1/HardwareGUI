@@ -3,10 +3,8 @@
 import contextlib
 
 from PySide6.QtCore import (
-    QEasingCurve,
     QPoint,
     Qt,
-    QVariantAnimation,
 )
 from PySide6.QtGui import (
     QAction,
@@ -277,53 +275,8 @@ class MainWindow(QMainWindow):
             self.setUpdatesEnabled(True)
             self.update()  # Force final repaint
 
-    def _create_and_start_window_resize_animation(
-        self,
-        start_w: int,
-        end_w: int,
-        start_win_w: int,
-        end_win_w: int,
-        expanded: bool,
-        total_width: int,
-    ) -> None:
-        """Helper to create and start window resize animation."""
-        self._artifacts_anim = QVariantAnimation(self)
-        self._artifacts_anim.setDuration(config.ui.panel_animation_duration_ms)
-
-        easing_type = getattr(
-            QEasingCurve.Type, config.ui.panel_animation_easing, QEasingCurve.Type.InOutQuad
-        )
-        self._artifacts_anim.setEasingCurve(easing_type)
-        self._artifacts_anim.setStartValue(0.0)
-        self._artifacts_anim.setEndValue(1.0)
-
-        def update_anim(value: float):
-            self.setUpdatesEnabled(False)
-            try:
-                # 1. Update internal panel width first
-                curr_panel_w = int(start_w + (end_w - start_w) * value)
-                if hasattr(self, "content_with_panels"):
-                    self.content_with_panels._artifacts_stack.setFixedWidth(curr_panel_w)
-
-                # 2. Update window width
-                curr_win_w = int(start_win_w + (end_win_w - start_win_w) * value)
-                self.setFixedWidth(curr_win_w)
-            finally:
-                self.setUpdatesEnabled(True)
-
-        self._artifacts_anim.valueChanged.connect(update_anim)
-
-        def finalize():
-            if hasattr(self, "content_with_panels") and self._current_panels:
-                self._current_panels._artifacts_panel.set_expanded(expanded, immediate=True)
-                final_w = total_width if expanded else config.ui.panel_toggle_size
-                self.content_with_panels._artifacts_stack.setFixedWidth(final_w)
-
-        self._artifacts_anim.finished.connect(finalize)
-        self._artifacts_anim.start()
-
     def _on_artifacts_panel_toggled(self, expanded: bool) -> None:
-        """Handle artifact panel toggle with a smooth animation.
+        """Handle artifact panel toggle (state update only).
 
         Args:
             expanded (bool): Whether the panel is expanded.
@@ -331,27 +284,6 @@ class MainWindow(QMainWindow):
         if expanded == self._artifacts_expanded:
             return
         self._artifacts_expanded = expanded
-
-        if self.isMaximized():
-            return
-
-        # Calculate dimensions
-        total_width = self.content_with_panels.artifacts_expanded_total_width
-        start_w = config.ui.panel_toggle_size if expanded else total_width
-        end_w = total_width if expanded else config.ui.panel_toggle_size
-        delta = total_width - config.ui.panel_toggle_size
-
-        geo = self.geometry()
-        start_win_w = geo.width()
-        end_win_w = geo.width() + (delta if expanded else -delta)
-
-        # Cleanup existing animation
-        if self._artifacts_anim and self._artifacts_anim.state() == QVariantAnimation.State.Running:
-            self._artifacts_anim.stop()
-
-        self._create_and_start_window_resize_animation(
-            start_w, end_w, start_win_w, end_win_w, expanded, total_width
-        )
 
     def _setup_menu_bar(self) -> None:
         """Create and configure the application menu bar."""

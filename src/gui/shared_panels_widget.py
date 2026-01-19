@@ -5,7 +5,7 @@ that persist within a hardware selection. When collapsed, panels hide completely
 with only a small toggle button remaining.
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, QVariantAnimation, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from src.config import config
 from src.gui.styles import Styles
+from src.gui.utils.animation import animate_value
 from src.gui.utils.gui_helpers import append_log
 from src.gui.utils.widget_factories import (
     create_artifact_list_widget,
@@ -147,6 +149,8 @@ class VerticalCollapsiblePanel(QFrame):
 
         self.setStyleSheet(Styles.COLLAPSIBLE_PANEL)
 
+        self._animation: QVariantAnimation | None = None
+
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
@@ -154,6 +158,7 @@ class VerticalCollapsiblePanel(QFrame):
         # Toggle button (vertical bar on left side)
         self._toggle_btn = QPushButton()
         self._toggle_btn.setFixedWidth(config.ui.panel_toggle_size)
+        self._toggle_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self._on_toggle)
         self._update_button()
@@ -166,20 +171,18 @@ class VerticalCollapsiblePanel(QFrame):
         self._content_layout.setSpacing(0)
 
         # Button on left, content on right
-        self._layout.addWidget(self._toggle_btn)
+        self._layout.addWidget(self._toggle_btn, 0)
         self._layout.addWidget(self._content, 1)
 
         # Calculate content width based on thumbnail grid size
         self._content_width = self._calculate_content_width()
 
-        # Apply initial collapsed state and enforce strict width
+        # Apply initial collapsed state and enforce strict content width only
         if start_collapsed:
             self._content.setVisible(False)
             self._content.setFixedWidth(0)
-            self.setFixedWidth(config.ui.panel_toggle_size)
         else:
             self._content.setFixedWidth(self._content_width)
-            self.setFixedWidth(self._content_width + config.ui.panel_toggle_size)
 
     def _calculate_content_width(self) -> int:
         """Calculate content width based on thumbnail grid dimensions.
@@ -189,6 +192,17 @@ class VerticalCollapsiblePanel(QFrame):
         """
         cfg = config.thumbnails
         return cfg.grid_width + cfg.spacing * 2
+
+    def sizeHint(self) -> QSize:
+        """Return the preferred size of the panel."""
+        w = config.ui.panel_toggle_size
+        if self._expanded:
+            w += self._content_width
+        return QSize(w, super().sizeHint().height())
+
+    def minimumSizeHint(self) -> QSize:
+        """Return the minimum size of the panel."""
+        return QSize(config.ui.panel_toggle_size, 0)
 
     def _style_button(self) -> None:
         """Apply styles to the toggle button."""
@@ -209,37 +223,57 @@ class VerticalCollapsiblePanel(QFrame):
 
         Args:
             expanded (bool): Target expanded state.
-            immediate (bool): If True, apply layout changes instantly.
+            immediate: If True, apply layout changes instantly.
         """
-        if self._expanded != expanded or immediate:
-            self._expanded = expanded
-            self._update_button()
+        if self._expanded == expanded and not immediate:
+            return
 
-            if immediate:
-                self._content.setVisible(expanded)
-                if expanded:
-                    self._content.setMinimumWidth(0)
-                    self._content.setMaximumWidth(self._content_width)
-                    self.setFixedWidth(self._content_width + config.ui.panel_toggle_size)
-                else:
-                    self._content.setFixedWidth(0)
-                    self.setFixedWidth(config.ui.panel_toggle_size)
-                    self.setMinimumWidth(config.ui.panel_toggle_size)
-                    self.setMaximumWidth(config.ui.panel_toggle_size)
-            else:
-                # During transition, always keep content visible so it doesn't flicker
-                self._content.setVisible(True)
+        self._expanded = expanded
+        self._update_button()
 
-                # IMPORTANT: Keep the content fixed at its expanded width even when shrinking.
-                # This allows the parent stack to 'mask' it, creating a sliding effect
-                # instead of a jagged squeezing effect.
-                self._content.setFixedWidth(self._content_width)
+        start_width = self._content.width()
+        end_width = self._content_width if expanded else 0
 
-                # Allow the parent stack/window to drive the outer width
-                self.setMinimumWidth(config.ui.panel_toggle_size)
-                self.setMaximumWidth(self._content_width + config.ui.panel_toggle_size)
+        # Stop existing animation if running
+        if self._animation and self._animation.state() == QVariantAnimation.State.Running:
+            self._animation.stop()
 
+        if immediate:
+            self._content.setVisible(expanded)
+            self._content.setFixedWidth(end_width)
             self.toggled.emit(expanded)
+            self.updateGeometry()
+            return
+
+        # Ensure content is visible during animation
+        self._content.setVisible(True)
+
+        self._animation = animate_value(
+            parent=self,
+            start=float(start_width),
+            end=float(end_width),
+            callback=self._on_animation_value_changed,
+            on_finished=self._on_animation_finished,
+        )
+
+        self.toggled.emit(expanded)
+
+    def _on_animation_value_changed(self, value: float) -> None:
+        """Handle animation value changes.
+
+        Args:
+            value: Current width value.
+        """
+        self._content.setFixedWidth(int(value))
+
+    def _on_animation_finished(self) -> None:
+        """Handle animation completion."""
+        if not self._expanded:
+            self._content.setVisible(False)
+            self._content.setFixedWidth(0)
+        else:
+            self._content.setFixedWidth(self._content_width)
+            self.updateGeometry()
 
     @property
     def is_expanded(self) -> bool:
@@ -249,6 +283,15 @@ class VerticalCollapsiblePanel(QFrame):
             bool: True if expanded.
         """
         return self._expanded
+
+    @property
+    def expanded_width(self) -> int:
+        """Return the total width when expanded.
+
+        Returns:
+            int: The total width in pixels.
+        """
+        return self._content_width + config.ui.panel_toggle_size
 
     def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
         """Add a widget to the content area.
@@ -306,6 +349,11 @@ class SharedPanelsWidget(QWidget):
         self._artifacts_visible = False
 
     # ---- Public API ----
+
+    @property
+    def artifacts_panel(self) -> VerticalCollapsiblePanel:
+        """Return the artifacts panel instance."""
+        return self._artifacts_panel
 
     @property
     def console(self) -> QPlainTextEdit:

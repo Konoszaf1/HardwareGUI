@@ -259,6 +259,7 @@ class Styles:
             border-left: 1px solid {Colors.BORDER_SUBTLE};
             font-size: 9pt;
             font-weight: bold;
+            text-align: left;
             padding: 4px;
         }}
         QPushButton:hover {{

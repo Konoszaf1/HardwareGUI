@@ -8,7 +8,6 @@ import contextlib
 from collections.abc import Callable
 
 from PySide6.QtCore import (
-    QEasingCurve,
     QItemSelectionModel,
     QModelIndex,
     Qt,
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
 from src.config import config
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Colors
+from src.gui.utils.animation import animate_value
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -221,6 +221,7 @@ class ContentWithPanels(QWidget):
         self._panels = shared_panels
         self._last_console_height = config.ui.terminal_expanded_height
         self._console_anim: QVariantAnimation | None = None
+        self._artifacts_anim: QVariantAnimation | None = None
 
         # Use stacks as permanent layout residents to eliminate flicker during swaps
         self._console_stack = QStackedWidget()
@@ -314,14 +315,38 @@ class ContentWithPanels(QWidget):
         self._apply_console_height(expanded)
 
     def _on_artifacts_toggled(self, expanded: bool) -> None:
-        """Sync stack width and constraints using state-driven sizing.
+        """Handle artifacts toggle by animating the stack width.
 
         Args:
-            expanded (bool): Whether the artifacts panel is expanded.
+            expanded (bool): New state.
         """
-        art_width = self.artifacts_expanded_total_width
-        self._artifacts_stack.setMinimumWidth(config.ui.panel_toggle_size)
-        self._artifacts_stack.setMaximumWidth(art_width)
+        start_w = self._artifacts_stack.width()
+        end_w = (
+            self._panels.artifacts_panel.expanded_width if expanded else config.ui.panel_toggle_size
+        )
+
+        # Cleanup existing animation
+        if self._artifacts_anim and self._artifacts_anim.state() == QVariantAnimation.State.Running:
+            self._artifacts_anim.stop()
+
+        def update_width(value: float) -> None:
+            w = int(value)
+            self._artifacts_stack.setFixedWidth(w)
+
+        def finalize() -> None:
+            # After animation, ensure correct final width
+            if expanded:
+                self._artifacts_stack.setFixedWidth(end_w)
+            else:
+                self._artifacts_stack.setFixedWidth(end_w)
+
+        self._artifacts_anim = animate_value(
+            parent=self,
+            start=float(start_w),
+            end=float(end_w),
+            callback=update_width,
+            on_finished=finalize,
+        )
 
     def _get_target_console_height(self, expanded: bool, total_height: int) -> int:
         """Calculate target height for console.
@@ -362,23 +387,16 @@ class ContentWithPanels(QWidget):
         if self._console_anim and self._console_anim.state() == QVariantAnimation.State.Running:
             self._console_anim.stop()
 
-        self._console_anim = QVariantAnimation(self)
-        self._console_anim.setDuration(config.ui.panel_animation_duration_ms)
-
-        # Resolve easing curve from config
-        easing_type = getattr(
-            QEasingCurve.Type, config.ui.panel_animation_easing, QEasingCurve.Type.InOutQuad
-        )
-        self._console_anim.setEasingCurve(easing_type)
-
-        self._console_anim.setStartValue(float(start_h))
-        self._console_anim.setEndValue(float(target_h))
-
-        def update_sizes(value: float):
+        def update_sizes(value: float) -> None:
             h = int(value)
             self._v_splitter.setSizes([total_height - h, h])
 
-        self._console_anim.valueChanged.connect(update_sizes)
+        self._console_anim = animate_value(
+            parent=self,
+            start=float(start_h),
+            end=float(target_h),
+            callback=update_sizes,
+        )
 
         if expanded:
             self._v_splitter.handle(1).setEnabled(True)
@@ -388,8 +406,6 @@ class ContentWithPanels(QWidget):
             )
         else:
             self._v_splitter.handle(1).setEnabled(False)
-
-        self._console_anim.start()
 
     def set_panels(self, new_panels: SharedPanelsWidget) -> None:
         """Swap panels when hardware is changed using QStackedWidget to avoid flicker.
@@ -426,27 +442,15 @@ class ContentWithPanels(QWidget):
         self._console_stack.setMinimumHeight(con_min_h)
         self._console_stack.setMaximumHeight(con_max_h)
 
-        art_expanded = new_panels.is_artifacts_visible()
-        art_width = (
-            self.artifacts_expanded_total_width if art_expanded else config.ui.panel_toggle_size
-        )
-
-        if art_expanded:
-            self._artifacts_stack.setMinimumWidth(config.ui.panel_toggle_size)
-            self._artifacts_stack.setMaximumWidth(art_width)
-        else:
-            self._artifacts_stack.setFixedWidth(art_width)
-            self._artifacts_stack.setMinimumWidth(art_width)
-            self._artifacts_stack.setMaximumWidth(art_width)
-
-        self._panels = new_panels
-
         # Connect new signals
         new_panels.console_toggled.connect(self._on_console_toggled)
         new_panels.artifacts_toggled.connect(self._on_artifacts_toggled)
 
-        # Apply current state
+        self._panels = new_panels
+
+        # Apply current state with animation
         self._apply_console_height(new_panels.is_console_visible())
+        self._on_artifacts_toggled(new_panels.is_artifacts_visible())
 
     @property
     def stacked_widget(self) -> QStackedWidget:
@@ -465,17 +469,3 @@ class ContentWithPanels(QWidget):
             SharedPanelsWidget: The current panels.
         """
         return self._panels
-
-    @property
-    def artifacts_expanded_total_width(self) -> int:
-        """Return the width of the artifacts panel including toggle button when expanded.
-
-        Calculated dynamically based on thumbnail grid size.
-
-        Returns:
-            int: Total width in pixels.
-        """
-        cfg = config.thumbnails
-        # grid_width + spacing on both sides + scrollbar margin + toggle button
-        content_width = cfg.grid_width + cfg.spacing * 2 + 20  # 20px scrollbar margin
-        return content_width + config.ui.panel_toggle_size
