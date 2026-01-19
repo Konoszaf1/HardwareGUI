@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMenuBar,
+    QSizePolicy,
     QWidget,
 )
 
@@ -290,6 +291,7 @@ class MainWindow(QMainWindow):
         menu_bar = QMenuBar(self)
         menu_bar.setStyleSheet(Styles.MENU_BAR)
         menu_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        menu_bar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
 
         # File menu
         file_menu = QMenu("File", self)
