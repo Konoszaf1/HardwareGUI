@@ -1,4 +1,15 @@
 {
+  "python.defaultInterpreterPath": "/measdata/dpi/venv/dpi/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src",
+    "/measdata/dpi/dpi",
+    "/measdata/dpi/voltageunit/python",
+    "/measdata/dpi/sourcemeasureunit/python",
+    "/measdata/dpi/samplingunit/python",
+    "/measdata/dpi/maincontrolunit/python",
+    "/measdata/dpi/arrayextensionunit/python",
+    "/measdata/dpi/powersupplyunit/python"
+  ],
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
