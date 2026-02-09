@@ -146,6 +146,39 @@ class StatusBarConfig:
     animation_interval_ms: int = 500
 
 
+@dataclass(frozen=True)
+class FormLayoutConfig:
+    """Form layout and widget sizing configuration.
+
+    Provides consistent sizing for form elements to prevent layout squishing.
+
+    Attributes:
+        input_height (int): Minimum height for input widgets (spinbox, combobox, lineedit).
+        input_width (int): Minimum width for input widgets.
+        button_height (int): Standard button height.
+        button_height_large (int): Large button height (e.g., primary actions).
+        radio_height (int): Height for radio buttons and checkboxes.
+        label_height (int): Height for labels.
+        group_padding (tuple): Padding inside group boxes (left, top, right, bottom).
+        form_spacing (int): Vertical spacing between form rows.
+        layout_spacing (int): Spacing between major layout sections.
+        content_min_width (int): Minimum width for scrollable content.
+        group_min_height (int): Default minimum height for group boxes.
+    """
+
+    input_height: int = 32
+    input_width: int = 120
+    button_height: int = 32
+    button_height_large: int = 40
+    radio_height: int = 28
+    label_height: int = 28
+    group_padding: tuple[int, int, int, int] = (5, 5, 5, 5)
+    form_spacing: int = 5
+    layout_spacing: int = 5
+    content_min_width: int = 500
+    group_min_height: int = 100
+
+
 @dataclass
 class AppConfig:
     """Root application configuration.
@@ -161,6 +194,7 @@ class AppConfig:
         dialogs (DialogConfig): Dialog configuration.
         tooltip (TooltipConfig): Tooltip configuration.
         status_bar (StatusBarConfig): Status bar configuration.
+        form (FormLayoutConfig): Form layout configuration.
         log_level (str): Logging level (e.g., "INFO", "DEBUG").
         log_file (str | None): Path to the log file, or None if logging to stdout.
     """
@@ -172,6 +206,7 @@ class AppConfig:
     dialogs: DialogConfig = field(default_factory=DialogConfig)
     tooltip: TooltipConfig = field(default_factory=TooltipConfig)
     status_bar: StatusBarConfig = field(default_factory=StatusBarConfig)
+    form: FormLayoutConfig = field(default_factory=FormLayoutConfig)
 
     # Logging configuration (can be overridden by env vars)
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))

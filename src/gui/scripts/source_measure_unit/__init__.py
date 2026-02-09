@@ -1,11 +1,13 @@
-"""Source Measure Unit action pages.
+"""Source Measure Unit GUI scripts package."""
 
-This package contains page widgets for SMU hardware operations.
-"""
-
-from src.gui.scripts.source_measure_unit.calibration_fit import SMUCalFitPage
-from src.gui.scripts.source_measure_unit.calibration_measure import SMUCalMeasurePage
+from src.gui.scripts.source_measure_unit.calibration import SMUCalibrationPage
+from src.gui.scripts.source_measure_unit.connection import SMUConnectionPage
 from src.gui.scripts.source_measure_unit.hw_setup import SMUSetupPage
-from src.gui.scripts.source_measure_unit.verify import SMUVerifyPage
+from src.gui.scripts.source_measure_unit.test import SMUTestPage
 
-__all__ = ["SMUSetupPage", "SMUVerifyPage", "SMUCalMeasurePage", "SMUCalFitPage"]
+__all__ = [
+    "SMUConnectionPage",
+    "SMUSetupPage",
+    "SMUTestPage",
+    "SMUCalibrationPage",
+]

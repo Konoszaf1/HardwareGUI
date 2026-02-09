@@ -10,18 +10,19 @@ from typing import Any
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QWidget
 
-from src.gui.scripts.sampling_unit.calibration_fit import SUCalFitPage
-from src.gui.scripts.sampling_unit.calibration_measure import SUCalMeasurePage
+from src.gui.scripts.sampling_unit.calibration import SUCalibrationPage
+from src.gui.scripts.sampling_unit.connection import SUConnectionPage
 from src.gui.scripts.sampling_unit.hw_setup import SUSetupPage
-from src.gui.scripts.sampling_unit.verify import SUVerifyPage
-from src.gui.scripts.source_measure_unit.calibration_fit import SMUCalFitPage
-from src.gui.scripts.source_measure_unit.calibration_measure import SMUCalMeasurePage
+from src.gui.scripts.sampling_unit.test import SUTestPage
+from src.gui.scripts.source_measure_unit.calibration import SMUCalibrationPage
+from src.gui.scripts.source_measure_unit.connection import SMUConnectionPage
 from src.gui.scripts.source_measure_unit.hw_setup import SMUSetupPage
-from src.gui.scripts.source_measure_unit.verify import SMUVerifyPage
-from src.gui.scripts.voltage_unit.calibration import CalibrationPage
-from src.gui.scripts.voltage_unit.guard import GuardPage
-from src.gui.scripts.voltage_unit.session_and_coeffs import SessionAndCoeffsPage
-from src.gui.scripts.voltage_unit.tests import TestsPage
+from src.gui.scripts.source_measure_unit.test import SMUTestPage
+from src.gui.scripts.voltage_unit.calibration import VUCalibrationPage
+from src.gui.scripts.voltage_unit.connection import VUConnectionPage
+from src.gui.scripts.voltage_unit.guard import VUGuardPage
+from src.gui.scripts.voltage_unit.hw_setup import VUSetupPage
+from src.gui.scripts.voltage_unit.test import VUTestPage
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.widgets.sidebar_button import SidebarButton
 from src.logging_config import get_logger
@@ -40,21 +41,22 @@ PageFactory = Callable[[QWidget, Any, SharedPanelsWidget | None], QWidget]
 # Registry mapping page_id to (factory, service_type) tuples
 # To add a new page, simply add an entry here - no if-elif changes needed (OCP)
 PAGE_FACTORIES: dict[str, tuple[PageFactory, str]] = {
-    # Voltage Unit pages
-    "workbench": (lambda parent, svc, panels: SessionAndCoeffsPage(parent, svc, panels), "vu"),
-    "calibration": (lambda parent, svc, panels: CalibrationPage(parent, svc, panels), "vu"),
-    "test": (lambda parent, svc, panels: TestsPage(parent, svc, panels), "vu"),
-    "guard": (lambda parent, svc, panels: GuardPage(parent, svc, panels), "vu"),
-    # SMU pages
+    # Voltage Unit pages (5 pages)
+    "vu_connection": (lambda parent, svc, panels: VUConnectionPage(parent, svc, panels), "vu"),
+    "vu_setup": (lambda parent, svc, panels: VUSetupPage(parent, svc, panels), "vu"),
+    "vu_test": (lambda parent, svc, panels: VUTestPage(parent, svc, panels), "vu"),
+    "vu_calibration": (lambda parent, svc, panels: VUCalibrationPage(parent, svc, panels), "vu"),
+    "vu_guard": (lambda parent, svc, panels: VUGuardPage(parent, svc, panels), "vu"),
+    # SMU pages (4 pages)
+    "smu_connection": (lambda parent, svc, panels: SMUConnectionPage(parent, svc, panels), "smu"),
     "smu_setup": (lambda parent, svc, panels: SMUSetupPage(parent, svc, panels), "smu"),
-    "smu_verify": (lambda parent, svc, panels: SMUVerifyPage(parent, svc, panels), "smu"),
-    "smu_cal_measure": (lambda parent, svc, panels: SMUCalMeasurePage(parent, svc, panels), "smu"),
-    "smu_cal_fit": (lambda parent, svc, panels: SMUCalFitPage(parent, svc, panels), "smu"),
-    # SU pages
+    "smu_test": (lambda parent, svc, panels: SMUTestPage(parent, svc, panels), "smu"),
+    "smu_calibration": (lambda parent, svc, panels: SMUCalibrationPage(parent, svc, panels), "smu"),
+    # SU pages (4 pages)
+    "su_connection": (lambda parent, svc, panels: SUConnectionPage(parent, svc, panels), "su"),
     "su_setup": (lambda parent, svc, panels: SUSetupPage(parent, svc, panels), "su"),
-    "su_verify": (lambda parent, svc, panels: SUVerifyPage(parent, svc, panels), "su"),
-    "su_cal_measure": (lambda parent, svc, panels: SUCalMeasurePage(parent, svc, panels), "su"),
-    "su_cal_fit": (lambda parent, svc, panels: SUCalFitPage(parent, svc, panels), "su"),
+    "su_test": (lambda parent, svc, panels: SUTestPage(parent, svc, panels), "su"),
+    "su_calibration": (lambda parent, svc, panels: SUCalibrationPage(parent, svc, panels), "su"),
 }
 
 
@@ -108,8 +110,9 @@ class ActionsPresenter(QObject):
         widget.list_view.setModel(self.proxy)
         for button in buttons:
             button.toggled.connect(
-                lambda checked, btn=button: checked
-                and self.proxy.set_hardware_id(btn.property("id"))
+                lambda checked, btn=button: (
+                    checked and self.proxy.set_hardware_id(btn.property("id"))
+                )
             )
         logger.info(f"ActionsPresenter initialized with {len(actions)} actions")
 

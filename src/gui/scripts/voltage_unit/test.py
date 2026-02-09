@@ -1,4 +1,4 @@
-"""Tests page for voltage unit validation."""
+"""Test page for voltage unit validation."""
 
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -15,7 +15,7 @@ from src.gui.utils.widget_factories import create_test_card
 from src.logic.services.vu_service import VoltageUnitService
 
 
-class TestsPage(BaseHardwarePage):
+class VUTestPage(BaseHardwarePage):
     """Test execution page for voltage unit validation.
 
     Provides controls to run individual tests (outputs, ramp, transient) or all tests
@@ -29,17 +29,23 @@ class TestsPage(BaseHardwarePage):
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
-        """Initialize the TestsPage.
+        """Initialize the VUTestPage.
 
         Args:
-            parent (QWidget | None): Parent widget.
-            service (VoltageUnitService | None): Service for voltage unit operations.
-            shared_panels (SharedPanelsWidget | None): Shared panels for logs/artifacts.
+            parent: Parent widget.
+            service: Service for voltage unit operations.
+            shared_panels: Shared panels for logs/artifacts.
         """
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout (Vertical) ====
-        main_layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Increased min_width to accommodate 4 test cards
+        scroll, content, main_layout = self._create_scroll_area(min_width=1100)
+        outer_layout.addWidget(scroll)
+
         main_layout.setSpacing(15)
 
         # ==== Title ====
@@ -55,39 +61,47 @@ class TestsPage(BaseHardwarePage):
 
         # -- Card 1: Outputs --
         self.btn_test_outputs = QPushButton("Run Test")
+        self._configure_input(self.btn_test_outputs)
         card_outputs = create_test_card(
             "Outputs Test",
             ["Points: 5000", "Scale: 0.2 V/div", "Time: 1e-2 s/div"],
             self.btn_test_outputs,
         )
+        card_outputs.setMinimumWidth(250)
         cards_layout.addWidget(card_outputs)
 
         # -- Card 2: Ramp --
         self.btn_test_ramp = QPushButton("Run Test")
+        self._configure_input(self.btn_test_ramp)
         card_ramp = create_test_card(
             "Ramp Test",
             ["Range: 500 ms", "Slope: ~20 V/s", "Sync: 1 MHz"],
             self.btn_test_ramp,
         )
+        card_ramp.setMinimumWidth(250)
         cards_layout.addWidget(card_ramp)
 
         # -- Card 3: Transient --
         self.btn_test_transient = QPushButton("Run Test")
+        self._configure_input(self.btn_test_transient)
         card_transient = create_test_card(
             "Transient Test",
             ["Amp: 1 V", "Step: Auto (5-20µs)", "Rec: 5000 pts"],
             self.btn_test_transient,
         )
+        card_transient.setMinimumWidth(250)
         cards_layout.addWidget(card_transient)
 
         # -- Card 4: All --
         self.btn_test_all = QPushButton("Run All")
+        self._configure_input(self.btn_test_all)
         self.btn_test_all.setStyleSheet(Styles.BUTTON_ACCENT)
         card_all = create_test_card(
             "Full Suite",
             ["Runs all tests", "Generates all plots", "Verifies results"],
             self.btn_test_all,
         )
+        card_all.setMinimumWidth(250)
         cards_layout.addWidget(card_all)
 
         cards_layout.addStretch()

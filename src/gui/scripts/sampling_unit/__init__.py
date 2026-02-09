@@ -1,11 +1,13 @@
-"""Sampling Unit action pages.
+"""Sampling Unit GUI scripts package."""
 
-This package contains page widgets for SU hardware operations.
-"""
-
-from src.gui.scripts.sampling_unit.calibration_fit import SUCalFitPage
-from src.gui.scripts.sampling_unit.calibration_measure import SUCalMeasurePage
+from src.gui.scripts.sampling_unit.calibration import SUCalibrationPage
+from src.gui.scripts.sampling_unit.connection import SUConnectionPage
 from src.gui.scripts.sampling_unit.hw_setup import SUSetupPage
-from src.gui.scripts.sampling_unit.verify import SUVerifyPage
+from src.gui.scripts.sampling_unit.test import SUTestPage
 
-__all__ = ["SUSetupPage", "SUVerifyPage", "SUCalMeasurePage", "SUCalFitPage"]
+__all__ = [
+    "SUConnectionPage",
+    "SUSetupPage",
+    "SUTestPage",
+    "SUCalibrationPage",
+]

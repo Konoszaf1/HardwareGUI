@@ -1,13 +1,14 @@
 """Hardware setup page for Source Measure Unit initialization."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
-    QFormLayout,
-    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -16,15 +17,47 @@ from src.gui.scripts.base_page import BaseHardwarePage
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.smu_service import SourceMeasureUnitService
 
+# Channel configuration presets
+CHANNEL_PRESETS = {
+    "SMU_DEFAULT": [
+        {
+            "id": "CH1",
+            "type": "IV",
+            "range": 10.0,
+            "gain": 1.0,
+            "offset": 0.0,
+        },
+        {
+            "id": "CH2",
+            "type": "IV",
+            "range": 10.0,
+            "gain": 1.0,
+            "offset": 0.0,
+        },
+        {
+            "id": "CH3",
+            "type": "PA",
+            "range": 1.0,
+            "gain": 1.0,
+            "offset": 0.0,
+        },
+        {
+            "id": "CH4",
+            "type": "PA",
+            "range": 1.0,
+            "gain": 1.0,
+            "offset": 0.0,
+        },
+    ],
+}
+
 
 class SMUSetupPage(BaseHardwarePage):
     """Hardware setup page for SMU initialization.
 
     Provides controls for:
-    - Setting device serial number
-    - Selecting processor type
-    - Selecting connector type (BNC/TRIAX)
-    - Initializing new hardware after first flash
+    - Unit EEPROM: Serial, Processor Type
+    - Channel Configuration: Table with preset loading
     """
 
     def __init__(
@@ -33,84 +66,119 @@ class SMUSetupPage(BaseHardwarePage):
         service: SourceMeasureUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
-        """Initialize the SMUSetupPage.
-
-        Args:
-            parent: Parent widget.
-            service: SMU service instance.
-            shared_panels: Shared panels for logs/artifacts.
-        """
         super().__init__(parent, service, shared_panels)
 
-        # ==== Main Layout ====
-        main_layout = QVBoxLayout(self)
+        # ==== Main Layout with Scroll Area ====
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll, content, main_layout = self._create_scroll_area(min_width=600)
+        outer_layout.addWidget(scroll)
 
         # ==== Title ====
-        title = QLabel("Source Measure Unit – Hardware Setup")
+        title = QLabel("Source Measure Unit – Setup")
         title.setObjectName("title")
         main_layout.addWidget(title)
 
-        # ==== Configuration Box ====
-        config_box = QGroupBox("New Device Configuration")
-        config_layout = QFormLayout(config_box)
-        config_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # ==== Unit EEPROM Section ====
+        eeprom_box = self._create_group_box("Unit EEPROM", min_height=120)
+        eeprom_form = self._create_form_layout(eeprom_box)
 
         self.sp_serial = QSpinBox()
         self.sp_serial.setRange(1, 9999)
-        self.sp_serial.setValue(2001)
-        config_layout.addRow("Serial Number:", self.sp_serial)
+        self.sp_serial.setValue(4001)
+        self._configure_input(self.sp_serial)
+        eeprom_form.addRow("New Serial:", self.sp_serial)
 
         self.cb_processor = QComboBox()
         self.cb_processor.addItems(["746"])
-        config_layout.addRow("Processor Type:", self.cb_processor)
+        self._configure_input(self.cb_processor)
+        eeprom_form.addRow("Processor Type:", self.cb_processor)
 
-        self.cb_connector = QComboBox()
-        self.cb_connector.addItems(["BNC", "TRIAX"])
-        config_layout.addRow("Connector Type:", self.cb_connector)
+        main_layout.addWidget(eeprom_box)
 
-        main_layout.addWidget(config_box)
-
-        # ==== Action Button ====
-        self.btn_init_device = QPushButton("Initialize Device")
-        main_layout.addWidget(self.btn_init_device)
-
-        # Stretch to fill remaining space
-        main_layout.addStretch()
-
-        # ==== Info Box ====
-        info_box = QGroupBox("Note")
-        info_layout = QVBoxLayout(info_box)
-        info_label = QLabel(
-            "This action initializes a new SMU device after first flash.\n"
-            "It sets EEPROM default values and configures device identity.\n\n"
-            "⚠️ Only run this on freshly flashed devices!"
+        # ==== Channel Configuration Section ====
+        channel_box = self._create_group_box(
+            "Channel Configuration", min_height=300, expanding=True
         )
-        info_label.setWordWrap(True)
-        info_layout.addWidget(info_label)
-        main_layout.addWidget(info_box)
+        channel_layout = QVBoxLayout(channel_box)
+        channel_layout.setContentsMargins(12, 18, 12, 12)
+        channel_layout.setSpacing(10)
 
-        main_layout.addStretch()
+        # Preset dropdown
+        preset_layout = QHBoxLayout()
+        preset_label = QLabel("Preset:")
+        preset_layout.addWidget(preset_label)
+        self.cb_preset = QComboBox()
+        self.cb_preset.addItems(list(CHANNEL_PRESETS.keys()))
+        self.cb_preset.setToolTip("Dropdown menu loads predefined values")
+        self._configure_input(self.cb_preset)
+        preset_layout.addWidget(self.cb_preset)
+        preset_layout.addStretch()
+        channel_layout.addLayout(preset_layout)
 
-        # Register action buttons for busy state management
-        self._action_buttons = [self.btn_init_device]
+        # Channel configuration table
+        self.channel_table = QTableWidget()
+        self.channel_table.setColumnCount(5)
+        self.channel_table.setHorizontalHeaderLabels(
+            ["Channel ID", "Type", "Range", "Gain", "Offset"]
+        )
+        self.channel_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.channel_table.setMinimumHeight(180)
+        self.channel_table.verticalHeader().setDefaultSectionSize(28)
+        channel_layout.addWidget(self.channel_table)
 
-        # Wire backend action
-        self.btn_init_device.clicked.connect(self._on_init_device)
+        # Save/Load buttons
+        btn_layout = QHBoxLayout()
+        self.btn_save = QPushButton("Save")
+        self.btn_save.setToolTip("Save to config file")
+        self._configure_input(self.btn_save, min_width=80)
+        self.btn_load = QPushButton("Load")
+        self.btn_load.setToolTip("Load the config from the device")
+        self._configure_input(self.btn_load, min_width=80)
+        btn_layout.addWidget(self.btn_save)
+        btn_layout.addWidget(self.btn_load)
+        btn_layout.addStretch()
+        channel_layout.addLayout(btn_layout)
 
-        self._log("Hardware Setup page ready. Configure and click 'Initialize Device'.")
+        main_layout.addWidget(channel_box)
 
-    # ---- Handlers ----
-    def _on_init_device(self) -> None:
-        """Initialize a new SMU device with the configured parameters."""
+        # Register action buttons
+        self._action_buttons = [self.btn_save, self.btn_load]
+
+        # ==== Signals ====
+        self.cb_preset.currentTextChanged.connect(self._on_preset_changed)
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_load.clicked.connect(self._on_load)
+
+        # Load initial preset
+        self._on_preset_changed(self.cb_preset.currentText())
+
+        self._log("Setup page ready.")
+
+    def _populate_table(self, channels: list[dict]) -> None:
+        """Populate channel table with data."""
+        self.channel_table.setRowCount(len(channels))
+        for row, ch in enumerate(channels):
+            self.channel_table.setItem(row, 0, QTableWidgetItem(ch.get("id", "")))
+            self.channel_table.setItem(row, 1, QTableWidgetItem(ch.get("type", "")))
+            self.channel_table.setItem(row, 2, QTableWidgetItem(str(ch.get("range", ""))))
+            self.channel_table.setItem(row, 3, QTableWidgetItem(str(ch.get("gain", ""))))
+            self.channel_table.setItem(row, 4, QTableWidgetItem(str(ch.get("offset", ""))))
+
+    def _on_preset_changed(self, preset_name: str) -> None:
+        """Load preset values into the table."""
+        if preset_name in CHANNEL_PRESETS:
+            self._populate_table(CHANNEL_PRESETS[preset_name])
+            self._log(f"Loaded preset: {preset_name}")
+
+    def _on_save(self) -> None:
+        """Save current configuration."""
+        self._log("Saving configuration... (not implemented)")
+
+    def _on_load(self) -> None:
+        """Load configuration from device EEPROM."""
         if not self.service:
             self._log("Service not available.")
             return
-
-        serial = self.sp_serial.value()
-        processor = self.cb_processor.currentText()
-        connector = self.cb_connector.currentText()
-
-        self._log(
-            f"Initializing device: serial={serial}, processor={processor}, connector={connector}"
-        )
-        self._start_task(self.service.run_hw_setup(serial, processor, connector))
+        self._log("Loading configuration from device...")

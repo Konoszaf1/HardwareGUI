@@ -1,9 +1,6 @@
 """Calibration page for voltage unit autocalibration and testing."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -16,7 +13,7 @@ from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.vu_service import VoltageUnitService
 
 
-class CalibrationPage(BaseHardwarePage):
+class VUCalibrationPage(BaseHardwarePage):
     """Calibration page for voltage unit.
 
     Provides controls for:
@@ -34,7 +31,7 @@ class CalibrationPage(BaseHardwarePage):
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
-        """Initialize the CalibrationPage.
+        """Initialize the VUCalibrationPage.
 
         Args:
             parent (QWidget | None): Parent widget.
@@ -44,7 +41,11 @@ class CalibrationPage(BaseHardwarePage):
         super().__init__(parent, service, shared_panels)
 
         # ==== Main Layout (Vertical) ====
-        main_layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll, content, main_layout = self._create_scroll_area(min_width=500)
+        outer_layout.addWidget(scroll)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Calibration")
@@ -57,12 +58,17 @@ class CalibrationPage(BaseHardwarePage):
         top_layout.setContentsMargins(0, 0, 0, 0)
 
         # -- Controls --
-        controls_box = QGroupBox("Calibration Actions")
+        controls_box = self._create_group_box(
+            "Calibration Actions", min_height=160, expanding=False
+        )
         controls_layout = QVBoxLayout(controls_box)
 
         self.btn_run_autocal_python = QPushButton("Run Autocalibration (Python)")
+        self._configure_input(self.btn_run_autocal_python)
         self.btn_run_autocal_onboard = QPushButton("Run Autocalibration (Onboard)")
+        self._configure_input(self.btn_run_autocal_onboard)
         self.btn_test_all = QPushButton("Test: All")
+        self._configure_input(self.btn_test_all)
 
         controls_layout.addWidget(self.btn_run_autocal_python)
         controls_layout.addWidget(self.btn_run_autocal_onboard)
@@ -70,9 +76,9 @@ class CalibrationPage(BaseHardwarePage):
         controls_layout.addStretch()
 
         # Info box (compact)
-        info_box = QGroupBox("Constants")
-        info_form = QFormLayout(info_box)
-        info_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_box = self._create_group_box("Constants", min_height=160, expanding=False)
+        info_form = self._create_form_layout(info_box)
+
         info_form.addRow("Max iter:", QLabel("10"))
         info_form.addRow("Offset:", QLabel("2 mV"))
         info_form.addRow("Slope err:", QLabel("0.1 %"))

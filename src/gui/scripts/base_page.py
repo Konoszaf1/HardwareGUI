@@ -9,11 +9,19 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QFormLayout,
+    QGroupBox,
     QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 
 import device_scripts.setup_cal as setup_cal
+from src.config import config
 from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.image_viewer import ImageViewerDialog
@@ -287,3 +295,152 @@ class BaseHardwarePage(QWidget):
         self.service.scopeVerified.connect(self._on_scope_verified)
         # Apply initial state
         self._on_scope_verified(self.service.is_scope_verified)
+
+    # ---- Layout Factory Methods ----
+
+    def _create_scroll_area(
+        self,
+        min_width: int | None = None
+    ) -> tuple[QScrollArea, QWidget, QVBoxLayout]:
+        """Create a scroll area with properly configured content widget.
+
+        This sets up the standard scrollable page structure with:
+        - Scroll policies for both directions
+        - Expanding size policy on content
+        - Configurable minimum width
+
+        Args:
+            min_width: Minimum content width (default from config).
+
+        Returns:
+            Tuple of (scroll_area, content_widget, main_layout).
+        """
+        cfg = config.form
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        content = QWidget()
+        content.setMinimumWidth(min_width or cfg.content_min_width)
+        content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        main_layout = QVBoxLayout(content)
+        main_layout.setSpacing(cfg.layout_spacing)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+
+        scroll.setWidget(content)
+        return scroll, content, main_layout
+
+    def _create_group_box(
+        self,
+        title: str,
+        min_width: int | None = None,
+        min_height: int | None = None,
+        expanding: bool = False,
+    ) -> QGroupBox:
+        """Create a group box with proper size policy.
+
+        Group boxes default to Fixed vertical policy to prevent
+        overlapping/squishing within scroll areas.
+
+        Args:
+            title: Group box title.
+            min_width: Minimum width (optional).
+            min_height: Minimum height (default from config).
+            expanding: If True, use Expanding vertical policy.
+
+        Returns:
+            Configured QGroupBox instance.
+        """
+        cfg = config.form
+        box = QGroupBox(title)
+        box.setMinimumHeight(min_height or cfg.group_min_height)
+        if min_width:
+            box.setMinimumWidth(min_width)
+
+        v_policy = QSizePolicy.Policy.Expanding if expanding else QSizePolicy.Policy.Preferred
+        box.setSizePolicy(QSizePolicy.Policy.Expanding, v_policy)
+
+        return box
+
+    @property
+    def _group_padding(self) -> tuple[int, int, int, int]:
+        """Return the standard group box padding from config.
+
+        Returns:
+            tuple[int, int, int, int]: (left, top, right, bottom) margins.
+        """
+        return config.form.group_padding
+
+    @property
+    def _layout_spacing(self) -> int:
+        """Return the standard layout spacing from config.
+
+        Returns:
+            int: Spacing in pixels between layout sections.
+        """
+        return config.form.layout_spacing
+
+    def _create_form_layout(self, parent: QWidget | None = None) -> QFormLayout:
+        """Create a form layout that prevents field squishing.
+
+        Uses FieldsStayAtSizeHint policy and configures spacing/margins
+        from the central config.
+
+        Args:
+            parent: Parent widget for the layout.
+
+        Returns:
+            Configured QFormLayout instance.
+        """
+        cfg = config.form
+        layout = QFormLayout(parent)
+        layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        layout.setVerticalSpacing(cfg.form_spacing)
+        layout.setContentsMargins(*cfg.group_padding)
+        return layout
+
+    def _configure_input(
+        self,
+        widget: QWidget,
+        min_width: int | None = None,
+        min_height: int | None = None,
+    ) -> QWidget:
+        """Configure an input widget with standard sizing.
+
+        Sets minimum dimensions and Fixed vertical size policy
+        to prevent the widget from being squished.
+
+        Args:
+            widget: Input widget (QSpinBox, QComboBox, QLineEdit, etc).
+            min_width: Override minimum width.
+            min_height: Override minimum height.
+
+        Returns:
+            The configured widget (for chaining).
+        """
+        cfg = config.form
+
+        # Determine appropriate height based on widget type
+        if min_height is None:
+            if isinstance(widget, (QRadioButton, QCheckBox)):
+                min_height = cfg.radio_height
+            elif isinstance(widget, QPushButton):
+                min_height = cfg.button_height
+            else:
+                min_height = cfg.input_height
+
+        widget.setMinimumHeight(min_height)
+
+        if min_width is None:
+            min_width = cfg.input_width
+
+        widget.setMinimumWidth(min_width)
+
+        # Set Fixed vertical policy to prevent squishing
+        widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+
+        return widget

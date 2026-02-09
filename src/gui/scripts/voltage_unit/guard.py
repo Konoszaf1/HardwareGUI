@@ -1,9 +1,6 @@
 """Guard signal control page for voltage unit."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFormLayout,
-    QGroupBox,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -16,7 +13,7 @@ from src.gui.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.vu_service import VoltageUnitService
 
 
-class GuardPage(BaseHardwarePage):
+class VUGuardPage(BaseHardwarePage):
     """Guard signal control page.
 
     Provides two literal actions matching the script's guard() function:
@@ -33,7 +30,7 @@ class GuardPage(BaseHardwarePage):
         service: VoltageUnitService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
-        """Initialize the GuardPage.
+        """Initialize the VUGuardPage.
 
         Args:
             parent (QWidget | None): Parent widget.
@@ -42,8 +39,12 @@ class GuardPage(BaseHardwarePage):
         """
         super().__init__(parent, service, shared_panels)
 
-        # ==== Main Layout ====
-        main_layout = QVBoxLayout(self)
+        # ==== Main Layout (Vertical) ====
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll, content, main_layout = self._create_scroll_area(min_width=400)
+        outer_layout.addWidget(scroll)
 
         # ==== Title ====
         title = QLabel("Voltage Unit – Guard")
@@ -51,9 +52,9 @@ class GuardPage(BaseHardwarePage):
         main_layout.addWidget(title)
 
         # ==== Info (from script) ====
-        info_box = QGroupBox("Script Note")
-        info_form = QFormLayout(info_box)
-        info_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        info_box = self._create_group_box("Script Note", min_height=100, expanding=False)
+        info_form = self._create_form_layout(info_box)
+
         info_form.addRow(
             "Warning:",
             QLabel("Make sure the scope is not connected when setting a signal to the guard!"),
@@ -62,9 +63,11 @@ class GuardPage(BaseHardwarePage):
 
         # ==== Action buttons ====
         self.btn_guard_signal = QPushButton("Set Guard → Signal")
+        self._configure_input(self.btn_guard_signal)
         main_layout.addWidget(self.btn_guard_signal)
 
         self.btn_guard_ground = QPushButton("Set Guard → Ground")
+        self._configure_input(self.btn_guard_ground)
         main_layout.addWidget(self.btn_guard_ground)
 
         # Stretch to fill remaining space

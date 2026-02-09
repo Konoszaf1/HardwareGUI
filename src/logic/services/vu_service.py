@@ -1,4 +1,8 @@
-"""VoltageUnitService for hardware communication and task management."""
+"""VoltageUnitService for hardware communication and task management.
+
+This service owns connection lifecycle and coordinates threaded hardware operations
+by delegating to VUController for actual device interactions.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,6 @@ import threading
 import warnings
 from dataclasses import dataclass
 
-import device_scripts.setup_cal as setup_cal
 import dpi  # noqa: F401 - required to avoid circular imports
 import matplotlib
 import vxi11
@@ -19,6 +22,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
+from src.logic.controllers.vu_controller import VUController
 from src.logic.qt_workers import FunctionTask, make_task
 
 matplotlib.use("Agg")
@@ -35,11 +39,10 @@ class TargetIds:
 
 
 class VoltageUnitService(QObject):
-    """Owns hardware connections and runs script commands in worker threads.
+    """Owns VU hardware connections and runs script commands in worker threads.
 
-    This service mirrors the original script behavior and exposes thread-friendly
-    methods that return FunctionTask. Each method ensures the hardware is connected
-    (autodetecting if needed) and routes log output to the returned signals.
+    This service manages connection lifecycle and threading while delegating
+    actual hardware operations to VUController.
     """
 
     connectedChanged = Signal(bool)
@@ -54,12 +57,7 @@ class VoltageUnitService(QObject):
         self._vu: DPIVoltageUnit | None = None
         self._mcu: DPIMainControlUnit | None = None
         self._scope: vxi11.Instrument | None = None
-        # Local coeffs dict; we alias the script module's global to this dict
-        self._coeffs: dict[str, list[float]] = {
-            "CH1": [1.0, 0.0],
-            "CH2": [1.0, 0.0],
-            "CH3": [1.0, 0.0],
-        }
+        self._controller: VUController | None = None
         self._connected: bool = False
         self._scope_verified_state: bool = False
         self._hw_lock = threading.Lock()
@@ -143,8 +141,6 @@ class VoltageUnitService(QObject):
         """
         logger.info(f"Pinging scope at {self._target_scope_ip}")
         try:
-            # -c 1: send 1 packet
-            # -W 1: wait 1 second for response
             subprocess.check_call(
                 ["ping", "-c", "1", "-W", "1", self._target_scope_ip],
                 stdout=subprocess.DEVNULL,
@@ -168,13 +164,33 @@ class VoltageUnitService(QObject):
         return self._scope_verified_state
 
     @property
+    def vu_serial(self) -> int | None:
+        """Return the VU serial number if connected."""
+        return self._vu.get_serial() if self._vu else None
+
+    @property
+    def controller(self) -> VUController | None:
+        """Return the VUController instance, creating if needed."""
+        if self._controller is None and self._vu and self._mcu and self._scope:
+            self._controller = VUController(
+                vu=self._vu,
+                mcu=self._mcu,
+                scope=self._scope,
+                vu_serial=self._vu.get_serial(),
+                artifact_dir=self._artifact_dir(),
+            )
+        return self._controller
+
+    @property
     def coeffs(self) -> dict[str, list[float]]:
-        return self._coeffs
+        if self._controller:
+            return self._controller.coeffs
+        return {"CH1": [1.0, 0.0], "CH2": [1.0, 0.0], "CH3": [1.0, 0.0]}
 
     # ---- Internals ----
     def _ensure_connected(self) -> None:
-        """Mirror the box connection of the script."""
-        if self._connected and self._vu and self._mcu and self._scope:
+        """Ensure VU hardware is connected and controller is initialized."""
+        if self._connected and self._vu and self._mcu and self._scope and self._controller:
             return
 
         # Resolve serials that are zero via lsusb as in the script
@@ -199,72 +215,81 @@ class VoltageUnitService(QObject):
         self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
         self._scope = vxi11.Instrument(self._target_scope_ip)
 
-        # Sync script module globals and coeffs alias
-        setup_cal.SCOPE_IP = self._target_scope_ip
-        setup_cal.VU_SERIAL = vu_serial
-        setup_cal.VU_INTERF = vu_if
-        setup_cal.MU_SERIAL = mcu_serial
-        setup_cal.MU_INTERF = mcu_if
-        setup_cal.mcu = self._mcu
-        setup_cal.scope = self._scope
+        # Create controller with hardware instances
+        self._controller = VUController(
+            vu=self._vu,
+            mcu=self._mcu,
+            scope=self._scope,
+            vu_serial=vu_serial,
+            artifact_dir=self._artifact_dir(),
+        )
 
-        # Read baseline coefficients from the hardware
-        self._coeffs = {}
-        for ch in ("CH1", "CH2", "CH3"):
-            self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-        setup_cal.coeffs = self._coeffs
         self._connected = True
-        logger.info(f"Hardware connected: VU serial={setup_cal.VU_SERIAL}")
+        logger.info(f"VU connected: serial={vu_serial}")
         self.connectedChanged.emit(True)
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        return self._artifact_manager.get_artifact_dir(setup_cal.VU_SERIAL)
+        serial = self._vu.get_serial() if self._vu else 0
+        return self._artifact_manager.get_artifact_dir(serial)
 
     def _collect_artifacts(self) -> list[str]:
         """Collect all artifact files for the current voltage unit."""
-        return self._artifact_manager.collect_artifacts(setup_cal.VU_SERIAL)
+        serial = self._vu.get_serial() if self._vu else 0
+        return self._artifact_manager.collect_artifacts(serial)
 
     # ---- Public operations (threaded) ----
+    def connect_only(self) -> FunctionTask:
+        """Connect to VU hardware without additional operations.
+
+        Returns:
+            FunctionTask that establishes hardware connection.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                return {
+                    "serial": self._vu.get_serial() if self._vu else None,
+                    "ok": True,
+                }
+
+        return make_task("connect", job)
+
     @require_scope_ip
     def connect_and_read(self) -> FunctionTask:
         def job():
             self._ensure_connected()
-            # Touch scope to read IDN (side effect: prints to log via worker capture)
             try:
                 idn = self._scope.ask("*IDN?")
                 logger.debug(f"Scope IDN: {idn}")
             except Exception as e:
                 logger.warning(f"Failed to read scope IDN: {e}")
-            return {"coeffs": self._coeffs}
+            return {"coeffs": self.coeffs}
 
         return make_task("connect_and_read", job)
 
     @require_scope_ip
     def read_coefficients(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            for ch in ("CH1", "CH2", "CH3"):
-                self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-            return {"coeffs": self._coeffs}
+            result = self._controller.read_coefficients()
+            return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
         return make_task("read_coefficients", job)
 
     @require_scope_ip
     def reset_coefficients_ram(self) -> FunctionTask:
         def job():
-            setup_cal.reset_coefficients(self._vu, self._scope, wait_input=False)
-            return {"coeffs": self._coeffs}
+            result = self._controller.reset_coefficients()
+            return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
         return make_task("reset_coefficients_ram", job)
 
     @require_scope_ip
     def write_coefficients_eeprom(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            # Use the script function to persist current self._coeffs
-            setup_cal.write_coefficients(self._vu, self._scope, wait_input=False)
-            return {"coeffs": self._coeffs}
+            result = self._controller.write_coefficients()
+            return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
         return make_task("write_coefficients_eeprom", job)
 
@@ -272,18 +297,16 @@ class VoltageUnitService(QObject):
     @require_scope_ip
     def set_guard_signal(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            self._vu.setOutputsGuardToSignal()
-            return {"guard": "signal"}
+            result = self._controller.set_guard_signal()
+            return {"guard": "signal", "ok": result.ok}
 
         return make_task("guard_signal", job)
 
     @require_scope_ip
     def set_guard_ground(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            self._vu.setOutputsGuardToGND()
-            return {"guard": "ground"}
+            result = self._controller.set_guard_ground()
+            return {"guard": "ground", "ok": result.ok}
 
         return make_task("guard_ground", job)
 
@@ -291,57 +314,55 @@ class VoltageUnitService(QObject):
     @require_scope_ip
     def test_outputs(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            ok = setup_cal.test_outputs(self._vu, self._scope)
-            return {"ok": ok, "artifacts": self._collect_artifacts()}
+            result = self._controller.test_outputs()
+            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
 
         return make_task("test_outputs", job)
 
     @require_scope_ip
     def test_ramp(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            ok = setup_cal.test_ramp(self._vu, self._scope)
-            return {"ok": ok, "artifacts": self._collect_artifacts()}
+            result = self._controller.test_ramp()
+            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
 
         return make_task("test_ramp", job)
 
     @require_scope_ip
     def test_transient(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            setup_cal.test_transient(self._vu, self._scope)
-            return {"ok": True, "artifacts": self._collect_artifacts()}
+            result = self._controller.test_transient()
+            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
 
         return make_task("test_transient", job)
 
     @require_scope_ip
     def test_all(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            setup_cal.test_all(self._vu, self._scope)
-            return {"ok": True, "artifacts": self._collect_artifacts()}
+            result = self._controller.test_all()
+            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
 
         return make_task("test_all", job)
 
     @require_scope_ip
     def autocal_python(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            setup_cal.auto_calibrate(self._vu, self._scope)
-            return {"ok": True, "artifacts": self._collect_artifacts(), "coeffs": self._coeffs}
+            result = self._controller.auto_calibrate()
+            return {
+                "ok": result.ok,
+                "artifacts": self._collect_artifacts(),
+                "coeffs": self.coeffs,
+            }
 
         return make_task("autocal_python", job)
 
     @require_scope_ip
     def autocal_onboard(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
-            setup_cal.autocal(self._vu, self._scope)
-            # After onboard autocal, re-read coeffs
-            for ch in ("CH1", "CH2", "CH3"):
-                self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-            setup_cal.coeffs = self._coeffs
-            return {"ok": True, "coeffs": self._coeffs, "artifacts": self._collect_artifacts()}
+            result = self._controller.perform_autocalibration()
+            return {
+                "ok": result.ok,
+                "coeffs": self.coeffs,
+                "artifacts": self._collect_artifacts(),
+            }
 
         return make_task("autocal_onboard", job)

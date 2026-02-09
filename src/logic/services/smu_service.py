@@ -1,4 +1,8 @@
-"""SourceMeasureUnitService for SMU hardware communication and task management."""
+"""SourceMeasureUnitService for SMU hardware communication and task management.
+
+This service owns connection lifecycle and coordinates threaded hardware operations
+by delegating to SMUController for actual device interactions.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
+from src.logic.controllers.smu_controller import SMUController
 from src.logic.qt_workers import FunctionTask, make_task
 
 matplotlib.use("Agg")
@@ -35,9 +40,8 @@ class SMUTargetIds:
 class SourceMeasureUnitService(QObject):
     """Owns SMU hardware connections and runs script commands in worker threads.
 
-    This service mirrors the original script behavior and exposes thread-friendly
-    methods that return FunctionTask. Each method ensures the hardware is connected
-    (autodetecting if needed) and routes log output to the returned signals.
+    This service manages connection lifecycle and threading while delegating
+    actual hardware operations to SMUController.
     """
 
     connectedChanged = Signal(bool)
@@ -50,6 +54,7 @@ class SourceMeasureUnitService(QObject):
         self._target_keithley_ip: str | None = None
         self._targets: SMUTargetIds = SMUTargetIds()
         self._smu: DPISourceMeasureUnit | None = None
+        self._controller: SMUController | None = None
         self._connected: bool = False
         self._keithley_verified_state: bool = False
         self._hw_lock = threading.Lock()
@@ -161,10 +166,17 @@ class SourceMeasureUnitService(QObject):
         """Return the SMU serial number if connected."""
         return self._smu.get_serial() if self._smu else None
 
+    @property
+    def controller(self) -> SMUController:
+        """Return the SMUController instance, creating if needed."""
+        if self._controller is None:
+            self._ensure_connected()
+        return self._controller
+
     # ---- Internals ----
     def _ensure_connected(self) -> None:
-        """Ensure SMU hardware is connected."""
-        if self._connected and self._smu:
+        """Ensure SMU hardware is connected and controller is initialized."""
+        if self._connected and self._smu and self._controller:
             return
 
         smu_serial = self._targets.smu_serial
@@ -175,6 +187,9 @@ class SourceMeasureUnitService(QObject):
             self._smu = DPISourceMeasureUnit(autoinit=True)
         else:
             self._smu = DPISourceMeasureUnit(serial=smu_serial, interface=smu_if)
+
+        # Create controller with hardware instance
+        self._controller = SMUController(smu=self._smu)
 
         self._connected = True
         logger.info(f"SMU connected: serial={self._smu.get_serial()}")
@@ -207,16 +222,15 @@ class SourceMeasureUnitService(QObject):
 
         def job():
             with self._hw_lock:
-                # Create SMU with autoinit for fresh device
+                # Create fresh controller for new device
                 smu = DPISourceMeasureUnit(autoinit=True)
-                smu.set_eeprom_default_values()
-                smu.initNewDevice(
+                controller = SMUController(smu=smu)
+                result = controller.initialize_device(
                     serial=serial,
-                    processorType=processor_type,
-                    connectorType=connector_type,
+                    processor_type=processor_type,
+                    connector_type=connector_type,
                 )
-                logger.info(f"SMU initialized with serial={serial}")
-                return {"serial": serial, "ok": True}
+                return {"serial": result.serial, "ok": result.ok, "message": result.message}
 
         return make_task("hw_setup", job)
 
@@ -230,11 +244,121 @@ class SourceMeasureUnitService(QObject):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
-                self._smu.calibrate_eeprom()
-                logger.info("SMU EEPROM calibration complete")
-                return {"ok": True}
+                result = self._controller.calibrate_eeprom()
+                return {"ok": result.ok, "message": result.message}
 
         return make_task("verify", job)
+
+    def run_temperature_read(self) -> FunctionTask:
+        """Read SMU temperature.
+
+        Returns:
+            FunctionTask that reads temperature.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.read_temperature()
+                return {"ok": result.ok, "temperature": result.data.get("temperature")}
+
+        return make_task("temperature", job)
+
+    # ---- Relay Control Operations ----
+    def run_set_iv_channel(
+        self,
+        channel: int,
+        reference: str = "GND",
+    ) -> FunctionTask:
+        """Set IV-Converter channel.
+
+        Args:
+            channel: Channel number (0=disable, 1-9=enable).
+            reference: Reference voltage ("GND" or "VSMU").
+
+        Returns:
+            FunctionTask that sets IV channel.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_iv_channel(channel=channel, reference=reference)
+                return {"ok": result.ok, "channel": result.data.get("channel")}
+
+        return make_task("iv_channel", job)
+
+    def run_set_pa_channel(self, channel: int) -> FunctionTask:
+        """Set Post-Amplifier channel.
+
+        Args:
+            channel: Channel number (0=disable, 1-4=enable).
+
+        Returns:
+            FunctionTask that sets PA channel.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_pa_channel(channel=channel)
+                return {"ok": result.ok, "channel": result.data.get("channel")}
+
+        return make_task("pa_channel", job)
+
+    def run_set_highpass(self, enabled: bool) -> FunctionTask:
+        """Enable/disable highpass filter.
+
+        Args:
+            enabled: Whether to enable highpass.
+
+        Returns:
+            FunctionTask that sets highpass state.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_highpass(enabled=enabled)
+                return {"ok": result.ok, "enabled": result.data.get("enabled")}
+
+        return make_task("highpass", job)
+
+    def run_set_input_routing(self, target: str) -> FunctionTask:
+        """Set input routing.
+
+        Args:
+            target: Input routing target ("GND", "GUARD", "VSMU", "SU", "VSMU_AND_SU").
+
+        Returns:
+            FunctionTask that sets input routing.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_input_routing(target=target)
+                return {"ok": result.ok, "target": result.data.get("target")}
+
+        return make_task("input_routing", job)
+
+    def run_set_vguard(self, target: str) -> FunctionTask:
+        """Set VGUARD routing.
+
+        Args:
+            target: VGUARD target ("GND" or "VSMU").
+
+        Returns:
+            FunctionTask that sets VGUARD routing.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_vguard(target=target)
+                return {"ok": result.ok, "target": result.data.get("target")}
+
+        return make_task("vguard", job)
 
     @require_keithley_ip
     def run_calibration_measure(
@@ -251,7 +375,6 @@ class SourceMeasureUnitService(QObject):
         Returns:
             FunctionTask that runs calibration measurements.
         """
-        # Import here to avoid issues if symlink doesn't exist yet
         from dpi.utilities import DPILogger
         from dpisourcemeasureunit.calibration import SMUCalibrationMeasure
 

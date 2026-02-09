@@ -1,4 +1,8 @@
-"""SamplingUnitService for SU hardware communication and task management."""
+"""SamplingUnitService for SU hardware communication and task management.
+
+This service owns connection lifecycle and coordinates threaded hardware operations
+by delegating to SUController for actual device interactions.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +13,12 @@ import warnings
 from dataclasses import dataclass
 
 import matplotlib
-from dpi import DPISamplingUnit
+from dpi import DPIMainControlUnit, DPISamplingUnit
 from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
+from src.logic.controllers.su_controller import SUController
 from src.logic.qt_workers import FunctionTask, make_task
 
 matplotlib.use("Agg")
@@ -34,9 +39,8 @@ class SUTargetIds:
 class SamplingUnitService(QObject):
     """Owns SU hardware connections and runs script commands in worker threads.
 
-    This service mirrors the original script behavior and exposes thread-friendly
-    methods that return FunctionTask. Each method ensures the hardware is connected
-    (autodetecting if needed) and routes log output to the returned signals.
+    This service manages connection lifecycle and threading while delegating
+    actual hardware operations to SUController.
     """
 
     connectedChanged = Signal(bool)
@@ -49,6 +53,8 @@ class SamplingUnitService(QObject):
         self._target_keithley_ip: str | None = None
         self._targets: SUTargetIds = SUTargetIds()
         self._su: DPISamplingUnit | None = None
+        self._mcu: DPIMainControlUnit | None = None
+        self._controller: SUController | None = None
         self._connected: bool = False
         self._keithley_verified_state: bool = False
         self._hw_lock = threading.Lock()
@@ -160,10 +166,17 @@ class SamplingUnitService(QObject):
         """Return the SU serial number if connected."""
         return self._su.getSerial() if self._su else None
 
+    @property
+    def controller(self) -> SUController:
+        """Return the SUController instance, creating if needed."""
+        if self._controller is None:
+            self._ensure_connected()
+        return self._controller
+
     # ---- Internals ----
     def _ensure_connected(self) -> None:
-        """Ensure SU hardware is connected."""
-        if self._connected and self._su:
+        """Ensure SU hardware is connected and controller is initialized."""
+        if self._connected and self._su and self._controller:
             return
 
         su_serial = self._targets.su_serial
@@ -174,6 +187,16 @@ class SamplingUnitService(QObject):
             self._su = DPISamplingUnit(autoinit=True)
         else:
             self._su = DPISamplingUnit(serial=su_serial, interface=su_if)
+
+        # Initialize MCU for synchronized operations
+        try:
+            self._mcu = DPIMainControlUnit(autoinit=True)
+        except Exception as e:
+            logger.warning(f"MCU not available: {e}")
+            self._mcu = None
+
+        # Create controller with hardware instances
+        self._controller = SUController(su=self._su, mcu=self._mcu)
 
         self._connected = True
         logger.info(f"SU connected: serial={self._su.getSerial()}")
@@ -198,7 +221,7 @@ class SamplingUnitService(QObject):
         Args:
             serial: New serial number for the device.
             processor_type: Processor type (e.g., "746").
-            connector_type: Connector type ("BNC" or "TRIAX").
+            connector_type: Connector type ("BNC" or "SMA").
 
         Returns:
             FunctionTask that initializes the device.
@@ -206,15 +229,15 @@ class SamplingUnitService(QObject):
 
         def job():
             with self._hw_lock:
-                # Create SU with autoinit for fresh device
+                # Create fresh controller for new device
                 su = DPISamplingUnit(autoinit=True)
-                su.initNewDevice(
+                controller = SUController(su=su)
+                result = controller.initialize_device(
                     serial=serial,
-                    processorType=processor_type,
-                    connectorType=connector_type,
+                    processor_type=processor_type,
+                    connector_type=connector_type,
                 )
-                logger.info(f"SU initialized with serial={serial}")
-                return {"serial": serial, "ok": True}
+                return {"serial": result.serial, "ok": result.ok, "message": result.message}
 
         return make_task("hw_setup", job)
 
@@ -228,11 +251,114 @@ class SamplingUnitService(QObject):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
-                self._su.performautocalibration()
-                logger.info("SU autocalibration complete")
-                return {"ok": True}
+                result = self._controller.perform_autocalibration()
+                return {"ok": result.ok, "serial": result.serial, "message": result.message}
 
         return make_task("verify", job)
+
+    def run_temperature_read(self) -> FunctionTask:
+        """Read SU temperature.
+
+        Returns:
+            FunctionTask that reads temperature.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.read_temperature()
+                return {"ok": result.ok, "temperature": result.data.get("temperature")}
+
+        return make_task("temperature", job)
+
+    def run_single_shot(
+        self,
+        dac_voltage: float = 0.0,
+        source: str = "VCAL",
+    ) -> FunctionTask:
+        """Run single-shot voltage measurement.
+
+        Args:
+            dac_voltage: DAC output voltage.
+            source: Signal source path.
+
+        Returns:
+            FunctionTask that performs measurement.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.single_shot_measure(
+                    dac_voltage=dac_voltage,
+                    source=source,
+                )
+                return {"ok": result.ok, "voltage": result.data.get("voltage")}
+
+        return make_task("single_shot", job)
+
+    def run_transient_measure(
+        self,
+        measurement_time: float,
+        sampling_rate: float = 1e-6,
+        trigger: str = "none",
+    ) -> FunctionTask:
+        """Run transient measurement.
+
+        Args:
+            measurement_time: Total measurement time in seconds.
+            sampling_rate: Sampling period in seconds.
+            trigger: Trigger mode.
+
+        Returns:
+            FunctionTask that performs transient measurement.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.transient_measure(
+                    measurement_time=measurement_time,
+                    sampling_rate=sampling_rate,
+                    trigger=trigger,
+                )
+                return {
+                    "ok": result.ok,
+                    "time": result.data.get("time"),
+                    "values": result.data.get("values"),
+                }
+
+        return make_task("transient", job)
+
+    def run_pulse_measure(
+        self,
+        num_samples: int,
+        sampling_rate: float = 1e6,
+    ) -> FunctionTask:
+        """Run pulse measurement.
+
+        Args:
+            num_samples: Number of samples to acquire.
+            sampling_rate: Sampling frequency in Hz.
+
+        Returns:
+            FunctionTask that performs pulse measurement.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.pulse_measure(
+                    num_samples=num_samples,
+                    sampling_rate=sampling_rate,
+                )
+                return {
+                    "ok": result.ok,
+                    "time": result.data.get("time"),
+                    "values": result.data.get("values"),
+                }
+
+        return make_task("pulse", job)
 
     @require_keithley_ip
     def run_calibration_measure(
@@ -247,10 +373,10 @@ class SamplingUnitService(QObject):
         Returns:
             FunctionTask that runs calibration measurements.
         """
-        # Import here to avoid issues if symlink doesn't exist yet
-        # Import the SU calibration module from device_scripts
-        import device_scripts.su_calibration_measure as su_cal_measure
+        # Import the SU calibration module from device_scripts (symlinked)
         from dpi.utilities import DPILogger
+
+        import device_scripts.su_calibration_measure as su_cal_measure
 
         def job():
             serial = self._su.getSerial() if self._su else 0
@@ -295,10 +421,11 @@ class SamplingUnitService(QObject):
         Returns:
             FunctionTask that fits calibration data.
         """
-        # Import the SU calibration fit module
-        import device_scripts.su_calibration_fit as su_cal_fit
+        # Import the SU calibration fit module from device_scripts (symlinked)
         from dpi import DPISourceMeasureUnit
         from dpi.utilities import DPILogger
+
+        import device_scripts.su_calibration_fit as su_cal_fit
 
         def job():
             with self._hw_lock:
