@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
-from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.smu_service import SourceMeasureUnitService
 
 # Channel configuration presets

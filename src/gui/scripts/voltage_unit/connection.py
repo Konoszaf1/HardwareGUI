@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from src.config import config
 from src.gui.scripts.base_page import BaseHardwarePage
-from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logging_config import get_logger
 from src.logic.services.vu_service import VoltageUnitService
 

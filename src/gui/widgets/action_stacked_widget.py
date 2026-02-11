@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import config
-from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Colors
 from src.gui.utils.animation import animate_value
 from src.logging_config import get_logger

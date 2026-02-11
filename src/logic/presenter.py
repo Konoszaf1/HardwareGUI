@@ -23,7 +23,7 @@ from src.gui.scripts.voltage_unit.connection import VUConnectionPage
 from src.gui.scripts.voltage_unit.guard import VUGuardPage
 from src.gui.scripts.voltage_unit.hw_setup import VUSetupPage
 from src.gui.scripts.voltage_unit.test import VUTestPage
-from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.widgets.sidebar_button import SidebarButton
 from src.logging_config import get_logger
 from src.logic.action_dataclass import ActionDescriptor

@@ -3,6 +3,13 @@
 import argparse
 import sys
 
+from PySide6.QtWidgets import QApplication
+
+import qt_material  # isort: skip
+
+from gui.main_window import MainWindow
+from logging_config import get_logger, setup_logging
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -24,14 +31,12 @@ def _install_simulation_services():
     """
     from types import ModuleType
 
-    # Import simulation classes
     from logic.simulation import (
         SimulatedSMUService,
         SimulatedSUService,
         SimulatedVoltageUnitService,
     )
 
-    # Create fake modules that expose the simulated classes under the real names
     fake_vu_module = ModuleType("src.logic.services.vu_service")
     fake_vu_module.VoltageUnitService = SimulatedVoltageUnitService
 
@@ -41,7 +46,6 @@ def _install_simulation_services():
     fake_su_module = ModuleType("src.logic.services.su_service")
     fake_su_module.SamplingUnitService = SimulatedSUService
 
-    # Install fake modules BEFORE anything imports the real ones
     sys.modules["src.logic.services.vu_service"] = fake_vu_module
     sys.modules["src.logic.services.smu_service"] = fake_smu_module
     sys.modules["src.logic.services.su_service"] = fake_su_module
@@ -55,25 +59,14 @@ def main():
     """Initialize and run the application."""
     args = parse_args()
 
-    # Import logging FIRST (no dependency on services)
-    from logging_config import get_logger, setup_logging
-
     setup_logging()
     logger = get_logger(__name__)
 
     if args.simulation:
         logger.info("Starting in SIMULATION mode")
-        # CRITICAL: Install simulation services BEFORE any imports that load services
         _install_simulation_services()
     else:
         logger.info("Application starting")
-
-    # NOW import Qt and MainWindow (after sys.modules patching)
-    from PySide6.QtWidgets import QApplication
-
-    import qt_material  # isort: skip
-    import icons_rc  # noqa: F401
-    from gui.main_window import MainWindow
 
     app = QApplication(sys.argv)
     qt_material.apply_stylesheet(app, "dark_blue.xml")

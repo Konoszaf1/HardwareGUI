@@ -56,7 +56,6 @@ class HorizontalCollapsiblePanel(QFrame):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
 
-        # Toggle button (horizontal bar)
         self._toggle_btn = QPushButton()
         self._toggle_btn.setFixedHeight(config.ui.panel_toggle_size)
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -64,7 +63,6 @@ class HorizontalCollapsiblePanel(QFrame):
         self._update_button()
         self._style_button()
 
-        # Content container
         self._content = QWidget()
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
@@ -73,7 +71,6 @@ class HorizontalCollapsiblePanel(QFrame):
         self._layout.addWidget(self._toggle_btn)
         self._layout.addWidget(self._content, 1)
 
-        # Apply initial collapsed state
         if start_collapsed:
             self._content.setVisible(False)
 
@@ -210,7 +207,6 @@ class VerticalCollapsiblePanel(QFrame):
 
     def _update_button(self) -> None:
         """Update toggle button text/icon based on state."""
-        # Use simple arrow that doesn't need rotation
         icon = "◀" if self._expanded else "▶"
         self._toggle_btn.setText(icon)
 
@@ -348,8 +344,6 @@ class SharedPanelsWidget(QWidget):
         self._console_visible = False
         self._artifacts_visible = False
 
-    # ---- Public API ----
-
     @property
     def artifacts_panel(self) -> VerticalCollapsiblePanel:
         """Return the artifacts panel instance."""
@@ -374,7 +368,7 @@ class SharedPanelsWidget(QWidget):
         return self._artifacts
 
     @property
-    def input_field(self) -> QPlainTextEdit:  # Assuming it returns a text edit or line edit
+    def input_field(self) -> QPlainTextEdit:
         """Return the input field widget.
 
         Returns:
@@ -433,8 +427,6 @@ class SharedPanelsWidget(QWidget):
         """
         return self._artifacts_visible
 
-    # ---- Input handling ----
-
     def show_input(self, prompt: str = "") -> None:
         """Show the input field with optional placeholder.
 
@@ -447,9 +439,7 @@ class SharedPanelsWidget(QWidget):
 
     def _on_input_return(self) -> None:
         """Handle Enter in input field - to be connected by pages."""
-        pass  # Will be connected by BaseHardwarePage
-
-    # ---- Private ----
+        pass
 
     def _on_console_toggled(self, expanded: bool) -> None:
         """Handle console toggle signal.

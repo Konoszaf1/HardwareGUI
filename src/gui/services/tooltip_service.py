@@ -1,7 +1,7 @@
-"""Tooltip manager for sidebar buttons.
+"""Tooltip service for sidebar buttons.
 
-The tooltip manager handles all timing logic for showing tooltips.
-Individual buttons just report hover events to the manager.
+The tooltip service handles all timing logic for showing tooltips.
+Individual buttons just report hover events to the service.
 """
 
 from PySide6.QtCore import QPoint, Qt, QTimer
@@ -14,8 +14,8 @@ from src.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class TooltipManager:
-    """Singleton manager that handles tooltip timing and display for sidebar buttons.
+class TooltipService:
+    """Singleton service that handles tooltip timing and display for sidebar buttons.
 
     Centralizes logic for:
     - Initial show delay (configured via config.tooltip.show_delay_ms)
@@ -23,13 +23,13 @@ class TooltipManager:
     - Tooltip lifecycle management (creation, showing, hiding, destruction)
 
     Attributes:
-        _instance (TooltipManager | None): Singleton instance.
+        _instance (TooltipService | None): Singleton instance.
     """
 
-    _instance: "TooltipManager | None" = None
+    _instance: "TooltipService | None" = None
 
     def __init__(self) -> None:
-        """Initialize the tooltip manager."""
+        """Initialize the tooltip service."""
         self._tooltips: dict[QWidget, str] = {}  # button -> tooltip text
         self._current_button: QWidget | None = None
         self._is_warm: bool = False
@@ -46,7 +46,7 @@ class TooltipManager:
         self._grace_timer.timeout.connect(self._on_grace_expired)
 
     def is_warm(self) -> bool:
-        """Return True if the tooltip manager is in the warm state.
+        """Return True if the tooltip service is in the warm state.
 
         Returns:
             bool: True if warm, False otherwise.
@@ -54,15 +54,20 @@ class TooltipManager:
         return self._is_warm
 
     @classmethod
-    def instance(cls) -> "TooltipManager":
-        """Get or create the singleton manager instance.
+    def instance(cls) -> "TooltipService":
+        """Get or create the singleton service instance.
 
         Returns:
-            TooltipManager: The singleton instance.
+            TooltipService: The singleton instance.
         """
         if cls._instance is None:
-            cls._instance = TooltipManager()
+            cls._instance = TooltipService()
         return cls._instance
+
+    @classmethod
+    def init(cls) -> "TooltipService":
+        """Initialize the singleton (alias for instance())."""
+        return cls.instance()
 
     def register_button(self, button: QWidget, text: str) -> None:
         """Register a button with its tooltip text (stores text only, not tooltip).
@@ -72,7 +77,6 @@ class TooltipManager:
             text (str): Tooltip text.
         """
         if button not in self._tooltips:
-            # Store just the text - we'll create fresh tooltips each time
             self._tooltips[button] = text
             logger.debug(f"Registered tooltip for button '{text}'")
 
@@ -105,22 +109,17 @@ class TooltipManager:
         Args:
             button (QWidget): The button that was entered.
         """
-        # Stop any pending operations
         self._grace_timer.stop()
         self._show_timer.stop()
-
-        # Hide current tooltip if showing a different button
         if self._current_button is not None and self._current_button != button:
             self._hide_current()
 
         self._current_button = button
 
         if self._is_warm:
-            # Warm state - show immediately
             logger.debug("Warm state - showing tooltip immediately")
             self._show_tooltip(button)
         else:
-            # Cold state - start delay
             delay = config.tooltip.show_delay_ms
             logger.debug(f"Cold state - starting {delay}ms delay")
             self._show_timer.start(delay)
@@ -142,13 +141,11 @@ class TooltipManager:
             self._hide_current()
 
             if was_visible:
-                # Tooltip was shown - enter warm state with grace period
                 self._is_warm = True
                 grace = config.tooltip.grace_period_ms
                 logger.debug(f"Starting {grace}ms grace period")
                 self._grace_timer.start(grace)
             else:
-                # Tooltip wasn't shown yet - stay cold
                 logger.debug("Tooltip wasn't visible - staying cold")
                 self._current_button = None
 
@@ -161,14 +158,8 @@ class TooltipManager:
         text = self._tooltips.get(button)
         if text is None or not button.isVisible():
             return
-
-        # Destroy any existing tooltip
         self._hide_current()
-
-        # Create fresh tooltip
         tooltip = self._create_tooltip(text)
-
-        # Position tooltip to the right of button, vertically centered
         button_rect = button.rect()
         top_right = button.mapToGlobal(QPoint(button_rect.width(), 0))
 

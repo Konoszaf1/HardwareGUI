@@ -7,27 +7,22 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import (
-    QAction,
     QColor,
-    QKeySequence,
     QMouseEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QGraphicsDropShadowEffect,
     QMainWindow,
-    QMenu,
-    QMenuBar,
-    QSizePolicy,
     QWidget,
 )
 
 from src.config import config
-from src.gui.button_factory import build_tool_buttons
 from src.gui.services.shared_panels_service import SharedPanelsService
 from src.gui.services.status_bar_service import StatusBarService
 from src.gui.styles import Styles
 from src.gui.widgets.action_stacked_widget import ContentWithPanels
+from src.gui.widgets.app_menu_bar import AppMenuBar
+from src.gui.widgets.sidebar_button import SidebarButton
 from src.logic.presenter import ActionsPresenter
 from src.populate_items import ACTIONS, HARDWARE
 from src.ui_main_window import Ui_MainWindow
@@ -53,13 +48,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-
         self._init_attributes()
         self._init_services()
-
+        self._setup_panels()
+        self._setup_content_area()
         self.setup_splitter()
         self.presenter.connect_actions_and_stacked_view(self.actions)
-
         self._setup_status_bar()
         self._setup_menu_bar()
         self._style_title_bar()
@@ -72,10 +66,8 @@ class MainWindow(QMainWindow):
         self.list_view = None
         self.actions = None
         self.presenter = None
-        self.buttons = build_tool_buttons(self, HARDWARE)
+        self.buttons = SidebarButton.create_batch(self, HARDWARE)
         self.stacked_widget = self.ui.stackedWidget
-
-        # Window drag state
         self.dragging = False
         self.drag_position = QPoint()
 
@@ -93,7 +85,6 @@ class MainWindow(QMainWindow):
         self.ui.statusbar.setVisible(True)
         self.ui.statusbar.setSizeGripEnabled(True)
         StatusBarService.init(self.ui.statusbar)
-
         if self.presenter and self.presenter.service:
             self.presenter.service.scopeVerified.connect(self._on_scope_status_changed)
 
@@ -116,60 +107,41 @@ class MainWindow(QMainWindow):
         shadow.setOffset(0, 0)
         self.centralWidget().setGraphicsEffect(shadow)
 
+    def _setup_panels(self) -> None:
+        """Setup shared panels and connect signals."""
+        self._current_panels = self.panels_service.get_panels(1)
+        self._artifacts_expanded = self._current_panels.is_artifacts_visible()
+        self._current_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
+        self._current_panels.console_toggled.connect(self._on_console_panel_toggled)
+
+    def _setup_content_area(self) -> None:
+        """Setup the main content area with panels."""
+        self.content_with_panels = ContentWithPanels(
+            self.stacked_widget, self._current_panels, self
+        )
+        self.content_with_panels.setVisible(False)
+
+        # Enable mouse tracking on central widget to propagate hover events to MainWindow
+        self.ui.centralwidget.setMouseTracking(True)
+
+        parent_widget = self.ui.centralwidget
+        grid_layout = parent_widget.layout()
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.removeWidget(self.stacked_widget)
+        grid_layout.addWidget(self.content_with_panels, 1, 1)
+        grid_layout.setColumnStretch(0, 0)
+        grid_layout.setColumnStretch(1, 1)
+
+        self.stacked_widget.currentPageIdChanged.connect(self._on_page_changed)
+
     def setup_splitter(self) -> None:
         """Populate the splitter with sidebar and list view."""
         self.splitter = self.ui.splitter
         self.list_view = self.ui.listView
         self.sidebar = self.ui.sidebar
         self.actions = ACTIONS
-
-        # Splitter minimum width = sidebar collapsed + list view minimum
-        self.splitter.setMinimumWidth(config.ui.sidebar_collapsed_width + 150)
-
-        shared_panels = self.panels_service.get_panels(1)
-        self._current_panels = shared_panels
-        self._artifacts_expanded = shared_panels.is_artifacts_visible()
-        shared_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
-        shared_panels.console_toggled.connect(self._on_console_panel_toggled)
-
-        self.content_with_panels = ContentWithPanels(self.stacked_widget, shared_panels, self)
-
-        # Enable mouse tracking on central widget to propagate hover events to MainWindow
-        self.ui.centralwidget.setMouseTracking(True)
-
-        self.content_with_panels.setVisible(False)
-
-        parent_widget = self.ui.centralwidget
-        grid_layout = parent_widget.layout()
-        grid_layout.setContentsMargins(0, 0, 0, 0)  # No margins - borderless
-        grid_layout.removeWidget(self.stacked_widget)
-        grid_layout.addWidget(self.content_with_panels, 1, 1)
-        grid_layout.setColumnStretch(0, 0)
-        grid_layout.setColumnStretch(1, 1)
-
-        self.presenter = ActionsPresenter(self, self.buttons, self.actions, shared_panels)
-        self.stacked_widget.currentPageIdChanged.connect(self._on_page_changed)
-
-        # Configure splitter with sidebar and listview (stretch factors set in those methods)
-        self.splitter.set_sidebar(self.ui.sidebar)
-        self.splitter.set_listview(self.list_view)
-
-        for button in self.buttons:
-            self.sidebar.layout().insertWidget(button.property("order"), button)
-            self.splitter.add_button(button)
-            button.toggled.connect(
-                lambda checked, btn=button: checked
-                and self._on_hardware_selected(btn.property("id"))
-            )
-
-        self.sidebar.layout().activate()
-        self.sidebar.adjustSize()
-        for button in self.buttons:
-            button.setMinimumWidth(config.ui.sidebar_collapsed_width)
-            button.updateGeometry()
-
-        self.splitter.collapse_immediate()
-        QApplication.processEvents()
+        self.presenter = ActionsPresenter(self, self.buttons, self.actions, self._current_panels)
+        self.splitter.setup(self.sidebar, self.list_view, self.buttons, self._on_hardware_selected)
 
     def toggle_max_restore(self) -> None:
         """Toggle between maximized and normal window states."""
@@ -191,8 +163,6 @@ class MainWindow(QMainWindow):
         """
         if event.button() != Qt.MouseButton.LeftButton:
             return
-
-        # Use system move if available
         if self.windowHandle().startSystemMove():
             return
         self.dragging = True
@@ -228,6 +198,9 @@ class MainWindow(QMainWindow):
     def _on_hardware_selected(self, hardware_id: int) -> None:
         """Handle hardware selection changes.
 
+        It is important the the shared panels actions happen in the specific order to avoid
+        cycling automata behavior.
+
         Args:
             hardware_id (int): The ID of the selected hardware.
         """
@@ -252,7 +225,6 @@ class MainWindow(QMainWindow):
             # 1. Swap panels FIRST to prime constraints (sets QStackedWidget sizes)
             if hasattr(self, "content_with_panels"):
                 self.content_with_panels.set_panels(new_panels)
-                # Reconnect toggle signals to new panels
                 new_panels.artifacts_toggled.connect(self._on_artifacts_panel_toggled)
                 new_panels.console_toggled.connect(self._on_console_panel_toggled)
 
@@ -274,7 +246,7 @@ class MainWindow(QMainWindow):
                 self.presenter.restore_last_action(hardware_id)
         finally:
             self.setUpdatesEnabled(True)
-            self.update()  # Force final repaint
+            self.update()
 
     def _on_artifacts_panel_toggled(self, expanded: bool) -> None:
         """Handle artifact panel toggle (state update only).
@@ -288,48 +260,11 @@ class MainWindow(QMainWindow):
 
     def _setup_menu_bar(self) -> None:
         """Create and configure the application menu bar."""
-        menu_bar = QMenuBar(self)
-        menu_bar.setStyleSheet(Styles.MENU_BAR)
-        menu_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        menu_bar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-
-        # File menu
-        file_menu = QMenu("File", self)
-        settings_action = QAction("Settings...", self)
-        settings_action.triggered.connect(self._on_settings)
-        file_menu.addAction(settings_action)
-        file_menu.addSeparator()
-
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        menu_bar.addMenu(file_menu)
-        menu_bar.addMenu(QMenu("Edit", self))
-
-        # View menu with panel toggles
-        view_menu = QMenu("View", self)
-
-        self.toggle_console_action = QAction("Toggle Terminal", self)
-        self.toggle_console_action.setShortcut(QKeySequence("Ctrl+`"))
-        self.toggle_console_action.setCheckable(True)
-        self.toggle_console_action.setChecked(False)
-        self.toggle_console_action.triggered.connect(self._on_toggle_console)
-        view_menu.addAction(self.toggle_console_action)
-
-        self.toggle_artifacts_action = QAction("Toggle Artifacts", self)
-        self.toggle_artifacts_action.setShortcut(QKeySequence("Ctrl+1"))
-        self.toggle_artifacts_action.setCheckable(True)
-        self.toggle_artifacts_action.setChecked(False)
-        self.toggle_artifacts_action.triggered.connect(self._on_toggle_artifacts)
-        view_menu.addAction(self.toggle_artifacts_action)
-
-        menu_bar.addMenu(view_menu)
-        menu_bar.addMenu(QMenu("Help", self))
-
-        self.ui.titleBar.insertWidget(0, menu_bar)
+        self.menu_bar = AppMenuBar(self)
+        self.ui.titleBar.insertWidget(0, self.menu_bar)
 
     def _on_settings(self) -> None:
+        # TODO: Define what should be included in settings menu and implement.
         pass
 
     def _on_toggle_console(self, checked: bool) -> None:
@@ -356,7 +291,7 @@ class MainWindow(QMainWindow):
         Args:
             expanded (bool): New expanded state.
         """
-        self.toggle_console_action.setChecked(expanded)
+        self.menu_bar.toggle_console_action.setChecked(expanded)
 
     def _style_title_bar(self) -> None:
         """Apply styling to title bar buttons."""

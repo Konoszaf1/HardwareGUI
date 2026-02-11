@@ -1,7 +1,9 @@
 """Custom QSplitter Widget to handle the sidebar expansion and collapse."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QEvent, QTimer
-from PySide6.QtWidgets import QListView, QSplitter, QWidget
+from PySide6.QtWidgets import QApplication, QListView, QSplitter, QWidget
 
 from src.config import config
 from src.gui.mixins.animation_mixin import AnimatedWidgetMixin
@@ -49,6 +51,43 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
 
         # Setup animation using mixin
         self.setup_variant_animation()
+
+    def setup(
+        self,
+        sidebar: QWidget,
+        list_view: QListView,
+        buttons: list,
+        on_hardware_selected: Callable[[int], None],
+    ) -> None:
+        """Configure the splitter, sidebar, and buttons.
+
+        Args:
+            sidebar (QWidget): The sidebar widget.
+            list_view (QListView): The list view widget.
+            buttons (list): List of sidebar buttons.
+            on_hardware_selected (Callable[[int], None]): Callback for hardware selection.
+        """
+        self.setMinimumWidth(config.ui.sidebar_collapsed_width + 150)
+
+        self.set_sidebar(sidebar)
+        self.set_listview(list_view)
+
+        for button in buttons:
+            sidebar.layout().insertWidget(button.property("order"), button)
+            self.add_button(button)
+            # Use a default argument to capture the button instance correctly in the lambda
+            button.toggled.connect(
+                lambda checked, btn=button: checked and on_hardware_selected(btn.property("id"))
+            )
+
+        sidebar.layout().activate()
+        sidebar.adjustSize()
+        for button in buttons:
+            button.setMinimumWidth(config.ui.sidebar_collapsed_width)
+            button.updateGeometry()
+
+        self.collapse_immediate()
+        QApplication.processEvents()
 
     def set_sidebar(self, sidebar: QWidget) -> None:
         """Set the sidebar widget and configure its splitter behavior.

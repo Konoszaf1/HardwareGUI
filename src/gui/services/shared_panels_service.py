@@ -4,7 +4,7 @@ Maintains one SharedPanelsWidget instance per hardware ID,
 allowing panel state to persist when switching between hardware selections.
 """
 
-from src.gui.shared_panels_widget import SharedPanelsWidget
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 
 
 class SharedPanelsService:

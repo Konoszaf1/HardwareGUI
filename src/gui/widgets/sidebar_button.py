@@ -1,11 +1,12 @@
 """Custom Button Type to handle expansion and collapse of the sidebar."""
 
 from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QSizePolicy, QToolButton
 
 from src.config import config
 from src.gui.mixins.animation_mixin import AnimatedPropertyMixin
-from src.gui.sidebar_tooltip import TooltipManager
+from src.gui.services.tooltip_service import TooltipService
 
 
 class SidebarButton(QToolButton, AnimatedPropertyMixin):
@@ -58,7 +59,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
     def _ensure_registered(self) -> None:
         """Register with tooltip manager if not already done."""
         if not self._tooltip_registered and self._original_text:
-            TooltipManager.instance().register_button(self, self._original_text)
+            TooltipService.instance().register_button(self, self._original_text)
             self._tooltip_registered = True
 
     def enterEvent(self, event: QEvent) -> None:
@@ -68,7 +69,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
             event (QEvent): Enter event.
         """
         self._ensure_registered()
-        TooltipManager.instance().on_button_enter(self)
+        TooltipService.instance().on_button_enter(self)
         super().enterEvent(event)
 
     def leaveEvent(self, event: QEvent) -> None:
@@ -77,7 +78,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         Args:
             event (QEvent): Leave event.
         """
-        TooltipManager.instance().on_button_leave(self)
+        TooltipService.instance().on_button_leave(self)
         super().leaveEvent(event)
 
     def set_collapsed(self, collapsed: bool) -> None:
@@ -120,3 +121,27 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         if not self._original_text:
             self._original_text = text
         super().setText(text)
+
+    @staticmethod
+    def create_batch(parent, descriptors) -> list["SidebarButton"]:
+        """Create a list of SidebarButtons from descriptors.
+
+        Args:
+            parent (QWidget): Parent widget.
+            descriptors (Iterable): Sequence of descriptor objects exposing "label",
+                "id", "order", and optional "icon_path" attributes.
+
+        Returns:
+            list[SidebarButton]: Instantiated buttons.
+        """
+        buttons = []
+        for desc in descriptors:
+            btn = SidebarButton(parent)
+            btn.setObjectName(desc.label)
+            btn.setText(desc.label)
+            if getattr(desc, "icon_path", None):
+                btn.setIcon(QIcon(desc.icon_path))
+            btn.setProperty("id", desc.id)
+            btn.setProperty("order", desc.order)
+            buttons.append(btn)
+        return buttons
