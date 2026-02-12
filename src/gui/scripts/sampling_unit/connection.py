@@ -1,5 +1,7 @@
 """Connection page for Sampling Unit hardware configuration."""
 
+from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -167,6 +169,10 @@ class SUConnectionPage(BaseHardwarePage):
         self.le_keithley_ip = QLineEdit()
         self.le_keithley_ip.setPlaceholderText("192.168.0.0")
         self._configure_input(self.le_keithley_ip, min_width=150)
+        ip_re = QRegularExpression(
+            r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$"
+        )
+        self.le_keithley_ip.setValidator(QRegularExpressionValidator(ip_re, self))
         ip_layout.addWidget(self.le_keithley_ip)
         self.btn_ping = QPushButton("Ping")
         self._configure_input(self.btn_ping, min_width=80)
@@ -196,7 +202,7 @@ class SUConnectionPage(BaseHardwarePage):
         self.btn_connect.clicked.connect(self._on_connect)
 
         if self.service:
-            self.service.keithleyVerified.connect(self._on_keithley_verified)
+            self.service.instrumentVerified.connect(self._on_instrument_verified)
 
         self._log("Connection page ready.")
 
@@ -226,15 +232,15 @@ class SUConnectionPage(BaseHardwarePage):
             self._log("Please enter a Keithley IP address.")
             return
 
-        self.service.set_keithley_ip(ip)
+        self.service.set_instrument_ip(ip)
         self._log(f"Pinging Keithley at {ip}...")
-        result = self.service.ping_keithley()
+        result = self.service.ping_instrument()
         if result:
             self._log("✅ Keithley is reachable.")
         else:
             self._log("❌ Keithley ping failed.")
 
-    def _on_keithley_verified(self, verified: bool) -> None:
+    def _on_instrument_verified(self, verified: bool) -> None:
         """Update Keithley status display."""
         if verified:
             self.lbl_keithley_status.setText("🟢 Verified")

@@ -175,7 +175,7 @@ class VUConnectionPage(BaseHardwarePage):
         self.btn_connect.clicked.connect(self._on_connect)
 
         if self.service:
-            self.service.scopeVerified.connect(self._on_scope_verified)
+            self.service.instrumentVerified.connect(self._on_instrument_verified)
 
         self._log("Connection page ready.")
 
@@ -200,15 +200,15 @@ class VUConnectionPage(BaseHardwarePage):
             self._log("Please enter a scope IP address.")
             return
 
-        self.service.set_scope_ip(ip)
+        self.service.set_instrument_ip(ip)
         self._log(f"Pinging scope at {ip}...")
-        result = self.service.ping_scope()
+        result = self.service.ping_instrument()
         if result:
             self._log("✅ Scope is reachable.")
         else:
             self._log("❌ Scope ping failed.")
 
-    def _on_scope_verified(self, verified: bool) -> None:
+    def _on_instrument_verified(self, verified: bool) -> None:
         """Update scope status display."""
         if verified:
             self.lbl_scope_status.setText("🟢 Verified")

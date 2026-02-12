@@ -78,7 +78,7 @@ class TooltipService:
         """
         if button not in self._tooltips:
             self._tooltips[button] = text
-            logger.debug(f"Registered tooltip for button '{text}'")
+            logger.debug("Registered tooltip for button '%s'", text)
 
     def _create_tooltip(self, text: str, parent: QWidget | None = None) -> QLabel:
         """Create a styled tooltip label for a button.
@@ -121,7 +121,7 @@ class TooltipService:
             self._show_tooltip(button)
         else:
             delay = config.tooltip.show_delay_ms
-            logger.debug(f"Cold state - starting {delay}ms delay")
+            logger.debug("Cold state - starting %dms delay", delay)
             self._show_timer.start(delay)
 
     def on_button_leave(self, button: QWidget) -> None:
@@ -143,7 +143,7 @@ class TooltipService:
             if was_visible:
                 self._is_warm = True
                 grace = config.tooltip.grace_period_ms
-                logger.debug(f"Starting {grace}ms grace period")
+                logger.debug("Starting %dms grace period", grace)
                 self._grace_timer.start(grace)
             else:
                 logger.debug("Tooltip wasn't visible - staying cold")
@@ -166,7 +166,7 @@ class TooltipService:
         x = top_right.x()
         y = top_right.y() + (button_rect.height() - tooltip.height()) // 2
 
-        logger.debug(f"Showing tooltip '{text}' at ({x}, {y})")
+        logger.debug("Showing tooltip '%s' at (%d, %d)", text, x, y)
         tooltip.move(x, y)
         tooltip.show()
         tooltip.raise_()

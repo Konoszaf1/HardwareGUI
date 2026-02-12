@@ -103,10 +103,10 @@ class VUController(HardwareController):
                 processorType=processor_type,
                 connectorType=connector_type,
             )
-            logger.info(f"VU initialized: serial={serial}")
+            logger.info("VU initialized: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
-            logger.error(f"VU initialization failed: {e}")
+            logger.error("VU initialization failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -121,10 +121,10 @@ class VUController(HardwareController):
         """
         try:
             temp = self._vu.get_temperature()
-            logger.debug(f"VU temperature: {temp}")
+            logger.debug("VU temperature: %s", temp)
             return OperationResult(ok=True, data={"temperature": temp})
         except Exception as e:
-            logger.error(f"VU temperature read failed: {e}")
+            logger.error("VU temperature read failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -148,7 +148,7 @@ class VUController(HardwareController):
             logger.info("VU onboard autocalibration complete")
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
         except Exception as e:
-            logger.error(f"VU autocalibration failed: {e}")
+            logger.error("VU autocalibration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -164,10 +164,10 @@ class VUController(HardwareController):
         try:
             for ch in ("CH1", "CH2", "CH3"):
                 self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-            logger.debug(f"VU coefficients read: {self._coeffs}")
+            logger.debug("VU coefficients read: %s", self._coeffs)
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
         except Exception as e:
-            logger.error(f"VU coefficient read failed: {e}")
+            logger.error("VU coefficient read failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def reset_coefficients(self) -> OperationResult:
@@ -190,10 +190,10 @@ class VUController(HardwareController):
                     zeroword=zw,
                     writetoeeprom=True,
                 )
-                logger.debug(f"VU {ch} coeffs reset: k={k}, d={d}")
+                logger.debug("VU %s coeffs reset: k=%s, d=%s", ch, k, d)
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
         except Exception as e:
-            logger.error(f"VU coefficient reset failed: {e}")
+            logger.error("VU coefficient reset failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def write_coefficients(self) -> OperationResult:
@@ -215,10 +215,10 @@ class VUController(HardwareController):
                     zeroword=zw,
                     writetoeeprom=True,
                 )
-                logger.info(f"VU {ch} coeffs written: k={k}, d={d}")
+                logger.info("VU %s coeffs written: k=%s, d=%s", ch, k, d)
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
         except Exception as e:
-            logger.error(f"VU coefficient write failed: {e}")
+            logger.error("VU coefficient write failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -238,7 +238,7 @@ class VUController(HardwareController):
             logger.info("VU guard set to signal")
             return OperationResult(ok=True, data={"guard": "signal"})
         except Exception as e:
-            logger.error(f"VU guard signal failed: {e}")
+            logger.error("VU guard signal failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_guard_ground(self) -> OperationResult:
@@ -252,7 +252,7 @@ class VUController(HardwareController):
             logger.info("VU guard set to ground")
             return OperationResult(ok=True, data={"guard": "ground"})
         except Exception as e:
-            logger.error(f"VU guard ground failed: {e}")
+            logger.error("VU guard ground failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -363,7 +363,7 @@ class VUController(HardwareController):
 
             return OperationResult(ok=all_ok, data={"artifacts": self._list_artifacts()})
         except Exception as e:
-            logger.error(f"VU test_outputs failed: {e}")
+            logger.error("VU test_outputs failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def test_ramp(self) -> OperationResult:
@@ -562,7 +562,7 @@ class VUController(HardwareController):
 
             return OperationResult(ok=flag_return, data={"artifacts": self._list_artifacts()})
         except Exception as e:
-            logger.error(f"VU test_ramp failed: {e}")
+            logger.error("VU test_ramp failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def test_transient(self) -> OperationResult:
@@ -711,7 +711,7 @@ class VUController(HardwareController):
 
             return OperationResult(ok=True, data={"artifacts": self._list_artifacts()})
         except Exception as e:
-            logger.error(f"VU test_transient failed: {e}")
+            logger.error("VU test_transient failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def test_all(self) -> OperationResult:
@@ -764,7 +764,7 @@ class VUController(HardwareController):
                 data={"coeffs": self._coeffs, "artifacts": self._list_artifacts()},
             )
         except Exception as e:
-            logger.error(f"VU auto_calibrate failed: {e}")
+            logger.error("VU auto_calibrate failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================

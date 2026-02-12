@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -42,8 +43,7 @@ class VUTestPage(BaseHardwarePage):
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Increased min_width to accommodate 4 test cards
-        scroll, content, main_layout = self._create_scroll_area(min_width=1100)
+        scroll, content, main_layout = self._create_scroll_area()
         outer_layout.addWidget(scroll)
 
         main_layout.setSpacing(15)
@@ -55,6 +55,7 @@ class VUTestPage(BaseHardwarePage):
 
         # ==== Test Cards ====
         cards_widget = QWidget()
+        cards_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         cards_layout = QHBoxLayout(cards_widget)
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(15)
@@ -67,7 +68,7 @@ class VUTestPage(BaseHardwarePage):
             ["Points: 5000", "Scale: 0.2 V/div", "Time: 1e-2 s/div"],
             self.btn_test_outputs,
         )
-        card_outputs.setMinimumWidth(250)
+        card_outputs.setMaximumWidth(280)
         cards_layout.addWidget(card_outputs)
 
         # -- Card 2: Ramp --
@@ -78,7 +79,7 @@ class VUTestPage(BaseHardwarePage):
             ["Range: 500 ms", "Slope: ~20 V/s", "Sync: 1 MHz"],
             self.btn_test_ramp,
         )
-        card_ramp.setMinimumWidth(250)
+        card_ramp.setMaximumWidth(280)
         cards_layout.addWidget(card_ramp)
 
         # -- Card 3: Transient --
@@ -89,7 +90,7 @@ class VUTestPage(BaseHardwarePage):
             ["Amp: 1 V", "Step: Auto (5-20µs)", "Rec: 5000 pts"],
             self.btn_test_transient,
         )
-        card_transient.setMinimumWidth(250)
+        card_transient.setMaximumWidth(280)
         cards_layout.addWidget(card_transient)
 
         # -- Card 4: All --
@@ -101,7 +102,7 @@ class VUTestPage(BaseHardwarePage):
             ["Runs all tests", "Generates all plots", "Verifies results"],
             self.btn_test_all,
         )
-        card_all.setMinimumWidth(250)
+        card_all.setMaximumWidth(280)
         cards_layout.addWidget(card_all)
 
         cards_layout.addStretch()

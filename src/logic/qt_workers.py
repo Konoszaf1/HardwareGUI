@@ -24,6 +24,17 @@ logger = get_logger(__name__)
 
 
 class TaskSignals(QObject):
+    """Signals emitted by ``FunctionTask`` during its lifecycle.
+
+    Attributes:
+        started: Emitted when the task begins execution.
+        log: Emitted with a log line captured from stdout/stderr.
+        progress: Emitted with (fraction, message) for progress updates.
+        artifact: Emitted with the path of a newly created artifact.
+        finished: Emitted with a ``TaskResult`` when the task completes.
+        error: Emitted with an error message string on failure.
+    """
+
     started = Signal()
     log = Signal(str)
     progress = Signal(float, str)
@@ -64,6 +75,14 @@ class _EmittingStream(io.TextIOBase):
 
 @dataclass
 class TaskResult:
+    """Immutable result payload emitted by ``FunctionTask.signals.finished``.
+
+    Attributes:
+        name: Human-readable task name.
+        ok: Whether the task completed without error.
+        data: Arbitrary result data returned by the task callable.
+    """
+
     name: str
     ok: bool
     data: Any | None = None
@@ -91,10 +110,10 @@ class FunctionTask(QRunnable):
             self.signals.started.emit()
             with redirect_stdout(out_stream), redirect_stderr(err_stream):
                 result = self.fn()
-            logger.debug(f"Task {self.name} finished execution, emitting signal")
+            logger.debug("Task %s finished execution, emitting signal", self.name)
             self.signals.finished.emit(TaskResult(self.name, True, result))
         except Exception as e:
-            logger.error(f"Task {self.name} failed: {e}", exc_info=True)
+            logger.error("Task %s failed: %s", self.name, e, exc_info=True)
             self.signals.error.emit(f"{self.name} failed: {e}")
             self.signals.finished.emit(TaskResult(self.name, False, None))
         finally:
@@ -102,14 +121,30 @@ class FunctionTask(QRunnable):
                 out_stream.flush()
                 err_stream.flush()
             except Exception as e:
-                logger.debug(f"Stream flush failed (expected during cleanup): {e}")
+                logger.debug("Stream flush failed (expected during cleanup): %s", e)
 
 
 def make_task(name: str, fn: Callable[[], Any]) -> FunctionTask:
+    """Create a ``FunctionTask`` with the given name and callable.
+
+    Args:
+        name: Human-readable task name.
+        fn: Zero-argument callable executed in a worker thread.
+
+    Returns:
+        A new ``FunctionTask`` ready to be submitted.
+    """
     return FunctionTask(name, fn)
 
 
 def run_in_thread(task: FunctionTask) -> TaskSignals:
-    """Submit a function to the global QThreadPool and return its TaskSignals."""
+    """Submit a ``FunctionTask`` to the global ``QThreadPool``.
+
+    Args:
+        task: The task to execute.
+
+    Returns:
+        The task's ``TaskSignals`` instance for connecting slots.
+    """
     QThreadPool.globalInstance().start(task)
     return task.signals

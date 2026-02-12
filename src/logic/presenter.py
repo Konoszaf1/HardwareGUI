@@ -114,7 +114,7 @@ class ActionsPresenter(QObject):
                     checked and self.proxy.set_hardware_id(btn.property("id"))
                 )
             )
-        logger.info(f"ActionsPresenter initialized with {len(actions)} actions")
+        logger.info("ActionsPresenter initialized with %d actions", len(actions))
 
     def _get_service_for_page(self, service_type: str) -> Any:
         """Get the appropriate service instance for a page.
@@ -156,9 +156,11 @@ class ActionsPresenter(QObject):
                         self.widget.stacked_widget, s, self.shared_panels
                     ),
                 )
-                logger.debug(f"Registered page factory: {action.page_id} (service={service_type})")
+                logger.debug(
+                    "Registered page factory: %s (service=%s)", action.page_id, service_type
+                )
             else:
-                logger.warning(f"No factory registered for page_id: {action.page_id}")
+                logger.warning("No factory registered for page_id: %s", action.page_id)
 
         self.widget.stacked_widget.bind_to_listview(
             self.widget.list_view, role=ActionModel.page_id_role

@@ -28,57 +28,57 @@ class TestSMUServiceConfiguration:
             su_interface=2,
         )
 
-        assert service._target_keithley_ip == "192.168.1.100"
+        assert service._target_instrument_ip == "192.168.1.100"
         assert service._targets.smu_serial == 123
         assert service._targets.smu_interface == 1
         assert service._targets.su_serial == 456
 
-    def test_set_keithley_ip_updates_ip(self):
-        """set_keithley_ip should update the stored IP address."""
+    def test_set_instrument_ip_updates_ip(self):
+        """set_instrument_ip should update the stored IP address."""
         service = SourceMeasureUnitService()
 
-        service.set_keithley_ip("10.0.0.1")
+        service.set_instrument_ip("10.0.0.1")
 
-        assert service._target_keithley_ip == "10.0.0.1"
+        assert service._target_instrument_ip == "10.0.0.1"
 
-    def test_set_keithley_ip_resets_verification(self, qtbot):
-        """Changing Keithley IP should reset verification state."""
+    def test_set_instrument_ip_resets_verification(self, qtbot):
+        """Changing instrument IP should reset verification state."""
         service = SourceMeasureUnitService()
-        service._keithley_verified_state = True
+        service._instrument_verified_state = True
 
-        with qtbot.waitSignal(service.keithleyVerified, timeout=1000):
-            service.set_keithley_ip("10.0.0.2")
+        with qtbot.waitSignal(service.instrumentVerified, timeout=1000):
+            service.set_instrument_ip("10.0.0.2")
 
-        assert service._keithley_verified_state is False
+        assert service._instrument_verified_state is False
 
 
 class TestSMUServicePing:
     """Test Keithley ping functionality."""
 
-    def test_ping_keithley_success(self, mocker):
-        """ping_keithley should return True when ping succeeds."""
+    def test_ping_instrument_success(self, mocker):
+        """ping_instrument should return True when ping succeeds."""
         mocker.patch("subprocess.check_call")
         service = SourceMeasureUnitService()
-        service._target_keithley_ip = "192.168.1.1"
+        service._target_instrument_ip = "192.168.1.1"
 
-        result = service.ping_keithley()
+        result = service.ping_instrument()
 
         assert result is True
-        assert service.is_keithley_verified is True
+        assert service.is_instrument_verified is True
 
-    def test_ping_keithley_failure(self, mocker):
-        """ping_keithley should return False when ping fails."""
+    def test_ping_instrument_failure(self, mocker):
+        """ping_instrument should return False when ping fails."""
         mocker.patch(
             "subprocess.check_call",
             side_effect=subprocess.CalledProcessError(1, "ping"),
         )
         service = SourceMeasureUnitService()
-        service._target_keithley_ip = "192.168.1.1"
+        service._target_instrument_ip = "192.168.1.1"
 
-        result = service.ping_keithley()
+        result = service.ping_instrument()
 
         assert result is False
-        assert service.is_keithley_verified is False
+        assert service.is_instrument_verified is False
 
 
 class TestSMUServiceTasks:
@@ -135,10 +135,10 @@ class TestSMUServiceRequiresKeithley:
     """Test that methods requiring Keithley IP handle missing IP correctly."""
 
     def test_calibration_measure_without_keithley_returns_none(self):
-        """run_calibration_measure should return None when Keithley IP not set."""
+        """run_calibration_measure should return None when instrument IP not set."""
         service = SourceMeasureUnitService()
 
-        with pytest.warns(UserWarning, match="requires Keithley IP"):
+        with pytest.warns(UserWarning, match="requires instrument IP"):
             task = service.run_calibration_measure()
 
         assert task is None

@@ -216,6 +216,9 @@ class SMUTestPage(BaseHardwarePage):
         self.btn_temp_measure.clicked.connect(self._on_measure_temp)
         self.btn_program_relais.clicked.connect(self._on_program_relais)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         self._log("Test page ready.")
 
     def _on_measure_temp(self) -> None:
@@ -243,6 +246,29 @@ class SMUTestPage(BaseHardwarePage):
     _IV_CHANNEL_MAP = {"CH1": 1, "CH2": 2, "CH3": 3, "CH4": 4}
     _PA_CHANNEL_MAP = {"PA1": 1, "PA2": 2, "PA3": 3, "PA4": 4}
 
+    @property
+    def _dut_routing_map(self) -> dict[QRadioButton, str]:
+        """Map DUT radio buttons to their routing target strings."""
+        return {
+            self.rb_dut_none: "GND",
+            self.rb_dut_gnd: "GND",
+            self.rb_dut_guard: "GUARD",
+            self.rb_dut_vsmu: "VSMU",
+            self.rb_dut_su: "SU",
+            self.rb_dut_vsmu_su: "VSMU_AND_SU",
+        }
+
+    def _get_selected_dut(self) -> str:
+        """Return the currently selected DUT routing target.
+
+        Returns:
+            The routing target string (e.g. ``"GND"``, ``"VSMU"``).
+        """
+        for rb, target in self._dut_routing_map.items():
+            if rb.isChecked():
+                return target
+        return "GND"
+
     def _on_program_relais(self) -> None:
         """Program relais configuration via service."""
         if not self.service:
@@ -258,20 +284,7 @@ class SMUTestPage(BaseHardwarePage):
 
         high_pass = self.rb_hp_enable.isChecked()
         vguard = "GND" if self.rb_vguard_gnd.isChecked() else "VSMU"
-
-        dut = "GND"  # default
-        if self.rb_dut_none.isChecked():
-            dut = "GND"
-        elif self.rb_dut_gnd.isChecked():
-            dut = "GND"
-        elif self.rb_dut_guard.isChecked():
-            dut = "GUARD"
-        elif self.rb_dut_vsmu.isChecked():
-            dut = "VSMU"
-        elif self.rb_dut_su.isChecked():
-            dut = "SU"
-        elif self.rb_dut_vsmu_su.isChecked():
-            dut = "VSMU_AND_SU"
+        dut = self._get_selected_dut()
 
         self._log(
             f"Programming relais: IV={iv_channel_text}/{iv_ref}, PA={pa_channel_text}, "

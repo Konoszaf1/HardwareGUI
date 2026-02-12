@@ -1,154 +1,188 @@
+<div align="center">
+
 # HardwareGUI
 
-![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)
-![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)
-![License](https://img.shields.io/badge/license-MIT-green)
+**Desktop application for controlling and calibrating DPI hardware at the Institute of Microelectronics.**
 
-A PySide6 application for controlling and calibrating DPI hardware at the Institute of Microelectronics. Built with a **Model-View-Presenter (MVP)** architecture, it features type-safe configuration, asynchronous hardware communication, and a modular UI.
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![PySide6](https://img.shields.io/badge/PySide6-Qt%206-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/badge/linting-ruff-261230?logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+Built with **Model-View-Presenter (MVP)** architecture &bull; Type-safe configuration &bull; Async hardware communication
+
+[Getting Started](#getting-started) &bull;
+[Architecture](#architecture) &bull;
+[Development](#development) &bull;
+[Troubleshooting](#troubleshooting)
+
+</div>
 
 ---
 
-## Key Features
+## Features
 
-- **Automated Calibration**: Python-based and onboard firmware calibration workflows.
-- **Multi-Hardware Support**: Voltage Unit and Source Measure Unit (SMU) with extensible architecture.
-- **Real-Time Monitoring**: Live status updates from hardware devices.
-- **Visual Feedback**: Real-time plotting and thumbnail generation for calibration results.
-- **Modular Design**: Extensible architecture for adding new hardware types (see [Adding Hardware Guide](.agent/knowledge-base/adding-hardware.md)).
-- **Portable Deployment**: Automated setup scripts for zero-configuration deployment.
+- **Multi-Hardware Support** — Voltage Unit, Source Measure Unit, and Sampling Unit with a plug-in architecture for adding new devices
+- **Automated Calibration** — Python-based and onboard firmware calibration workflows with visual artifact generation
+- **Real-Time Monitoring** — Live console output, status bar feedback, and thumbnail previews during operations
+- **Simulation Mode** — Full UI testing without physical hardware (`--simulation` flag)
+- **Modular Design** — Page factory registry (OCP), frozen dataclass configs, and service-controller separation
+- **Zero-Config Deployment** — Automated `setup.sh` + `run.sh` scripts handle virtual environment, PYTHONPATH, and dependencies
 
 ---
 
-## Requirements
+## Getting Started
 
-### System Requirements
+### Prerequisites
+
 - **OS**: Linux (X11 or Wayland)
-- **Python**: 3.12 or later
-- **Hardware Access**: Network access to DPI hardware (default scope IP: `192.168.68.154`)
+- **Python**: 3.12+
+- **Network**: Access to DPI hardware (default scope IP: `192.168.68.154`)
 
-### External Dependencies
-The application relies on the standard DPI package library at `/measdata/dpi`:
-- `dpi` (Core framework)
-- `dpivoltageunit`
-- `dpimaincontrolunit`
-- `dpiarrayextensionunit`
-- `dpipowersupplyunit`
-- `dpisamplingunit`
-- `dpisourcemeasureunit`
+> **Note**: The DPI package library (`/measdata/dpi`) is loaded dynamically via `PYTHONPATH` by the launcher script — no manual installation required.
 
-> **Note**: These packages are loaded dynamically via `PYTHONPATH` by the launcher script. You do not need to install them manually.
-
----
-
-## Quick Start
-
-### 1. Installation
-
-The `setup.sh` script automates the entire installation process, creating a dedicated virtual environment with `uv`.
+### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/HardwareGUI.git
 cd HardwareGUI
-
-# Run setup (handles venv creation and dependencies)
-./setup.sh
+./setup.sh          # Creates venv with uv, installs dependencies
 ```
 
-### 2. Running the App
-
-Always use the provided `run.sh` script to launch the application. It handles crucial environment setup (PYTHONPATH, variable updates) that direct Python invocation would miss.
+### Usage
 
 ```bash
-./run.sh
+./run.sh                    # Production mode (requires hardware)
+./run.sh --simulation       # Simulation mode (no hardware needed)
 ```
+
+> Always use `run.sh` — it sets up `PYTHONPATH` and environment variables that direct `python` invocation would miss.
 
 ---
 
 ## Architecture
 
-The application follows a **Model-View-Presenter (MVP)** pattern to separate UI logic from business rules and hardware communication.
-
-### High-Level Overview
+The application follows a **Model-View-Presenter (MVP)** pattern with a layered service architecture:
 
 ```mermaid
 graph TD
-    subgraph Presentation_Layer [Presentation Layer]
-        View["View (MainWindow, Pages)"]
-        Presenter["Presenter (ActionsPresenter)"]
+    subgraph Presentation ["Presentation Layer"]
+        View["View\n(MainWindow, Hardware Pages)"]
+        Presenter["Presenter\n(ActionsPresenter)"]
     end
 
-    subgraph Domain_Layer [Domain Layer]
-        Model["Model (ActionModel)"]
-        VUService["VoltageUnitService"]
-        SMUService["SourceMeasureUnitService"]
+    subgraph Domain ["Domain Layer"]
+        Model["Model\n(ActionModel)"]
+        Services["Services\n(VU / SMU / SU)"]
+        Controllers["Controllers\n(VU / SMU / SU)"]
     end
 
-    subgraph Infrastructure [Infrastructure]
-        Workers["Qt Workers (Background Threads)"]
-        Hardware["DPI Hardware (/measdata/dpi)"]
+    subgraph Infra ["Infrastructure"]
+        Workers["Qt Workers\n(QRunnable + Signals)"]
+        Hardware["DPI Hardware\n(/measdata/dpi)"]
     end
 
     User((User)) -->|Interacts| View
-    View -->|Emits Signals| Presenter
-    View -->|Reads Data| Model
-    Presenter -->|Commands| VUService
-    Presenter -->|Commands| SMUService
-    VUService -->|Spawns| Workers
-    SMUService -->|Spawns| Workers
+    View -->|Signals| Presenter
+    Presenter -->|Commands| Services
+    Services -->|Delegates| Controllers
+    Services -->|Spawns| Workers
     Workers -->|I/O| Hardware
-    Workers -->|Signals| Presenter
-    Model -->|Provides Structure| View
+    Workers -->|Results| View
+    Model -->|Structure| View
 ```
 
-### Component Roles
+### Layer Responsibilities
 
-| Layer | Component | Responsibility |
-|-------|-----------|----------------|
-| **View** | `MainWindow`, `BasePage` | Renders UI, capturing inputs, displaying data. Reads structure from Model. |
-| **Presenter** | `ActionsPresenter` | Orchestrates logic. Receives view signals, routes to appropriate service. |
-| **Model** | `ActionModel` | Static data structure defining application hierarchy (read-only). |
-| **Service** | `VoltageUnitService`, `SourceMeasureUnitService` | Handles long-running business logic and hardware communication. Each hardware type has its own service. |
+**View** (`gui/`) — Renders UI, captures user input, displays data. Hardware pages inherit from `BaseHardwarePage` which provides task lifecycle, artifact watching, and layout factories.
 
-### Configuration System
-Configuration is centralized in `src/config.py` using immutable dataclasses (`frozen=True`) to prevent runtime modification and side effects.
+**Presenter** (`logic/presenter.py`) — Routes view events to services. Uses a `PAGE_FACTORIES` registry to map page IDs to factory functions, following the Open/Closed Principle.
+
+**Services** (`logic/services/`) — Own hardware connection lifecycle and threading. Each service inherits from `BaseHardwareService` (a `QObject` ABC) which provides signals (`connectedChanged`, `inputRequested`, `instrumentVerified`), a `threading.Lock`, IP verification via `ping_instrument()`, input redirection (`provide_input` / `wait_for_input`), and the `require_instrument_ip` guard decorator.
+
+**Controllers** (`logic/controllers/`) — Pure hardware logic with no threading or UI concerns. Return `OperationResult` (frozen dataclass) from every operation. All inherit from `HardwareController` ABC which defines `initialize_device`, `read_temperature`, and `perform_autocalibration`.
+
+**Simulation** (`logic/simulation.py`) — `SimulatedVoltageUnitService`, `SimulatedSMUService`, and `SimulatedSUService` extend `BaseHardwareService` directly (no controller needed). They use `_simulate_work()` from the base class to print timestamped output and generate matplotlib artifacts via `SimulationArtifactGenerator`.
+
+**Workers** (`logic/qt_workers.py`) — `FunctionTask` (`QRunnable`) wraps callables with stdout/stderr capture (`_EmittingStream`) and emits lifecycle signals via `TaskSignals`. The `run_in_thread()` helper submits tasks to the global `QThreadPool`.
+
+**Configuration** — Centralized in `src/config.py` using nested frozen dataclasses (`AppConfig → UIConfig, HardwareConfig, ...`). Environment variable overrides supported for `LOG_LEVEL` and `LOG_FILE`.
 
 ---
 
-## Development Workflow
+## Project Structure
 
-The project uses modern Python tooling for quality assurance.
-
-### Code Style & Quality
-We use `ruff` for linting/formatting and `mypy` for static analysis.
-
-```bash
-# Format code (Black compliant)
-uv run ruff format .
-
-# Run linting check
-uv run ruff check .
-
-# Run static type checking
-uv run mypy src/
+```
+HardwareGUI/
+├── src/
+│   ├── main.py                        # Entry point (argparse, simulation mode)
+│   ├── config.py                      # Centralized frozen-dataclass configuration
+│   ├── populate_items.py              # Hardware & action descriptors
+│   ├── gui/                           # View layer
+│   │   ├── main_window.py             #   Frameless QMainWindow
+│   │   ├── scripts/                   #   Hardware-specific pages
+│   │   │   ├── base_page.py           #     Abstract base (task lifecycle, layouts)
+│   │   │   ├── voltage_unit/          #     VU: Connection, Setup, Test, Calibration, Guard
+│   │   │   ├── source_measure_unit/   #     SMU: Connection, Setup, Test, Calibration
+│   │   │   └── sampling_unit/         #     SU: Connection, Setup, Test, Calibration
+│   │   ├── services/                  #   UI services (StatusBar, SharedPanels, Tooltip)
+│   │   └── widgets/                   #   Reusable components (Sidebar, Stacked, Panels)
+│   └── logic/                         # Business logic
+│       ├── presenter.py               #   MVP presenter + page factory registry
+│       ├── simulation.py              #   Simulated services for --simulation mode
+│       ├── controllers/               #   Hardware controllers (VU, SMU, SU)
+│       │   └── base_controller.py     #     ABC + OperationResult dataclass
+│       ├── services/                  #   Hardware service layer (VU, SMU, SU)
+│       ├── model/                     #   Qt item models
+│       └── qt_workers.py              #   FunctionTask / QRunnable with signal bridge
+├── tests/                             # pytest + pytest-qt test suite
+├── setup.sh                           # One-time install (venv, dependencies, symlinks)
+├── run.sh                             # Application launcher (PYTHONPATH setup)
+└── pyproject.toml                     # Dependencies, ruff, black, mypy, pytest config
 ```
 
-### Running Tests
-Unit tests use `pytest` with `pytest-qt` for GUI interaction.
+### Supported Hardware
+
+**Voltage Unit** — Session & coefficient management, output/ramp/transient testing, Python and onboard calibration, guard signal control.
+
+**Source Measure Unit** — Device initialization, EEPROM calibration, relay control (IV converter, post-amplifier, highpass, input routing, VGUARD), saturation detection.
+
+**Sampling Unit** — Device initialization, single-shot/transient/pulse measurements, MCU synchronization, trigger control.
+
+---
+
+## Development
+
+### Code Quality
 
 ```bash
-# Run all tests
-uv run pytest
-
-# Run with coverage report
-uv run pytest --cov=src
+uv run ruff format .          # Format (Black-compatible)
+uv run ruff check .           # Lint (Google docstring convention)
+uv run mypy src/              # Static type checking (strict mode)
 ```
 
-### Qt Resources
-Icons and assets are compiled into a Python module. If you modify `.qrc` files or add icons:
+### Testing
 
 ```bash
-# Regenerate resources
+uv run pytest                 # Run all tests
+uv run pytest --cov=src       # With coverage report
+uv run pytest -x -q           # Stop on first failure, quiet output
+```
+
+### Adding New Hardware
+
+1. Create a controller in `logic/controllers/` inheriting `HardwareController`
+2. Create a service in `logic/services/` managing connection lifecycle
+3. Create GUI pages in `gui/scripts/<hardware_name>/` inheriting `BaseHardwarePage`
+4. Register pages in `PAGE_FACTORIES` dict in `presenter.py`
+5. Add action descriptors in `populate_items.py`
+
+> See [Adding Hardware Guide](.agent/knowledge-base/adding-hardware.md) for detailed instructions.
+
+### Regenerating Qt Resources
+
+```bash
 ./scripts/build_resources.sh
 ```
 
@@ -156,63 +190,16 @@ Icons and assets are compiled into a Python module. If you modify `.qrc` files o
 
 ## Troubleshooting
 
-### Common Issues
+**`ModuleNotFoundError: No module named 'dpi'`** — Always run via `./run.sh`, not `python src/main.py` directly.
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| **ModuleNotFoundError: No module named 'dpi'** | Missing PYTHONPATH | Always run using `./run.sh`, not `python src/main.py`. |
-| **Qt Platform Plugin Error** | Missing system libs | Install `libxcb-cursor0` and `libxkbcommon-x11-0`. |
-| **Permission Denied** | Script execution rights | Run `chmod +x setup.sh run.sh scripts/*.sh`. |
+**Qt Platform Plugin Error** — Install missing system libraries: `sudo apt install libxcb-cursor0 libxkbcommon-x11-0`
 
-### Debugging
-To enable verbose debug logging, export the `LOG_LEVEL` variable before running:
+**Permission Denied on scripts** — `chmod +x setup.sh run.sh scripts/*.sh`
 
-```bash
-export LOG_LEVEL=DEBUG
-./run.sh
-```
+**Debug logging** — `LOG_LEVEL=DEBUG ./run.sh`
 
 ---
 
-## Project Structure
+## License
 
-```bash
-HardwareGUI/
-├── src/
-│   ├── config.py                 # Centralized configuration
-│   ├── main.py                   # Entry point
-│   ├── populate_items.py         # Hardware & action definitions
-│   ├── device_scripts/           # Symlinks to DPI dev scripts (generated by setup.sh)
-│   │   ├── setup_cal.py          #   → Voltage Unit scripts
-│   │   ├── smu_*.py              #   → Source Measure Unit scripts
-│   │   └── su_*.py               #   → Sampling Unit scripts
-│   ├── gui/                      # View layer
-│   │   ├── main_window.py
-│   │   ├── scripts/              # Hardware-specific pages
-│   │   │   ├── base_page.py      #   Abstract base for all pages
-│   │   │   ├── voltage_unit/     #   VU pages (Session, Calibration, Test, Guard)
-│   │   │   ├── source_measure_unit/  # SMU pages (Setup, Verify, Cal Measure, Cal Fit)
-│   │   │   └── sampling_unit/    #   SU pages (Setup, Verify, Cal Measure, Cal Fit)
-│   │   ├── services/             # UI services (StatusBar, SharedPanels)
-│   │   └── widgets/              # Reusable UI components
-│   ├── logic/                    # Business logic
-│   │   ├── presenter.py          # MVP Presenter with page factory registry
-│   │   ├── services/             # Hardware service layer
-│   │   │   ├── vu_service.py     #   Voltage Unit service
-│   │   │   ├── smu_service.py    #   Source Measure Unit service
-│   │   │   └── su_service.py     #   Sampling Unit service
-│   │   └── model/                # Data Models
-│   └── resources/                # Icons and assets
-├── tests/                        # Unit and integration tests
-├── setup.sh                      # One-time install script (creates symlinks)
-├── run.sh                        # Application launcher (sets PYTHONPATH)
-└── pyproject.toml                # Dependencies & tool config
-```
-
-### Supported Hardware
-
-| Hardware | Service | Actions |
-|----------|---------|--------|
-| **Voltage Unit** | `VoltageUnitService` | Session & Coefficients, Calibration, Test, Guard |
-| **Source Measure Unit** | `SourceMeasureUnitService` | Hardware Setup, Verify, Calibration Measure, Calibration Fit |
-| **Sampling Unit** | `SamplingUnitService` | Hardware Setup, Verify, Calibration Measure, Calibration Fit |
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.

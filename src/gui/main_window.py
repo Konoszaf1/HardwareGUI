@@ -80,13 +80,26 @@ class MainWindow(QMainWindow):
         self._current_hardware_id: int | None = None
 
     def _setup_status_bar(self) -> None:
-        """Configure the status bar and connect signals."""
+        """Configure the status bar and connect instrument signals.
+
+        Connects ``instrumentVerified`` from every hardware service so that
+        the status bar reflects verification state regardless of which
+        hardware unit the user is interacting with.
+        """
         self.ui.statusbar.setStyleSheet(Styles.STATUS_BAR)
         self.ui.statusbar.setVisible(True)
         self.ui.statusbar.setSizeGripEnabled(True)
         StatusBarService.init(self.ui.statusbar)
-        if self.presenter and self.presenter.service:
-            self.presenter.service.scopeVerified.connect(self._on_scope_status_changed)
+        if self.presenter:
+            for svc in (
+                self.presenter.vu_service,
+                self.presenter.smu_service,
+                self.presenter.su_service,
+            ):
+                if svc:
+                    svc.instrumentVerified.connect(
+                        self._on_instrument_status_changed
+                    )
 
     def _setup_window_properties(self) -> None:
         """Configure window flags and effects."""
@@ -185,13 +198,13 @@ class MainWindow(QMainWindow):
             self.dragging = False
             event.accept()
 
-    def _on_scope_status_changed(self, verified: bool) -> None:
-        """Handle scope verification status changes.
+    def _on_instrument_status_changed(self, verified: bool) -> None:
+        """Handle instrument verification status changes.
 
         Args:
-            verified (bool): Whether the scope is verified.
+            verified (bool): Whether the instrument is verified.
         """
-        StatusBarService.instance().set_scope_connected(connected=verified)
+        StatusBarService.instance().set_instrument_connected(connected=verified)
         if verified:
             StatusBarService.instance().set_ready()
 

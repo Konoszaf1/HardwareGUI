@@ -1,7 +1,7 @@
 """Status bar service with multi-section display and hardware state persistence.
 
 This module provides a singleton service to manage the application's status bar
-with multiple sections: app status (left) and scope connection status (right).
+with multiple sections: app status (left) and instrument connection status (right).
 
 Each hardware unit can have its own connection state that persists when switching
 between hardware selections.
@@ -11,15 +11,15 @@ States:
         - READY: Idle (animated dots)
         - BUSY: Running a task
 
-    Scope Status (per hardware):
-        - CONNECTED: Scope verified
-        - DISCONNECTED: Scope not connected/verified
+    Instrument Status (per hardware):
+        - CONNECTED: Instrument verified
+        - DISCONNECTED: Instrument not connected/verified
 
 Usage:
     StatusBarService.init(statusbar)
     StatusBarService.instance().set_busy("Running calibration...")
     StatusBarService.instance().set_ready()
-    StatusBarService.instance().set_scope_connected(hardware_id, True)
+    StatusBarService.instance().set_instrument_connected(hardware_id, True)
     StatusBarService.instance().set_active_hardware(hardware_id)
 """
 
@@ -141,7 +141,7 @@ class StatusBarService:
         self._busy_message = message
         self._stop_animation()
         self._update_app_display()
-        logger.info(f"Status: Busy - {message}")
+        logger.info("Status: Busy - %s", message)
 
     # ---- Scope Status (per hardware) ----
 
@@ -159,15 +159,18 @@ class StatusBarService:
             self._hardware_scope_states[hardware_id] = False
         self._update_scope_display()
         logger.debug(
-            f"Active hardware: {hardware_id}, scope: {self._hardware_scope_states.get(hardware_id)}"
+            "Active hardware: %s, scope: %s",
+            hardware_id, self._hardware_scope_states.get(hardware_id),
         )
 
-    def set_scope_connected(self, hardware_id: int | None = None, connected: bool = True) -> None:
-        """Set the scope connection state for a hardware unit.
+    def set_instrument_connected(
+        self, hardware_id: int | None = None, connected: bool = True
+    ) -> None:
+        """Set the instrument connection state for a hardware unit.
 
         Args:
             hardware_id (int | None): Hardware ID (defaults to active hardware).
-            connected (bool): Whether scope is connected/verified.
+            connected (bool): Whether instrument is connected/verified.
         """
         if hardware_id is None:
             hardware_id = self._active_hardware_id
@@ -177,12 +180,12 @@ class StatusBarService:
         self._hardware_scope_states[hardware_id] = connected
         self._update_scope_display()
         logger.info(
-            f"Scope {'connected' if connected else 'disconnected'} for hardware {hardware_id}"
+            "Scope %s for hardware %s", "connected" if connected else "disconnected", hardware_id
         )
 
     def set_disconnected(self) -> None:
-        """Set scope as disconnected for active hardware (backward compat)."""
-        self.set_scope_connected(connected=False)
+        """Set instrument as disconnected for active hardware (backward compat)."""
+        self.set_instrument_connected(connected=False)
 
     # ---- Temporary messages ----
 
@@ -227,7 +230,7 @@ class StatusBarService:
             self._app_label.setText(f"Ready {dots}")
 
     def _update_scope_display(self) -> None:
-        """Update the scope connection display (right side)."""
+        """Update the instrument connection display (right side)."""
         if self._scope_label is None:
             return
 
@@ -237,10 +240,10 @@ class StatusBarService:
 
         is_connected = self._hardware_scope_states.get(self._active_hardware_id, False)
         if is_connected:
-            self._scope_label.setText("Scope: Connected")
+            self._scope_label.setText("Instrument: Connected")
             self._scope_label.setStyleSheet(Styles.SCOPE_CONNECTED)
         else:
-            self._scope_label.setText("Scope: Disconnected")
+            self._scope_label.setText("Instrument: Disconnected")
             self._scope_label.setStyleSheet(Styles.SCOPE_DISCONNECTED)
 
     # ---- Animation ----

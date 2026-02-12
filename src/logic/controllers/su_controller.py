@@ -73,10 +73,10 @@ class SUController(HardwareController):
                 processorType=processor_type,
                 connectorType=connector_type,
             )
-            logger.info(f"SU initialized: serial={serial}")
+            logger.info("SU initialized: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
-            logger.error(f"SU initialization failed: {e}")
+            logger.error("SU initialization failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def configure_channel(self, config: ChannelConfig) -> OperationResult:
@@ -94,10 +94,10 @@ class SUController(HardwareController):
             su = self._get_su()
             # Channel configuration typically involves setting amplifier settings
             # The exact API depends on dpi package implementation
-            logger.info(f"SU channel configured: {config.channel_id}")
+            logger.info("SU channel configured: %s", config.channel_id)
             return OperationResult(ok=True, data={"channel_id": config.channel_id})
         except Exception as e:
-            logger.error(f"SU channel configuration failed: {e}")
+            logger.error("SU channel configuration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def save_channel_config(self) -> OperationResult:
@@ -112,7 +112,7 @@ class SUController(HardwareController):
             logger.info("SU channel config saved to EEPROM")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SU EEPROM save failed: {e}")
+            logger.error("SU EEPROM save failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def load_channel_config(self) -> OperationResult:
@@ -127,7 +127,7 @@ class SUController(HardwareController):
             logger.info("SU channel config loaded from EEPROM")
             return OperationResult(ok=True, data={})
         except Exception as e:
-            logger.error(f"SU EEPROM load failed: {e}")
+            logger.error("SU EEPROM load failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -143,10 +143,10 @@ class SUController(HardwareController):
         try:
             su = self._get_su()
             temp = su.getTemperature()
-            logger.debug(f"SU temperature: {temp}")
+            logger.debug("SU temperature: %s", temp)
             return OperationResult(ok=True, data={"temperature": temp})
         except Exception as e:
-            logger.error(f"SU temperature read failed: {e}")
+            logger.error("SU temperature read failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def perform_autocalibration(self) -> OperationResult:
@@ -159,10 +159,10 @@ class SUController(HardwareController):
             su = self._get_su()
             su.performautocalibration()
             serial = su.getSerial()
-            logger.info(f"SU autocalibration complete: serial={serial}")
+            logger.info("SU autocalibration complete: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
-            logger.error(f"SU autocalibration failed: {e}")
+            logger.error("SU autocalibration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def single_shot_measure(
@@ -186,10 +186,10 @@ class SUController(HardwareController):
             su.setDACValue(dac_voltage)
             su.setPath(source=source, ac=0, adc=None, amp=1.0)
             voltage = su.readInputVoltage()
-            logger.debug(f"SU single-shot: {voltage}V")
+            logger.debug("SU single-shot: %sV", voltage)
             return OperationResult(ok=True, data={"voltage": voltage})
         except Exception as e:
-            logger.error(f"SU single-shot failed: {e}")
+            logger.error("SU single-shot failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def transient_measure(
@@ -227,7 +227,7 @@ class SUController(HardwareController):
 
             # Read data
             data = su.transientSampling_readData()
-            logger.debug(f"SU transient: {len(data[0])} samples")
+            logger.debug("SU transient: %s samples", len(data[0]))
             # Handle both numpy arrays and plain lists
             time_data = data[0].tolist() if hasattr(data[0], "tolist") else list(data[0])
             values_data = data[1].tolist() if hasattr(data[1], "tolist") else list(data[1])
@@ -236,7 +236,7 @@ class SUController(HardwareController):
                 data={"time": time_data, "values": values_data},
             )
         except Exception as e:
-            logger.error(f"SU transient failed: {e}")
+            logger.error("SU transient failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def pulse_measure(
@@ -272,7 +272,7 @@ class SUController(HardwareController):
 
             # Read data
             data = su.pulseSampling_readData()
-            logger.debug(f"SU pulse: {len(data[0])} samples")
+            logger.debug("SU pulse: %s samples", len(data[0]))
             # Handle both numpy arrays and plain lists
             time_data = data[0].tolist() if hasattr(data[0], "tolist") else list(data[0])
             values_data = data[1].tolist() if hasattr(data[1], "tolist") else list(data[1])
@@ -281,7 +281,7 @@ class SUController(HardwareController):
                 data={"time": time_data, "values": values_data},
             )
         except Exception as e:
-            logger.error(f"SU pulse failed: {e}")
+            logger.error("SU pulse failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -345,10 +345,10 @@ class SUController(HardwareController):
                 )
 
             scm.cleanup()
-            logger.info(f"SU calibration measure complete: {folder_path}")
+            logger.info("SU calibration measure complete: %s", folder_path)
             return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
-            logger.error(f"SU calibration measure failed: {e}")
+            logger.error("SU calibration measure failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
@@ -402,7 +402,7 @@ class SUController(HardwareController):
             logger.info(f"SU calibration fit complete: {folder_path}")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SU calibration fit failed: {e}")
+            logger.error("SU calibration fit failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -432,10 +432,10 @@ class SUController(HardwareController):
                 )
             mcu.setSUSyncTimerFrequency(su_frequency)
             mcu.setVUSyncTimerFrequency(vu_frequency)
-            logger.debug(f"MCU sync frequencies: SU={su_frequency}, VU={vu_frequency}")
+            logger.debug("MCU sync frequencies: SU=%s, VU=%s", su_frequency, vu_frequency)
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"MCU sync setup failed: {e}")
+            logger.error("MCU sync setup failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def trigger_su(self) -> OperationResult:
@@ -452,7 +452,7 @@ class SUController(HardwareController):
             logger.debug("MCU trigger sent to SU")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"MCU trigger failed: {e}")
+            logger.error("MCU trigger failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================

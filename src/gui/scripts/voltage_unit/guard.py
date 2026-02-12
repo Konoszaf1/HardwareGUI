@@ -83,6 +83,9 @@ class VUGuardPage(BaseHardwarePage):
         self.btn_guard_signal.clicked.connect(self._on_guard_signal)
         self.btn_guard_ground.clicked.connect(self._on_guard_ground)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         self._log("Guard page ready. Two literal actions only.")
 
     # ---- Handlers ----

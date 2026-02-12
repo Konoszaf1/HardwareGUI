@@ -5,11 +5,10 @@ used across hardware control pages, including shared panel access, task lifecycl
 artifact watching, and service signal handling.
 """
 
-import os
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QPushButton,
@@ -26,7 +25,7 @@ from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.image_viewer import ImageViewerDialog
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, run_in_thread
-from src.logic.services.vu_service import VoltageUnitService
+from src.logic.services.base_service import BaseHardwareService
 
 # Import status bar service lazily to avoid circular imports
 _status_bar_service = None
@@ -63,20 +62,20 @@ class BaseHardwarePage(QWidget):
     - Scope verification handling
 
     Attributes:
-        service (VoltageUnitService | None): Service for hardware operations.
+        service (BaseHardwareService | None): Service for hardware operations.
     """
 
     def __init__(
         self,
         parent: QWidget | None = None,
-        service: VoltageUnitService | None = None,
+        service: BaseHardwareService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
         """Initialize the base page.
 
         Args:
             parent (QWidget | None): Parent widget.
-            service (VoltageUnitService | None): Hardware service instance.
+            service (BaseHardwareService | None): Hardware service instance.
             shared_panels (SharedPanelsWidget | None): Shared panels widget.
         """
         super().__init__(parent)
@@ -175,7 +174,7 @@ class BaseHardwarePage(QWidget):
             logger.warning("_start_task called with None task")
             return
 
-        logger.info(f"Starting task: {task}")
+        logger.info("Starting task: %s", task)
         self._active_task = task
         self._ensure_artifact_watcher()
 
@@ -189,7 +188,7 @@ class BaseHardwarePage(QWidget):
         signals.log.connect(lambda s: self._log(s))
         signals.error.connect(
             lambda e: (
-                logger.error(f"Task error: {e}"),
+                logger.error("Task error: %s", e),
                 self._log(f"Error: {e}"),
                 _get_status_bar() and _get_status_bar().show_temporary(f"Error: {task.name}"),
             )
@@ -271,31 +270,54 @@ class BaseHardwarePage(QWidget):
         if self.service and hasattr(self.service, "provide_input"):
             self.service.provide_input(text)
 
-    def _on_scope_verified(self, verified: bool) -> None:
-        """Handle scope verification state changes.
+    def _update_action_buttons_state(self) -> None:
+        """Enable or disable action buttons based on service connection state.
+
+        Buttons are enabled only when the service reports ``connected == True``.
+        """
+        if not self.service:
+            return
+        enabled = self.service.connected
+        for btn in self._action_buttons:
+            btn.setEnabled(enabled)
+
+        if enabled:
+            self._log("Actions enabled: Hardware connected.")
+        else:
+            self._log("Actions disabled: Hardware not connected.")
+
+    def _on_instrument_verified(self, verified: bool) -> None:
+        """Handle instrument verification state changes.
 
         Note: Status bar updates are handled globally by MainWindow.
-        This method manages page-local button states and logging.
+        This method logs verification state but does **not** toggle
+        buttons — that is handled by ``_update_action_buttons_state``.
 
         Args:
-            verified (bool): True if scope is verified, False otherwise.
+            verified (bool): True if instrument is verified, False otherwise.
         """
-        for btn in self._action_buttons:
-            btn.setEnabled(verified)
-
-        if not verified:
-            self._log("Actions disabled: Scope not verified.")
+        if verified:
+            self._log("Instrument verified.")
         else:
-            self._log("Actions enabled: Scope verified.")
+            self._log("Instrument not verified.")
+
+    def _on_connected_changed(self, connected: bool) -> None:
+        """Handle service connection state changes.
+
+        Args:
+            connected (bool): True when hardware is connected.
+        """
+        self._update_action_buttons_state()
 
     def _connect_service_signals(self) -> None:
         """Connect common service signals. Call in subclass __init__."""
         if not self.service:
             return
         self.service.inputRequested.connect(self._on_input_requested)
-        self.service.scopeVerified.connect(self._on_scope_verified)
-        # Apply initial state
-        self._on_scope_verified(self.service.is_scope_verified)
+        self.service.instrumentVerified.connect(self._on_instrument_verified)
+        self.service.connectedChanged.connect(self._on_connected_changed)
+        # Apply initial state — buttons disabled until connected
+        self._update_action_buttons_state()
 
     # ---- Layout Factory Methods ----
 
@@ -427,7 +449,7 @@ class BaseHardwarePage(QWidget):
 
         # Determine appropriate height based on widget type
         if min_height is None:
-            if isinstance(widget, (QRadioButton, QCheckBox)):
+            if isinstance(widget, QRadioButton | QCheckBox):
                 min_height = cfg.radio_height
             elif isinstance(widget, QPushButton):
                 min_height = cfg.button_height
@@ -443,5 +465,9 @@ class BaseHardwarePage(QWidget):
 
         # Set Fixed vertical policy to prevent squishing
         widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+
+        # Force QComboBox popup to close after selection (Qt bug in QScrollArea)
+        if isinstance(widget, QComboBox):
+            widget.activated.connect(widget.hidePopup)
 
         return widget

@@ -10,17 +10,11 @@ Usage:
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, make_task
-
-if TYPE_CHECKING:
-    pass
+from src.logic.services.base_service import BaseHardwareService
 
 logger = get_logger(__name__)
 
@@ -116,26 +110,23 @@ _artifact_gen = SimulationArtifactGenerator()
 # =============================================================================
 
 
-class SimulatedVoltageUnitService(QObject):
-    """Simulated VoltageUnitService that produces fake output without hardware."""
+class SimulatedVoltageUnitService(BaseHardwareService):
+    """Simulated VoltageUnitService that produces fake output without hardware.
 
-    connectedChanged = Signal(bool)
-    inputRequested = Signal(str)
-    scopeVerified = Signal(bool)
+    Overrides all public operations to print simulated console output
+    and generate matplotlib artifact images via ``SimulationArtifactGenerator``.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         logger.info("[SIMULATION] VoltageUnitService initialized")
-        self._target_scope_ip: str | None = None
-        self._connected: bool = False
-        self._scope_verified_state: bool = False
         self._coeffs: dict[str, list[float]] = {
             "CH1": [1.0, 0.0],
             "CH2": [1.0, 0.0],
             "CH3": [1.0, 0.0],
         }
 
-    # ---- Configuration (same as real service) ----
+    # ---- Configuration ----
     def set_targets(
         self,
         scope_ip: str,
@@ -144,33 +135,18 @@ class SimulatedVoltageUnitService(QObject):
         mcu_serial: int,
         mcu_interface: int,
     ) -> None:
-        self._target_scope_ip = scope_ip
-        logger.info(f"[SIMULATION] VU targets set: scope={scope_ip}, vu={vu_serial}")
+        self._target_instrument_ip = scope_ip
+        logger.info("[SIMULATION] VU targets set: scope=%s, vu=%s", scope_ip, vu_serial)
 
-    def set_scope_ip(self, ip: str) -> None:
-        if self._target_scope_ip != ip:
-            self._target_scope_ip = ip
-            self.set_scope_verified(False)
-
-    def set_scope_verified(self, verified: bool) -> None:
-        if self._scope_verified_state != verified:
-            self._scope_verified_state = verified
-            self.scopeVerified.emit(verified)
-
-    def ping_scope(self) -> bool:
+    def ping_instrument(self) -> bool:
         """Simulate successful ping."""
-        logger.info(f"[SIMULATION] Ping scope at {self._target_scope_ip} - SUCCESS")
-        print(f"Pinging {self._target_scope_ip}... OK (simulated)")
-        self.set_scope_verified(True)
+        logger.info("[SIMULATION] Ping instrument - SUCCESS")
+        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
+        self.set_instrument_verified(True)
         return True
 
-    @property
-    def connected(self) -> bool:
-        return self._connected
-
-    @property
-    def is_scope_verified(self) -> bool:
-        return self._scope_verified_state
+    def _ensure_connected(self) -> None:
+        pass  # No real hardware in simulation
 
     @property
     def coeffs(self) -> dict[str, list[float]]:
@@ -181,12 +157,6 @@ class SimulatedVoltageUnitService(QObject):
         return os.path.abspath("calibration_vu1")
 
     # ---- Simulated operations ----
-    def _simulate_work(self, name: str, duration: float = 0.5) -> None:
-        """Simulate work with console output."""
-        print(f"\033[33m[SIMULATION] Starting {name}...\033[0m")
-        time.sleep(duration)
-        print(f"\033[32m[SIMULATION] {name} completed.\033[0m")
-
     def connect_and_read(self) -> FunctionTask:
         def job():
             self._simulate_work("connect_and_read", 0.3)
@@ -316,19 +286,16 @@ class SimulatedVoltageUnitService(QObject):
 # =============================================================================
 
 
-class SimulatedSMUService(QObject):
-    """Simulated SourceMeasureUnitService."""
+class SimulatedSMUService(BaseHardwareService):
+    """Simulated SourceMeasureUnitService.
 
-    connectedChanged = Signal(bool)
-    inputRequested = Signal(str)
-    keithleyVerified = Signal(bool)
+    Mirrors the ``SourceMeasureUnitService`` public API with simulated
+    delays, console output, and fake calibration artifacts.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         logger.info("[SIMULATION] SourceMeasureUnitService initialized")
-        self._target_keithley_ip: str | None = None
-        self._connected: bool = False
-        self._keithley_verified_state: bool = False
 
     def set_targets(
         self,
@@ -338,32 +305,17 @@ class SimulatedSMUService(QObject):
         su_serial: int,
         su_interface: int,
     ) -> None:
-        self._target_keithley_ip = keithley_ip
-        logger.info(f"[SIMULATION] SMU targets set: keithley={keithley_ip}")
+        self._target_instrument_ip = keithley_ip
+        logger.info("[SIMULATION] SMU targets set: keithley=%s", keithley_ip)
 
-    def set_keithley_ip(self, ip: str) -> None:
-        if self._target_keithley_ip != ip:
-            self._target_keithley_ip = ip
-            self.set_keithley_verified(False)
-
-    def set_keithley_verified(self, verified: bool) -> None:
-        if self._keithley_verified_state != verified:
-            self._keithley_verified_state = verified
-            self.keithleyVerified.emit(verified)
-
-    def ping_keithley(self) -> bool:
-        logger.info(f"[SIMULATION] Ping Keithley at {self._target_keithley_ip} - SUCCESS")
-        print(f"Pinging {self._target_keithley_ip}... OK (simulated)")
-        self.set_keithley_verified(True)
+    def ping_instrument(self) -> bool:
+        logger.info("[SIMULATION] Ping instrument - SUCCESS")
+        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
+        self.set_instrument_verified(True)
         return True
 
-    @property
-    def connected(self) -> bool:
-        return self._connected
-
-    @property
-    def is_keithley_verified(self) -> bool:
-        return self._keithley_verified_state
+    def _ensure_connected(self) -> None:
+        pass  # No real hardware in simulation
 
     @property
     def smu_serial(self) -> int:
@@ -373,14 +325,10 @@ class SimulatedSMUService(QObject):
     def artifact_dir(self) -> str:
         return os.path.abspath("calibration/smu_calibration_sn1")
 
-    def _simulate_work(self, name: str, duration: float = 0.5) -> None:
-        print(f"\033[33m[SIMULATION] Starting {name}...\033[0m")
-        time.sleep(duration)
-        print(f"\033[32m[SIMULATION] {name} completed.\033[0m")
-
     def run_hw_setup(
         self, serial: int, processor_type: str = "746", connector_type: str = "BNC"
     ) -> FunctionTask:
+        """Simulate SMU device initialization."""
         def job():
             self._simulate_work("hw_setup", 1.0)
             print(f"Initializing SMU with serial={serial}")
@@ -434,6 +382,45 @@ class SimulatedSMUService(QObject):
 
         return make_task("program_relais", job)
 
+    def run_temperature_read(self) -> FunctionTask:
+        """Simulate SMU temperature reading."""
+        def job():
+            import random
+            self._simulate_work("temperature", 0.3)
+            temp = round(24.5 + random.uniform(-1.0, 1.0), 2)
+            print(f"  SMU Board temperature: {temp} °C")
+            print(f"  Status: {'OK' if 20 < temp < 40 else 'WARNING'}")
+            return {"ok": True, "temperature": temp}
+
+        return make_task("temperature", job)
+
+    def run_save_config(self) -> FunctionTask:
+        """Simulate saving channel configuration to EEPROM."""
+        def job():
+            self._simulate_work("save_config", 0.5)
+            print("  Writing channel configuration to EEPROM...")
+            print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
+            print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
+            print("  CH3: PA, range=1.0, gain=1.0, offset=0.0")
+            print("  CH4: PA, range=1.0, gain=1.0, offset=0.0")
+            print("  EEPROM write complete.")
+            return {"ok": True}
+
+        return make_task("save_config", job)
+
+    def run_load_config(self) -> FunctionTask:
+        """Simulate loading channel configuration from EEPROM."""
+        def job():
+            self._simulate_work("load_config", 0.4)
+            print("  Reading channel configuration from EEPROM...")
+            print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
+            print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
+            print("  CH3: PA, range=1.0, gain=1.0, offset=0.0")
+            print("  CH4: PA, range=1.0, gain=1.0, offset=0.0")
+            return {"ok": True, "data": {}}
+
+        return make_task("load_config", job)
+
     def connect_only(self) -> FunctionTask:
         def job():
             self._simulate_work("connect", 0.3)
@@ -449,19 +436,16 @@ class SimulatedSMUService(QObject):
 # =============================================================================
 
 
-class SimulatedSUService(QObject):
-    """Simulated SamplingUnitService."""
+class SimulatedSUService(BaseHardwareService):
+    """Simulated SamplingUnitService.
 
-    connectedChanged = Signal(bool)
-    inputRequested = Signal(str)
-    keithleyVerified = Signal(bool)
+    Mirrors the ``SamplingUnitService`` public API with simulated
+    delays, console output, and fake calibration artifacts.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         logger.info("[SIMULATION] SamplingUnitService initialized")
-        self._target_keithley_ip: str | None = None
-        self._connected: bool = False
-        self._keithley_verified_state: bool = False
 
     def set_targets(
         self,
@@ -471,32 +455,17 @@ class SimulatedSUService(QObject):
         smu_serial: int,
         smu_interface: int,
     ) -> None:
-        self._target_keithley_ip = keithley_ip
-        logger.info(f"[SIMULATION] SU targets set: keithley={keithley_ip}")
+        self._target_instrument_ip = keithley_ip
+        logger.info("[SIMULATION] SU targets set: keithley=%s", keithley_ip)
 
-    def set_keithley_ip(self, ip: str) -> None:
-        if self._target_keithley_ip != ip:
-            self._target_keithley_ip = ip
-            self.set_keithley_verified(False)
-
-    def set_keithley_verified(self, verified: bool) -> None:
-        if self._keithley_verified_state != verified:
-            self._keithley_verified_state = verified
-            self.keithleyVerified.emit(verified)
-
-    def ping_keithley(self) -> bool:
-        logger.info(f"[SIMULATION] Ping Keithley at {self._target_keithley_ip} - SUCCESS")
-        print(f"Pinging {self._target_keithley_ip}... OK (simulated)")
-        self.set_keithley_verified(True)
+    def ping_instrument(self) -> bool:
+        logger.info("[SIMULATION] Ping instrument - SUCCESS")
+        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
+        self.set_instrument_verified(True)
         return True
 
-    @property
-    def connected(self) -> bool:
-        return self._connected
-
-    @property
-    def is_keithley_verified(self) -> bool:
-        return self._keithley_verified_state
+    def _ensure_connected(self) -> None:
+        pass  # No real hardware in simulation
 
     @property
     def su_serial(self) -> int:
@@ -506,14 +475,10 @@ class SimulatedSUService(QObject):
     def artifact_dir(self) -> str:
         return os.path.abspath("calibration/su_calibration_sn1")
 
-    def _simulate_work(self, name: str, duration: float = 0.5) -> None:
-        print(f"\033[33m[SIMULATION] Starting {name}...\033[0m")
-        time.sleep(duration)
-        print(f"\033[32m[SIMULATION] {name} completed.\033[0m")
-
     def run_hw_setup(
         self, serial: int, processor_type: str = "746", connector_type: str = "BNC"
     ) -> FunctionTask:
+        """Simulate SU device initialization."""
         def job():
             self._simulate_work("hw_setup", 1.0)
             print(f"Initializing SU with serial={serial}")
@@ -553,6 +518,108 @@ class SimulatedSUService(QObject):
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         return self.run_calibration_measure(verify_calibration=True)
+
+    def run_temperature_read(self) -> FunctionTask:
+        """Simulate SU temperature reading."""
+        def job():
+            import random
+            self._simulate_work("temperature", 0.3)
+            temp = round(25.0 + random.uniform(-1.5, 1.5), 2)
+            print(f"  SU Board temperature: {temp} °C")
+            print(f"  Status: {'OK' if 20 < temp < 40 else 'WARNING'}")
+            return {"ok": True, "temperature": temp}
+
+        return make_task("temperature", job)
+
+    def run_single_shot(
+        self, dac_voltage: float = 0.0, source: str = "VCAL"
+    ) -> FunctionTask:
+        """Simulate SU single-shot voltage measurement."""
+        def job():
+            import random
+            self._simulate_work("single_shot", 0.4)
+            voltage = dac_voltage + random.uniform(-0.001, 0.001)
+            print(f"  DAC set to {dac_voltage:.3f} V")
+            print(f"  Source path: {source}")
+            print(f"  ADC raw reading: {int(voltage * 65536)}")
+            print(f"  Measured voltage: {voltage:.6f} V")
+            return {"ok": True, "voltage": round(voltage, 6)}
+
+        return make_task("single_shot", job)
+
+    def run_transient_measure(
+        self,
+        measurement_time: float,
+        sampling_rate: float = 1e-6,
+        trigger: str = "none",
+    ) -> FunctionTask:
+        """Simulate SU transient measurement."""
+        def job():
+            import random
+            self._simulate_work("transient", 1.0)
+            n_samples = min(int(measurement_time / sampling_rate), 1000)
+            print(f"  Measurement time: {measurement_time * 1e3:.1f} ms")
+            print(f"  Sampling rate: {sampling_rate * 1e6:.1f} µs")
+            print(f"  Trigger mode: {trigger}")
+            print(f"  Acquiring {n_samples} samples...")
+            time_data = [i * sampling_rate for i in range(n_samples)]
+            values = [0.5 + 0.1 * random.gauss(0, 1) for _ in range(n_samples)]
+            print(f"  Mean: {sum(values) / len(values):.4f} V")
+            print(f"  Std:  {(sum((v - 0.5) ** 2 for v in values) / len(values)) ** 0.5:.4f} V")
+            return {"ok": True, "time": time_data, "values": values}
+
+        return make_task("transient", job)
+
+    def run_pulse_measure(
+        self,
+        num_samples: int,
+        sampling_rate: float = 1e6,
+    ) -> FunctionTask:
+        """Simulate SU pulse measurement."""
+        def job():
+            import random
+            self._simulate_work("pulse", 1.2)
+            n = min(num_samples, 1000)
+            dt = 1.0 / sampling_rate
+            print(f"  Samples: {num_samples}")
+            print(f"  Sampling rate: {sampling_rate / 1e6:.1f} MHz")
+            print("  Acquiring pulse data...")
+            time_data = [i * dt for i in range(n)]
+            values = [
+                0.8 * (1 - 2.718 ** (-(i * dt) * 1e6))
+                + 0.02 * random.gauss(0, 1)
+                for i in range(n)
+            ]
+            print(f"  Peak amplitude: {max(values):.4f} V")
+            print(f"  Rise time (10-90%%): ~{dt * 10 * 1e6:.2f} µs")
+            return {"ok": True, "time": time_data, "values": values}
+
+        return make_task("pulse", job)
+
+    def run_save_config(self) -> FunctionTask:
+        """Simulate saving channel configuration to EEPROM."""
+        def job():
+            self._simulate_work("save_config", 0.5)
+            print("  Writing channel configuration to EEPROM...")
+            print("  AMP1: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            print("  AMP2: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            print("  AMP3: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            print("  EEPROM write complete.")
+            return {"ok": True}
+
+        return make_task("save_config", job)
+
+    def run_load_config(self) -> FunctionTask:
+        """Simulate loading channel configuration from EEPROM."""
+        def job():
+            self._simulate_work("load_config", 0.4)
+            print("  Reading channel configuration from EEPROM...")
+            print("  AMP1: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            print("  AMP2: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            print("  AMP3: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
+            return {"ok": True, "data": {}}
+
+        return make_task("load_config", job)
 
     def connect_only(self) -> FunctionTask:
         def job():

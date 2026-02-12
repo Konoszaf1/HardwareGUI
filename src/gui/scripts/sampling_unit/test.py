@@ -251,6 +251,9 @@ class SUTestPage(BaseHardwarePage):
         self.btn_trans_measure.clicked.connect(self._on_transient)
         self.btn_pulse_measure.clicked.connect(self._on_pulse)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         self._log("Test page ready.")
 
     def _on_single_shot(self) -> None:

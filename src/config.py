@@ -179,7 +179,7 @@ class FormLayoutConfig:
     group_min_height: int = 100
 
 
-@dataclass
+@dataclass(frozen=True)
 class AppConfig:
     """Root application configuration.
 

@@ -122,6 +122,9 @@ class VUSetupPage(BaseHardwarePage):
         self.btn_reset_coeffs.clicked.connect(self._on_reset_coeffs)
         self.btn_write_coeffs.clicked.connect(self._on_write_coeffs)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         self._log("Setup page ready.")
 
     def _populate_coeffs(self, coeffs: dict[str, list[float]]) -> None:

@@ -139,6 +139,9 @@ class SUCalibrationPage(BaseHardwarePage):
         self.btn_run_cal.clicked.connect(self._on_run_calibration)
         self.btn_verify.clicked.connect(self._on_verify)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         self._log("Calibration page ready.")
 
     def _on_run_calibration(self) -> None:

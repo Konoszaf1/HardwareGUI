@@ -72,10 +72,10 @@ class SMUController(HardwareController):
                 processorType=processor_type,
                 connectorType=connector_type,
             )
-            logger.info(f"SMU initialized: serial={serial}")
+            logger.info("SMU initialized: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
-            logger.error(f"SMU initialization failed: {e}")
+            logger.error("SMU initialization failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_eeprom_defaults(self) -> OperationResult:
@@ -90,7 +90,7 @@ class SMUController(HardwareController):
             logger.info("SMU EEPROM defaults set")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU EEPROM defaults failed: {e}")
+            logger.error("SMU EEPROM defaults failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def calibrate_eeprom(self) -> OperationResult:
@@ -105,7 +105,7 @@ class SMUController(HardwareController):
             logger.info("SMU EEPROM calibrated")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU EEPROM calibration failed: {e}")
+            logger.error("SMU EEPROM calibration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def configure_channel(self, config: ChannelConfig) -> OperationResult:
@@ -121,10 +121,10 @@ class SMUController(HardwareController):
         """
         try:
             smu = self._get_smu()
-            logger.info(f"SMU channel configured: {config.channel_id}")
+            logger.info("SMU channel configured: %s", config.channel_id)
             return OperationResult(ok=True, data={"channel_id": config.channel_id})
         except Exception as e:
-            logger.error(f"SMU channel configuration failed: {e}")
+            logger.error("SMU channel configuration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def save_channel_config(self) -> OperationResult:
@@ -138,7 +138,7 @@ class SMUController(HardwareController):
             logger.info("SMU channel config saved to EEPROM")
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU EEPROM save failed: {e}")
+            logger.error("SMU EEPROM save failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def load_channel_config(self) -> OperationResult:
@@ -152,7 +152,7 @@ class SMUController(HardwareController):
             logger.info("SMU channel config loaded from EEPROM")
             return OperationResult(ok=True, data={})
         except Exception as e:
-            logger.error(f"SMU EEPROM load failed: {e}")
+            logger.error("SMU EEPROM load failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -168,10 +168,10 @@ class SMUController(HardwareController):
         try:
             smu = self._get_smu()
             temp = smu.get_temperature()
-            logger.debug(f"SMU temperature: {temp}")
+            logger.debug("SMU temperature: %s", temp)
             return OperationResult(ok=True, data={"temperature": temp})
         except Exception as e:
-            logger.error(f"SMU temperature read failed: {e}")
+            logger.error("SMU temperature read failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def perform_autocalibration(self) -> OperationResult:
@@ -184,10 +184,10 @@ class SMUController(HardwareController):
             smu = self._get_smu()
             smu.calibrate_eeprom()
             serial = smu.get_serial()
-            logger.info(f"SMU autocalibration complete: serial={serial}")
+            logger.info("SMU autocalibration complete: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
-            logger.error(f"SMU autocalibration failed: {e}")
+            logger.error("SMU autocalibration failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -214,13 +214,13 @@ class SMUController(HardwareController):
                 smu.ivconverter_channel(channel=0)
             else:
                 smu.ivconverter_channelreference(channel=channel, reference=reference)
-            logger.debug(f"SMU IV channel: {channel}, ref={reference}")
+            logger.debug("SMU IV channel: %s, ref=%s", channel, reference)
             return OperationResult(
                 ok=True,
                 data={"channel": channel, "reference": reference},
             )
         except Exception as e:
-            logger.error(f"SMU IV channel set failed: {e}")
+            logger.error("SMU IV channel set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def get_iv_channel(self) -> OperationResult:
@@ -234,7 +234,7 @@ class SMUController(HardwareController):
             channel = smu.ivconverter_getchannel()
             return OperationResult(ok=True, data={"channel": channel})
         except Exception as e:
-            logger.error(f"SMU IV channel get failed: {e}")
+            logger.error("SMU IV channel get failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_pa_channel(self, channel: int) -> OperationResult:
@@ -252,10 +252,10 @@ class SMUController(HardwareController):
                 smu.postamplifier_disable()
             else:
                 smu.postamplifier_enable(channel=channel)
-            logger.debug(f"SMU PA channel: {channel}")
+            logger.debug("SMU PA channel: %s", channel)
             return OperationResult(ok=True, data={"channel": channel})
         except Exception as e:
-            logger.error(f"SMU PA channel set failed: {e}")
+            logger.error("SMU PA channel set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_pa_clip(self, channel: int, enabled: bool) -> OperationResult:
@@ -271,10 +271,10 @@ class SMUController(HardwareController):
         try:
             smu = self._get_smu()
             smu.postamplifier_clip_enable(channel=channel, state=1 if enabled else 0)
-            logger.debug(f"SMU PA clip: ch={channel}, enabled={enabled}")
+            logger.debug("SMU PA clip: ch=%s, enabled=%s", channel, enabled)
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU PA clip set failed: {e}")
+            logger.error("SMU PA clip set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_highpass(self, enabled: bool) -> OperationResult:
@@ -292,10 +292,10 @@ class SMUController(HardwareController):
                 smu.highpass_enable()
             else:
                 smu.highpass_disable()
-            logger.debug(f"SMU highpass: enabled={enabled}")
+            logger.debug("SMU highpass: enabled=%s", enabled)
             return OperationResult(ok=True, data={"enabled": enabled})
         except Exception as e:
-            logger.error(f"SMU highpass set failed: {e}")
+            logger.error("SMU highpass set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def get_highpass_state(self) -> OperationResult:
@@ -309,7 +309,7 @@ class SMUController(HardwareController):
             state = smu.highpass_state()
             return OperationResult(ok=True, data={"enabled": bool(state)})
         except Exception as e:
-            logger.error(f"SMU highpass state get failed: {e}")
+            logger.error("SMU highpass state get failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_input_routing(self, target: InputRouting) -> OperationResult:
@@ -331,10 +331,10 @@ class SMUController(HardwareController):
                 "VSMU_AND_SU": smu.iin_to_vsmu_and_su,
             }
             routing_map[target]()
-            logger.debug(f"SMU input routing: {target}")
+            logger.debug("SMU input routing: %s", target)
             return OperationResult(ok=True, data={"target": target})
         except Exception as e:
-            logger.error(f"SMU input routing set failed: {e}")
+            logger.error("SMU input routing set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def set_vguard(self, target: VGuardRouting) -> OperationResult:
@@ -352,10 +352,10 @@ class SMUController(HardwareController):
                 smu.vguard_to_gnd()
             else:
                 smu.vguard_to_vsmu()
-            logger.debug(f"SMU VGUARD: {target}")
+            logger.debug("SMU VGUARD: %s", target)
             return OperationResult(ok=True, data={"target": target})
         except Exception as e:
-            logger.error(f"SMU VGUARD set failed: {e}")
+            logger.error("SMU VGUARD set failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def get_saturation_state(self) -> OperationResult:
@@ -372,7 +372,7 @@ class SMUController(HardwareController):
                 data={"iv_saturated": bool(state_iv), "pa_saturated": bool(state_pa)},
             )
         except Exception as e:
-            logger.error(f"SMU saturation state get failed: {e}")
+            logger.error("SMU saturation state get failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def clear_saturation(self) -> OperationResult:
@@ -386,7 +386,7 @@ class SMUController(HardwareController):
             smu.saturationdetection_clear()
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU saturation clear failed: {e}")
+            logger.error("SMU saturation clear failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -451,10 +451,10 @@ class SMUController(HardwareController):
                 )
 
             scm.cleanup()
-            logger.info(f"SMU calibration measure complete: {folder_path}")
+            logger.info("SMU calibration measure complete: %s", folder_path)
             return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
-            logger.error(f"SMU calibration measure failed: {e}")
+            logger.error("SMU calibration measure failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
@@ -504,10 +504,10 @@ class SMUController(HardwareController):
                 smu.calibrate_eeprom(folder_path=Path(folder_path))
                 logger.info("Calibration written to EEPROM")
 
-            logger.info(f"SMU calibration fit complete: {folder_path}")
+            logger.info("SMU calibration fit complete: %s", folder_path)
             return OperationResult(ok=True)
         except Exception as e:
-            logger.error(f"SMU calibration fit failed: {e}")
+            logger.error("SMU calibration fit failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================

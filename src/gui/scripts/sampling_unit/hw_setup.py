@@ -167,6 +167,9 @@ class SUSetupPage(BaseHardwarePage):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_load.clicked.connect(self._on_load)
 
+        # Connect service signals (from base class)
+        self._connect_service_signals()
+
         # Load initial preset
         self._on_preset_changed(self.cb_preset.currentText())
 
@@ -192,12 +195,23 @@ class SUSetupPage(BaseHardwarePage):
             self._log(f"Loaded preset: {preset_name}")
 
     def _on_save(self) -> None:
-        """Save current configuration."""
-        self._log("Saving configuration... (not implemented)")
+        """Save current channel configuration to device EEPROM."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+        serial = self.sp_serial.value()
+        processor = self.cb_processor.currentText()
+        connector = self.cb_connector.currentText()
+        self._log(
+            f"Saving configuration: serial={serial}, processor={processor}, "
+            f"connector={connector}"
+        )
+        self._start_task(self.service.run_save_config())
 
     def _on_load(self) -> None:
-        """Load configuration from device EEPROM."""
+        """Load channel configuration from device EEPROM."""
         if not self.service:
             self._log("Service not available.")
             return
         self._log("Loading configuration from device...")
+        self._start_task(self.service.run_load_config())

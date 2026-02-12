@@ -1,6 +1,6 @@
 #!/bin/bash
 # run.sh - Unified startup script for HardwareGUI
-# Activates DPI venv, installs dependencies, creates symlinks, runs app
+# Activates DPI venv, installs dependencies, runs app
 
 set -e
 
@@ -61,39 +61,7 @@ install_deps() {
 }
 install_deps
 
-# 3. Create device script symlinks (idempotent)
-create_symlinks() {
-    local scripts_dir="$PROJECT_ROOT/src/device_scripts"
-    mkdir -p "$scripts_dir"
-
-    # Helper: create symlink if source exists
-    link() {
-        local src="$1" dst="$2"
-        if [ -f "$src" ]; then
-            ln -sf "$src" "$dst"
-        fi
-    }
-
-    # Voltage Unit
-    link "/measdata/dpi/voltageunit/python/dev/setup_cal.py" "$scripts_dir/setup_cal.py"
-
-    # Source Measure Unit (SMU)
-    link "/measdata/dpi/sourcemeasureunit/python/dev/hw_setup.py" "$scripts_dir/smu_hw_setup.py"
-    link "/measdata/dpi/sourcemeasureunit/python/dev/dev.py" "$scripts_dir/smu_dev.py"
-    link "/measdata/dpi/sourcemeasureunit/python/dev/calibration_measure.py" "$scripts_dir/smu_calibration_measure.py"
-    link "/measdata/dpi/sourcemeasureunit/python/dev/calibration_fit.py" "$scripts_dir/smu_calibration_fit.py"
-
-    # Sampling Unit (SU)
-    link "/measdata/dpi/samplingunit/python/dev/hw_setup.py" "$scripts_dir/su_hw_setup.py"
-    link "/measdata/dpi/samplingunit/python/dev/dev.py" "$scripts_dir/su_dev.py"
-    link "/measdata/dpi/samplingunit/python/dev/calibration_measure.py" "$scripts_dir/su_calibration_measure.py"
-    link "/measdata/dpi/samplingunit/python/dev/calibration_fit.py" "$scripts_dir/su_calibration_fit.py"
-
-    echo "[OK] Device script symlinks ready"
-}
-create_symlinks
-
-# 4. Set up environment and run
+# 3. Set up environment and run
 cd "$PROJECT_ROOT/src"
 export PYTHONPATH="$PROJECT_ROOT:$PROJECT_ROOT/src"
 export PYTHONUNBUFFERED=1
