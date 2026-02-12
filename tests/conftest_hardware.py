@@ -23,6 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.logic.controllers.base_controller import OperationResult
+
 # =============================================================================
 # BASE MOCK FACTORIES (DRY - reused by all services)
 # =============================================================================
@@ -145,21 +147,32 @@ def mock_vu_hardware(mocker, tmp_path) -> dict[str, Any]:
         return_value=mock_scope,
     )
 
-    # Patch setup_cal module functions
-    setup_cal_funcs = [
-        "test_outputs",
-        "test_ramp",
-        "test_transient",
-        "test_all",
-        "auto_calibrate",
-        "reset_coefficients",
-        "write_coefficients",
-    ]
-    for func in setup_cal_funcs:
-        mocker.patch(
-            f"src.logic.services.vu_service.setup_cal.{func}",
-            return_value=True,
-        )
+    # Patch VUController so _ensure_connected creates a mock controller
+    mock_controller = MagicMock()
+    mock_controller.coeffs = {
+        "CH1": [1.0, 0.0],
+        "CH2": [1.0, 0.0],
+        "CH3": [1.0, 0.0],
+    }
+    mock_controller.test_outputs.return_value = OperationResult(ok=True)
+    mock_controller.test_ramp.return_value = OperationResult(ok=True)
+    mock_controller.test_transient.return_value = OperationResult(ok=True)
+    mock_controller.test_all.return_value = OperationResult(ok=True)
+    mock_controller.auto_calibrate.return_value = OperationResult(
+        ok=True, data={"coeffs": mock_controller.coeffs}
+    )
+    mock_controller.perform_autocalibration.return_value = OperationResult(ok=True)
+    mock_controller.read_coefficients.return_value = OperationResult(
+        ok=True, data={"coeffs": mock_controller.coeffs}
+    )
+    mock_controller.set_guard_signal.return_value = OperationResult(ok=True)
+    mock_controller.set_guard_ground.return_value = OperationResult(ok=True)
+    mock_controller.reset_coefficients.return_value = OperationResult(ok=True)
+    mock_controller.write_coefficients.return_value = OperationResult(ok=True)
+    mocker.patch(
+        "src.logic.services.vu_service.VUController",
+        return_value=mock_controller,
+    )
 
     # Common infrastructure
     patch_subprocess(mocker)
@@ -254,16 +267,14 @@ def mock_su_hardware(mocker, tmp_path) -> dict[str, Any]:
         return_value=mock_su,
     )
 
-    # Mock calibration modules (imported dynamically in service)
+    # Mock calibration modules (imported dynamically by controller)
     mock_cal_measure = MagicMock()
     mock_cal_fit = MagicMock()
     mocker.patch.dict(
         "sys.modules",
         {
-            "device_scripts.su_calibration_measure": MagicMock(
+            "src.logic.calibration": MagicMock(
                 SUCalibrationMeasure=mock_cal_measure,
-            ),
-            "device_scripts.su_calibration_fit": MagicMock(
                 SUCalibrationFit=mock_cal_fit,
             ),
         },

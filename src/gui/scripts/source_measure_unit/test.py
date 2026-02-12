@@ -239,21 +239,30 @@ class SMUTestPage(BaseHardwarePage):
         task.signals.finished.connect(on_complete)
         self._start_task(task)
 
+    # Channel text to integer mapping for relay programming
+    _IV_CHANNEL_MAP = {"CH1": 1, "CH2": 2, "CH3": 3, "CH4": 4}
+    _PA_CHANNEL_MAP = {"PA1": 1, "PA2": 2, "PA3": 3, "PA4": 4}
+
     def _on_program_relais(self) -> None:
-        """Program relais configuration."""
+        """Program relais configuration via service."""
         if not self.service:
             self._log("Service not available.")
             return
 
-        iv_channel = self.cb_iv_channel.currentText()
+        iv_channel_text = self.cb_iv_channel.currentText()
+        iv_channel = self._IV_CHANNEL_MAP.get(iv_channel_text, 1)
         iv_ref = "GND" if self.rb_iv_gnd.isChecked() else "VSMU"
-        pa_channel = self.cb_pa_channel.currentText()
-        pa_ref = "GND" if self.rb_pa_gnd.isChecked() else "VSMU"
+
+        pa_channel_text = self.cb_pa_channel.currentText()
+        pa_channel = self._PA_CHANNEL_MAP.get(pa_channel_text, 1)
+
         high_pass = self.rb_hp_enable.isChecked()
         vguard = "GND" if self.rb_vguard_gnd.isChecked() else "VSMU"
 
-        dut = "NONE"
-        if self.rb_dut_gnd.isChecked():
+        dut = "GND"  # default
+        if self.rb_dut_none.isChecked():
+            dut = "GND"
+        elif self.rb_dut_gnd.isChecked():
             dut = "GND"
         elif self.rb_dut_guard.isChecked():
             dut = "GUARD"
@@ -262,10 +271,19 @@ class SMUTestPage(BaseHardwarePage):
         elif self.rb_dut_su.isChecked():
             dut = "SU"
         elif self.rb_dut_vsmu_su.isChecked():
-            dut = "VSMU&SU"
+            dut = "VSMU_AND_SU"
 
         self._log(
-            f"Programming relais: IV={iv_channel}/{iv_ref}, PA={pa_channel}/{pa_ref}, "
+            f"Programming relais: IV={iv_channel_text}/{iv_ref}, PA={pa_channel_text}, "
             f"HP={'ON' if high_pass else 'OFF'}, DUT={dut}, VGUARD={vguard}"
         )
-        self._log("Relais configuration logged (hardware control not implemented)")
+
+        task = self.service.run_program_relais(
+            iv_channel=iv_channel,
+            iv_reference=iv_ref,
+            pa_channel=pa_channel,
+            highpass=high_pass,
+            dut_routing=dut,
+            vguard=vguard,
+        )
+        self._start_task(task)

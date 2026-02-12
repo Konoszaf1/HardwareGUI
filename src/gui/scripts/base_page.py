@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import device_scripts.setup_cal as setup_cal
 from src.config import config
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.utils.artifact_watcher import ArtifactWatcher
@@ -150,17 +149,19 @@ class BaseHardwarePage(QWidget):
     # ---- Task lifecycle ----
 
     def _ensure_artifact_watcher(self) -> None:
-        """Set up artifact watcher if VU_SERIAL is known and list widget exists.
+        """Set up artifact watcher if service has an artifact directory.
 
         Creates an ArtifactWatcher to monitor the calibration artifact directory
         for file changes and update thumbnails accordingly.
         """
-        if self._artifact_watcher or not setup_cal.VU_SERIAL:
+        if self._artifact_watcher:
             return
-        if not self._shared_panels:
+        if not self._shared_panels or not self.service:
+            return
+        artifact_dir = getattr(self.service, "artifact_dir", None)
+        if not artifact_dir:
             return
 
-        artifact_dir = os.path.abspath(f"calibration_vu{setup_cal.VU_SERIAL}")
         self._artifact_watcher = ArtifactWatcher(self._shared_panels.artifacts, self)
         self._artifact_watcher.setup(artifact_dir)
 

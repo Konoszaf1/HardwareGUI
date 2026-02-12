@@ -395,121 +395,119 @@ class SMUController(HardwareController):
 
     def calibration_measure(
         self,
-        folder: Path,
-        scope_ip: str,
-        channel_ids: list[str] | None = None,
-        range_mode: str = "auto",
+        keithley_ip: str,
+        smu_serial: int | None,
+        smu_interface: int | None,
+        su_serial: int | None,
+        su_interface: int | None,
+        folder_path: str,
+        vsmu_mode: bool | None = None,
+        verify_calibration: bool = False,
     ) -> OperationResult:
-        """Perform calibration measurements with Keithley scope.
+        """Run the full calibration measurement workflow.
+
+        Creates an SMUCalibrationMeasure instance with the given connection
+        parameters, measures all ranges, and saves results to HDF5.
 
         Args:
-            folder: Output folder for calibration data.
-            scope_ip: Keithley scope IP address.
-            channel_ids: Channel IDs to calibrate (ivch/poch/VSMU).
-            range_mode: Range mode ("auto" or "manual").
+            keithley_ip: Keithley instrument IP address.
+            smu_serial: SMU serial number (None for autodetect).
+            smu_interface: SMU interface number.
+            su_serial: SU serial number (None for autodetect).
+            su_interface: SU interface number.
+            folder_path: Output folder for calibration data.
+            vsmu_mode: True for VSMU mode, False for normal, None for both.
+            verify_calibration: If True, also run verification measurements.
 
         Returns:
-            OperationResult with measurement data path.
+            OperationResult with folder path in data.
         """
         try:
+            from dpi.utilities import DPILogger
             from dpisourcemeasureunit.calibration import SMUCalibrationMeasure
 
-            smu = self._get_smu()
-            cal = SMUCalibrationMeasure(smu, scope_ip=scope_ip)
+            scm = SMUCalibrationMeasure(
+                keithley_ip,
+                smu_serial,
+                smu_interface,
+                su_serial,
+                su_interface,
+                DPILogger.VERBOSE,
+            )
 
-            if channel_ids:
-                cal.measure_channels(channel_ids, output_folder=folder)
-            else:
-                cal.measure_all(output_folder=folder)
+            verify_list = [False, True] if verify_calibration else [False]
+            for verify in verify_list:
+                scm.data = []
+                scm.measure_all_ranges(
+                    vsmu_mode=vsmu_mode,
+                    verify_calibration=verify,
+                    current_values=None,
+                )
+                filename = "raw_data_verify.h5" if verify else "raw_data.h5"
+                scm.save_measurement(
+                    folder_path=folder_path,
+                    file_name=filename,
+                    append_data=True,
+                )
 
-            logger.info(f"SMU calibration measure complete: {folder}")
-            return OperationResult(ok=True, data={"folder": str(folder)})
+            scm.cleanup()
+            logger.info(f"SMU calibration measure complete: {folder_path}")
+            return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
             logger.error(f"SMU calibration measure failed: {e}")
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
         self,
-        folder: Path,
-        model: str = "linear",
-        generate_plot: bool = True,
-        calibrate_device: bool = True,
+        folder_path: str,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
     ) -> OperationResult:
-        """Fit calibration data and optionally write to device.
+        """Run calibration fit and optionally write to EEPROM.
+
+        Loads raw measurement data, trains linear and GP models, analyzes
+        ranges, and optionally writes calibration to the device EEPROM.
 
         Args:
-            folder: Folder containing calibration measurements.
-            model: Fit model ("linear" or "gp").
-            generate_plot: Whether to generate fit plots.
-            calibrate_device: Whether to write calibration to device.
+            folder_path: Folder containing calibration measurements.
+            draw_plot: If True, generate calibration plots.
+            auto_calibrate: If True, write calibration to EEPROM.
 
         Returns:
-            OperationResult with fit parameters.
+            OperationResult with success status.
         """
         try:
+            from dpi.utilities import DPILogger
             from dpisourcemeasureunit.calibration import SMUCalibrationFit
 
-            smu = self._get_smu()
-            fit = SMUCalibrationFit(smu, calibration_folder=folder)
+            smf = SMUCalibrationFit(
+                calibration_folder=folder_path,
+                load_raw=True,
+                verify_calibration=True,
+                log_level=DPILogger.DEBUG,
+            )
 
-            if model == "linear":
-                params = fit.fit_linear()
-            else:
-                params = fit.fit_gp()
+            if draw_plot:
+                smf.plot_measurement_overview()
+                smf.plot_aggregated_overview()
 
-            if generate_plot:
-                fit.generate_plot(output_folder=folder)
+            smf.train_linear_model()
+            smf.train_gp_model()
+            smf.save_gp_model(script_dir=Path(folder_path))
+            smf.analyze_ranges()
 
-            if calibrate_device:
-                fit.write_to_device()
+            if draw_plot:
+                smf.plot_calibrated_overview()
 
-            logger.info(f"SMU calibration fit complete: model={model}")
-            return OperationResult(ok=True, data={"parameters": params})
+            if auto_calibrate:
+                smu = self._get_smu()
+                smu.calibrate_eeprom(folder_path=Path(folder_path))
+                logger.info("Calibration written to EEPROM")
+
+            logger.info(f"SMU calibration fit complete: {folder_path}")
+            return OperationResult(ok=True)
         except Exception as e:
             logger.error(f"SMU calibration fit failed: {e}")
-            return OperationResult(ok=False, message=str(e))
-
-    def calibration_verify(
-        self,
-        folder: Path,
-        channel_id: str,
-        plot_type: str = "linear",
-        data_type: str = "measured",
-    ) -> OperationResult:
-        """Verify calibration using existing data.
-
-        Args:
-            folder: Folder containing calibration data.
-            channel_id: Channel to verify (ivch/poch/VSMU).
-            plot_type: Plot scale ("linear", "semilog", "error", "error-log", "gradient").
-            data_type: Data type ("measured", "linear", "linear-verify", "gp", "gp-verify").
-
-        Returns:
-            OperationResult with verification metrics.
-        """
-        try:
-            from dpisourcemeasureunit.calibration import SMUCalibrationFit
-
-            smu = self._get_smu()
-            fit = SMUCalibrationFit(smu, calibration_folder=folder)
-            metrics = fit.verify(channel_id=channel_id)
-
-            logger.info(f"SMU calibration verify: channel={channel_id}")
-            return OperationResult(
-                ok=True,
-                data={
-                    "error": metrics.get("error"),
-                    "error_mean": metrics.get("error_mean"),
-                    "error_std": metrics.get("error_std"),
-                    "error_percent": metrics.get("error_percent"),
-                    "mse": metrics.get("mse"),
-                    "r2": metrics.get("r2"),
-                    "gradient": metrics.get("gradient"),
-                    "message": metrics.get("message", ""),
-                },
-            )
-        except Exception as e:
-            logger.error(f"SMU calibration verify failed: {e}")
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================

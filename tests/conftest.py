@@ -27,9 +27,6 @@ _hardware_mocks = {
     "dpisamplingunit": MagicMock(),
     "dpisamplingunit.dpisamplingunit": MagicMock(),
     "vxi11": MagicMock(),
-    "device_scripts": MagicMock(),
-    "device_scripts.setup_cal": MagicMock(),
-    "device_scripts.su_calibration": MagicMock(),
 }
 
 # Install mocks into sys.modules

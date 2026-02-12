@@ -248,13 +248,17 @@ class SUConnectionPage(BaseHardwarePage):
             return
 
         su_serial = 0 if self.rb_su_auto.isChecked() else self.sp_su_serial.value()
+        su_interface = 0 if self.rb_su_auto.isChecked() else self.cb_su_interface.currentIndex()
         smu_serial = 0 if self.rb_smu_auto.isChecked() else self.sp_smu_serial.value()
+        smu_interface = 0 if self.rb_smu_auto.isChecked() else self.cb_smu_interface.currentIndex()
         keithley_ip = self.le_keithley_ip.text().strip()
 
         self.service.set_targets(
             keithley_ip=keithley_ip,
             su_serial=su_serial,
+            su_interface=su_interface,
             smu_serial=smu_serial,
+            smu_interface=smu_interface,
         )
 
         self._log("Connecting to SU hardware...")

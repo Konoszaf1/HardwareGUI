@@ -23,30 +23,30 @@ class ArtifactManager:
         """
         self._base_dir = base_dir
 
-    def get_artifact_dir(self, vu_serial: int) -> str:
-        """Get the artifact directory path for a voltage unit.
+    def get_artifact_dir(self, relative_path: str) -> str:
+        """Get the artifact directory path for the given relative path.
 
         Args:
-            vu_serial: Voltage unit serial number.
+            relative_path: Relative path within base_dir (e.g. 'calibration_vu1').
 
         Returns:
             Absolute path to the artifact directory.
         """
-        return os.path.abspath(os.path.join(self._base_dir, f"calibration_vu{vu_serial}"))
+        return os.path.abspath(os.path.join(self._base_dir, relative_path))
 
-    def collect_artifacts(self, vu_serial: int) -> list[str]:
-        """Collect all PNG artifacts for a voltage unit.
+    def collect_artifacts(self, relative_path: str) -> list[str]:
+        """Collect all PNG artifacts from the given artifact directory.
 
         Priority files (output.png, ramp.png, transient.png) are listed first,
         followed by any other PNG files in alphabetical order.
 
         Args:
-            vu_serial: Voltage unit serial number.
+            relative_path: Relative path within base_dir.
 
         Returns:
             List of absolute paths to artifact files, deduplicated.
         """
-        artifact_dir = self.get_artifact_dir(vu_serial)
+        artifact_dir = self.get_artifact_dir(relative_path)
         paths: list[str] = []
 
         # Priority files first

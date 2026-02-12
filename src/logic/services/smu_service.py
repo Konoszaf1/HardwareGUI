@@ -11,7 +11,6 @@ import subprocess
 import threading
 import warnings
 from dataclasses import dataclass
-from pathlib import Path
 
 import matplotlib
 from dpi import DPISourceMeasureUnit
@@ -195,15 +194,24 @@ class SourceMeasureUnitService(QObject):
         logger.info(f"SMU connected: serial={self._smu.get_serial()}")
         self.connectedChanged.emit(True)
 
+    @property
+    def artifact_dir(self) -> str:
+        """Return the absolute path to the calibration artifact directory."""
+        serial = self._smu.get_serial() if self._smu else 0
+        return self._artifact_manager.get_artifact_dir(
+            f"calibration/smu_calibration_sn{serial}"
+        )
+
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        serial = self._smu.get_serial() if self._smu else 0
-        return self._artifact_manager.get_artifact_dir(serial)
+        return self.artifact_dir
 
     def _collect_artifacts(self) -> list[str]:
         """Collect all artifact files for the current SMU."""
         serial = self._smu.get_serial() if self._smu else 0
-        return self._artifact_manager.collect_artifacts(serial)
+        return self._artifact_manager.collect_artifacts(
+            f"calibration/smu_calibration_sn{serial}"
+        )
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -368,6 +376,8 @@ class SourceMeasureUnitService(QObject):
     ) -> FunctionTask:
         """Run calibration measurement with Keithley.
 
+        Delegates to SMUController.calibration_measure for the actual workflow.
+
         Args:
             vsmu_mode: True for VSMU mode, False for normal, None for both.
             verify_calibration: If True, also verify the calibration.
@@ -375,36 +385,28 @@ class SourceMeasureUnitService(QObject):
         Returns:
             FunctionTask that runs calibration measurements.
         """
-        from dpi.utilities import DPILogger
-        from dpisourcemeasureunit.calibration import SMUCalibrationMeasure
 
         def job():
             serial = self._smu.get_serial() if self._smu else 0
             folder_path = f"calibration/smu_calibration_sn{serial}"
             self._calibration_folder = folder_path
 
-            scm = SMUCalibrationMeasure(
-                self._target_keithley_ip,
-                self._targets.smu_serial or None,
-                self._targets.smu_interface or None,
-                self._targets.su_serial or None,
-                self._targets.su_interface or None,
-                DPILogger.VERBOSE,
+            result = self._controller.calibration_measure(
+                keithley_ip=self._target_keithley_ip,
+                smu_serial=self._targets.smu_serial or None,
+                smu_interface=self._targets.smu_interface or None,
+                su_serial=self._targets.su_serial or None,
+                su_interface=self._targets.su_interface or None,
+                folder_path=folder_path,
+                vsmu_mode=vsmu_mode,
+                verify_calibration=verify_calibration,
             )
-
-            verify_list = [False, True] if verify_calibration else [False]
-
-            for verify in verify_list:
-                scm.data = []
-                scm.measure_all_ranges(
-                    vsmu_mode=vsmu_mode, verify_calibration=verify, current_values=None
-                )
-                filename = "raw_data_verify.h5" if verify else "raw_data.h5"
-                scm.save_measurement(folder_path=folder_path, file_name=filename, append_data=True)
-
-            scm.cleanup()
-            logger.info(f"Calibration measurement complete: {folder_path}")
-            return {"ok": True, "folder": folder_path, "artifacts": self._collect_artifacts()}
+            return {
+                "ok": result.ok,
+                "message": result.message,
+                "folder": folder_path,
+                "artifacts": self._collect_artifacts(),
+            }
 
         return make_task("calibration_measure", job)
 
@@ -413,6 +415,8 @@ class SourceMeasureUnitService(QObject):
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
+        Delegates to SMUController.calibration_fit for the actual workflow.
+
         Args:
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
@@ -420,8 +424,6 @@ class SourceMeasureUnitService(QObject):
         Returns:
             FunctionTask that fits calibration data.
         """
-        from dpi.utilities import DPILogger
-        from dpisourcemeasureunit.calibration import SMUCalibrationFit
 
         def job():
             with self._hw_lock:
@@ -430,33 +432,88 @@ class SourceMeasureUnitService(QObject):
                 serial = self._smu.get_serial() if self._smu else 0
                 folder_path = self._calibration_folder or f"calibration/smu_calibration_sn{serial}"
 
-                smf = SMUCalibrationFit(
-                    calibration_folder=folder_path,
-                    load_raw=True,
-                    verify_calibration=True,
-                    log_level=DPILogger.DEBUG,
+                result = self._controller.calibration_fit(
+                    folder_path=folder_path,
+                    draw_plot=draw_plot,
+                    auto_calibrate=auto_calibrate,
                 )
-
-                if draw_plot:
-                    smf.plot_measurement_overview()
-                    smf.plot_aggregated_overview()
-
-                smf.train_linear_model()
-                smf.train_gp_model()
-                smf.save_gp_model(script_dir=Path(folder_path))
-                smf.analyze_ranges()
-
-                if draw_plot:
-                    smf.plot_calibrated_overview()
-
-                if auto_calibrate:
-                    self._smu.calibrate_eeprom(folder_path=Path(folder_path))
-                    logger.info("Calibration written to EEPROM")
-
-                logger.info(f"Calibration fit complete: {folder_path}")
-                return {"ok": True, "artifacts": self._collect_artifacts()}
+                return {
+                    "ok": result.ok,
+                    "message": result.message,
+                    "artifacts": self._collect_artifacts(),
+                }
 
         return make_task("calibration_fit", job)
+
+    def run_measure(self, channel: str = "CH1") -> FunctionTask:
+        """Run calibration measurement (called by calibration page Measure button).
+
+        Args:
+            channel: Channel to measure (currently unused — measures all ranges).
+
+        Returns:
+            FunctionTask that runs calibration measurement.
+        """
+        return self.run_calibration_measure()
+
+    def run_calibrate(self, model: str = "linear") -> FunctionTask:
+        """Run calibration fit (called by calibration page Run Calibration button).
+
+        Args:
+            model: Calibration model type ("linear" or "gp").
+
+        Returns:
+            FunctionTask that fits calibration data.
+        """
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
+        """Verify calibration by re-measuring (called by calibration page Verify button).
+
+        Args:
+            num_points: Number of verification points (informational).
+
+        Returns:
+            FunctionTask that verifies calibration.
+        """
+        return self.run_calibration_measure(verify_calibration=True)
+
+    def run_program_relais(
+        self,
+        iv_channel: int,
+        iv_reference: str,
+        pa_channel: int,
+        highpass: bool,
+        dut_routing: str,
+        vguard: str,
+    ) -> FunctionTask:
+        """Program all relay settings in a single operation.
+
+        Args:
+            iv_channel: IV-Converter channel number.
+            iv_reference: IV reference ("GND" or "VSMU").
+            pa_channel: Post-Amplifier channel number.
+            highpass: Whether highpass is enabled.
+            dut_routing: Input routing target.
+            vguard: VGUARD target ("GND" or "VSMU").
+
+        Returns:
+            FunctionTask that programs all relays.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                results = []
+                results.append(self._controller.set_iv_channel(channel=iv_channel, reference=iv_reference))
+                results.append(self._controller.set_pa_channel(channel=pa_channel))
+                results.append(self._controller.set_highpass(enabled=highpass))
+                results.append(self._controller.set_input_routing(target=dut_routing))
+                results.append(self._controller.set_vguard(target=vguard))
+                all_ok = all(r.ok for r in results)
+                return {"ok": all_ok}
+
+        return make_task("program_relais", job)
 
     def connect_only(self) -> FunctionTask:
         """Connect to SMU hardware without additional operations.

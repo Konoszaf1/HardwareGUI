@@ -202,15 +202,24 @@ class SamplingUnitService(QObject):
         logger.info(f"SU connected: serial={self._su.getSerial()}")
         self.connectedChanged.emit(True)
 
+    @property
+    def artifact_dir(self) -> str:
+        """Return the absolute path to the calibration artifact directory."""
+        serial = self._su.getSerial() if self._su else 0
+        return self._artifact_manager.get_artifact_dir(
+            f"calibration/su_calibration_sn{serial}"
+        )
+
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        serial = self._su.getSerial() if self._su else 0
-        return self._artifact_manager.get_artifact_dir(serial)
+        return self.artifact_dir
 
     def _collect_artifacts(self) -> list[str]:
         """Collect all artifact files for the current SU."""
         serial = self._su.getSerial() if self._su else 0
-        return self._artifact_manager.collect_artifacts(serial)
+        return self._artifact_manager.collect_artifacts(
+            f"calibration/su_calibration_sn{serial}"
+        )
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -367,45 +376,35 @@ class SamplingUnitService(QObject):
     ) -> FunctionTask:
         """Run calibration measurement with Keithley.
 
+        Delegates to SUController.calibration_measure for the actual workflow.
+
         Args:
             verify_calibration: If True, also verify the calibration.
 
         Returns:
             FunctionTask that runs calibration measurements.
         """
-        # Import the SU calibration module from device_scripts (symlinked)
-        from dpi.utilities import DPILogger
-
-        import device_scripts.su_calibration_measure as su_cal_measure
 
         def job():
             serial = self._su.getSerial() if self._su else 0
             folder_path = f"calibration/su_calibration_sn{serial}"
             self._calibration_folder = folder_path
 
-            scm = su_cal_measure.SUCalibrationMeasure(
-                self._target_keithley_ip,
-                self._targets.smu_serial or None,
-                self._targets.smu_interface or None,
-                self._targets.su_serial or None,
-                self._targets.su_interface or None,
-                DPILogger.VERBOSE,
+            result = self._controller.calibration_measure(
+                keithley_ip=self._target_keithley_ip,
+                smu_serial=self._targets.smu_serial or None,
+                smu_interface=self._targets.smu_interface or None,
+                su_serial=self._targets.su_serial or None,
+                su_interface=self._targets.su_interface or None,
+                folder_path=folder_path,
+                verify_calibration=verify_calibration,
             )
-
-            verify_list = [False, True] if verify_calibration else [False]
-
-            for verify in verify_list:
-                scm.data = []
-                voltage_values = scm.prepare_measurement_values(
-                    max_value=6.5, decades=7, delta_log=1 / 3, delta_lin=1 / 4
-                )
-                scm.measure_all_ranges(voltage_values)
-                filename = "raw_data_verify.h5" if verify else "raw_data.h5"
-                scm.save_measurement(folder_path=folder_path, file_name=filename, append_data=True)
-
-            scm.cleanup()
-            logger.info(f"Calibration measurement complete: {folder_path}")
-            return {"ok": True, "folder": folder_path, "artifacts": self._collect_artifacts()}
+            return {
+                "ok": result.ok,
+                "message": result.message,
+                "folder": folder_path,
+                "artifacts": self._collect_artifacts(),
+            }
 
         return make_task("calibration_measure", job)
 
@@ -414,6 +413,8 @@ class SamplingUnitService(QObject):
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
+        Delegates to SUController.calibration_fit for the actual workflow.
+
         Args:
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
@@ -421,11 +422,6 @@ class SamplingUnitService(QObject):
         Returns:
             FunctionTask that fits calibration data.
         """
-        # Import the SU calibration fit module from device_scripts (symlinked)
-        from dpi import DPISourceMeasureUnit
-        from dpi.utilities import DPILogger
-
-        import device_scripts.su_calibration_fit as su_cal_fit
 
         def job():
             with self._hw_lock:
@@ -434,35 +430,40 @@ class SamplingUnitService(QObject):
                 serial = self._su.getSerial() if self._su else 0
                 folder_path = self._calibration_folder or f"calibration/su_calibration_sn{serial}"
 
-                smf = su_cal_fit.SUCalibrationFit(
-                    calibration_folder=folder_path,
-                    load_raw=True,
-                    verify_calibration=True,
-                    log_level=DPILogger.DEBUG,
+                result = self._controller.calibration_fit(
+                    folder_path=folder_path,
+                    draw_plot=draw_plot,
+                    auto_calibrate=auto_calibrate,
                 )
-
-                if draw_plot:
-                    smf.plot_measurement_overview()
-                    smf.plot_aggregated_overview()
-
-                smf.train_linear_model()
-                smf.train_gp_model()
-
-                smf.analyze_ranges()
-
-                if draw_plot:
-                    smf.plot_calibrated_overview()
-
-                if auto_calibrate:
-                    # SU calibration uses SMU for EEPROM write
-                    smu = DPISourceMeasureUnit(autoinit=True)
-                    smu.calibrate_eeprom()
-                    logger.info("Calibration written to EEPROM via SMU")
-
-                logger.info(f"Calibration fit complete: {folder_path}")
-                return {"ok": True, "artifacts": self._collect_artifacts()}
+                return {
+                    "ok": result.ok,
+                    "message": result.message,
+                    "artifacts": self._collect_artifacts(),
+                }
 
         return make_task("calibration_fit", job)
+
+    def run_calibrate(self, model: str = "linear") -> FunctionTask:
+        """Run calibration fit (called by calibration page Run Calibration button).
+
+        Args:
+            model: Calibration model type ("linear" or "gp").
+
+        Returns:
+            FunctionTask that fits calibration data.
+        """
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
+        """Verify calibration by re-measuring (called by calibration page Verify button).
+
+        Args:
+            num_points: Number of verification points (informational).
+
+        Returns:
+            FunctionTask that verifies calibration.
+        """
+        return self.run_calibration_measure(verify_calibration=True)
 
     def connect_only(self) -> FunctionTask:
         """Connect to SU hardware without additional operations.

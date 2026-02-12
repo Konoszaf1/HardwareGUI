@@ -105,18 +105,12 @@ class TestVoltageUnitServiceTasks:
         result = results[0]
         assert result.ok is True
         assert "coeffs" in result.data
+        assert isinstance(result.data["coeffs"], dict)
 
-        # Verify hardware was initialized
-        mock_vu_hardware["vu"].get_correctionvalues.assert_called()
-
-    def test_test_outputs_calls_setup_cal(self, mock_vu_hardware, qtbot):
-        """test_outputs should call setup_cal.test_outputs and return artifacts."""
+    def test_test_outputs_delegates_to_controller(self, mock_vu_hardware, qtbot):
+        """test_outputs should delegate to controller and return artifacts."""
         service = VoltageUnitService()
         service.set_scope_ip("192.168.1.1")
-        # Simulate connected state
-        service._vu = mock_vu_hardware["vu"]
-        service._mcu = mock_vu_hardware["mcu"]
-        service._scope = mock_vu_hardware["scope"]
 
         task = service.test_outputs()
         results = []
@@ -126,17 +120,13 @@ class TestVoltageUnitServiceTasks:
         assert len(results) == 1
         result = results[0]
         assert result.ok is True
-        # Verify artifacts returned
         assert "artifacts" in result.data
         assert isinstance(result.data["artifacts"], list)
 
-    def test_test_ramp_calls_setup_cal(self, mock_vu_hardware, qtbot):
-        """test_ramp should call setup_cal.test_ramp and return artifacts."""
+    def test_test_ramp_delegates_to_controller(self, mock_vu_hardware, qtbot):
+        """test_ramp should delegate to controller and return artifacts."""
         service = VoltageUnitService()
         service.set_scope_ip("192.168.1.1")
-        service._vu = mock_vu_hardware["vu"]
-        service._mcu = mock_vu_hardware["mcu"]
-        service._scope = mock_vu_hardware["scope"]
 
         task = service.test_ramp()
         results = []
@@ -151,9 +141,6 @@ class TestVoltageUnitServiceTasks:
         """autocal_python should run calibration and return updated coefficients."""
         service = VoltageUnitService()
         service.set_scope_ip("192.168.1.1")
-        service._vu = mock_vu_hardware["vu"]
-        service._mcu = mock_vu_hardware["mcu"]
-        service._scope = mock_vu_hardware["scope"]
 
         task = service.autocal_python()
         results = []

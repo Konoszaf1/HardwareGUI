@@ -207,5 +207,5 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         points = int(self.sp_verify_points.value())
         self._log(f"Verifying calibration with {points} points...")
-        task = self.service.run_verify(num_points=points)
+        task = self.service.run_calibration_verify(num_points=points)
         self._start_task(task)

@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -124,8 +125,6 @@ class SimulatedVoltageUnitService(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        import device_scripts.setup_cal as setup_cal
-
         logger.info("[SIMULATION] VoltageUnitService initialized")
         self._target_scope_ip: str | None = None
         self._connected: bool = False
@@ -135,8 +134,6 @@ class SimulatedVoltageUnitService(QObject):
             "CH2": [1.0, 0.0],
             "CH3": [1.0, 0.0],
         }
-        # Set VU_SERIAL so artifact watcher can find artifacts in calibration_vu1/
-        setup_cal.VU_SERIAL = 1
 
     # ---- Configuration (same as real service) ----
     def set_targets(
@@ -178,6 +175,10 @@ class SimulatedVoltageUnitService(QObject):
     @property
     def coeffs(self) -> dict[str, list[float]]:
         return self._coeffs
+
+    @property
+    def artifact_dir(self) -> str:
+        return os.path.abspath("calibration_vu1")
 
     # ---- Simulated operations ----
     def _simulate_work(self, name: str, duration: float = 0.5) -> None:
@@ -300,6 +301,15 @@ class SimulatedVoltageUnitService(QObject):
 
         return make_task("autocal_onboard", job)
 
+    def connect_only(self) -> FunctionTask:
+        def job():
+            self._simulate_work("connect", 0.3)
+            self._connected = True
+            self.connectedChanged.emit(True)
+            return {"serial": 0, "ok": True}
+
+        return make_task("connect", job)
+
 
 # =============================================================================
 # SIMULATED SOURCE MEASURE UNIT SERVICE
@@ -359,6 +369,10 @@ class SimulatedSMUService(QObject):
     def smu_serial(self) -> int:
         return 1
 
+    @property
+    def artifact_dir(self) -> str:
+        return os.path.abspath("calibration/smu_calibration_sn1")
+
     def _simulate_work(self, name: str, duration: float = 0.5) -> None:
         print(f"\033[33m[SIMULATION] Starting {name}...\033[0m")
         time.sleep(duration)
@@ -402,6 +416,23 @@ class SimulatedSMUService(QObject):
             return {"ok": True, "artifacts": artifacts}
 
         return make_task("calibration_fit", job)
+
+    def run_measure(self, channel: str = "CH1") -> FunctionTask:
+        return self.run_calibration_measure()
+
+    def run_calibrate(self, model: str = "linear") -> FunctionTask:
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
+        return self.run_calibration_measure(verify_calibration=True)
+
+    def run_program_relais(self, **kwargs) -> FunctionTask:
+        def job():
+            self._simulate_work("program_relais", 0.5)
+            print(f"Programming relais: {kwargs}")
+            return {"ok": True}
+
+        return make_task("program_relais", job)
 
     def connect_only(self) -> FunctionTask:
         def job():
@@ -471,6 +502,10 @@ class SimulatedSUService(QObject):
     def su_serial(self) -> int:
         return 1
 
+    @property
+    def artifact_dir(self) -> str:
+        return os.path.abspath("calibration/su_calibration_sn1")
+
     def _simulate_work(self, name: str, duration: float = 0.5) -> None:
         print(f"\033[33m[SIMULATION] Starting {name}...\033[0m")
         time.sleep(duration)
@@ -512,6 +547,12 @@ class SimulatedSUService(QObject):
             return {"ok": True, "artifacts": artifacts}
 
         return make_task("calibration_fit", job)
+
+    def run_calibrate(self, model: str = "linear") -> FunctionTask:
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
+        return self.run_calibration_measure(verify_calibration=True)
 
     def connect_only(self) -> FunctionTask:
         def job():

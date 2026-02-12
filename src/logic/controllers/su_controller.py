@@ -4,7 +4,6 @@ This controller encapsulates all SU hardware workflows including setup, test,
 and calibration operations. It uses direct imports from the dpi package.
 """
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.logging_config import get_logger
@@ -291,123 +290,119 @@ class SUController(HardwareController):
 
     def calibration_measure(
         self,
-        folder: Path,
-        scope_ip: str,
-        channel_ids: list[str] | None = None,
-        range_mode: str = "auto",
+        keithley_ip: str,
+        smu_serial: int | None,
+        smu_interface: int | None,
+        su_serial: int | None,
+        su_interface: int | None,
+        folder_path: str,
+        verify_calibration: bool = False,
     ) -> OperationResult:
-        """Perform calibration measurements with Keithley scope.
+        """Run the full calibration measurement workflow.
+
+        Creates an SUCalibrationMeasure instance with the given connection
+        parameters, prepares voltage values, measures all ranges, and saves
+        results to HDF5.
 
         Args:
-            folder: Output folder for calibration data.
-            scope_ip: Keithley scope IP address.
-            channel_ids: Channel IDs to calibrate (None = all).
-            range_mode: Range mode ("auto" or "manual").
+            keithley_ip: Keithley instrument IP address.
+            smu_serial: SMU serial number (None for autodetect).
+            smu_interface: SMU interface number.
+            su_serial: SU serial number (None for autodetect).
+            su_interface: SU interface number.
+            folder_path: Output folder for calibration data.
+            verify_calibration: If True, also run verification measurements.
 
         Returns:
-            OperationResult with measurement data path.
+            OperationResult with folder path in data.
         """
         try:
-            # Import calibration module only when needed
-            from dpisamplingunit.calibration import SUCalibrationMeasure
+            from dpi.utilities import DPILogger
 
-            su = self._get_su()
-            cal = SUCalibrationMeasure(su, scope_ip=scope_ip)
+            from src.logic.calibration import SUCalibrationMeasure
 
-            if channel_ids:
-                cal.measure_channels(channel_ids, output_folder=folder)
-            else:
-                cal.measure_all(output_folder=folder)
+            scm = SUCalibrationMeasure(
+                keithley_ip,
+                smu_serial,
+                smu_interface,
+                su_serial,
+                su_interface,
+                DPILogger.VERBOSE,
+            )
 
-            logger.info(f"SU calibration measure complete: {folder}")
-            return OperationResult(ok=True, data={"folder": str(folder)})
+            verify_list = [False, True] if verify_calibration else [False]
+            for verify in verify_list:
+                scm.data = []
+                voltage_values = scm.prepare_measurement_values(
+                    max_value=6.5, decades=7, delta_log=1 / 3, delta_lin=1 / 4,
+                )
+                scm.measure_all_ranges(voltage_values)
+                filename = "raw_data_verify.h5" if verify else "raw_data.h5"
+                scm.save_measurement(
+                    folder_path=folder_path,
+                    file_name=filename,
+                    append_data=True,
+                )
+
+            scm.cleanup()
+            logger.info(f"SU calibration measure complete: {folder_path}")
+            return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
             logger.error(f"SU calibration measure failed: {e}")
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
         self,
-        folder: Path,
-        model: str = "linear",
-        generate_plot: bool = True,
-        calibrate_device: bool = True,
+        folder_path: str,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
     ) -> OperationResult:
-        """Fit calibration data and optionally write to device.
+        """Run calibration fit and optionally write to EEPROM.
+
+        Loads raw measurement data, trains linear and GP models, analyzes
+        ranges, and optionally writes calibration to the device EEPROM.
 
         Args:
-            folder: Folder containing calibration measurements.
-            model: Fit model ("linear" or "gp").
-            generate_plot: Whether to generate fit plots.
-            calibrate_device: Whether to write calibration to device.
+            folder_path: Folder containing calibration measurements.
+            draw_plot: If True, generate calibration plots.
+            auto_calibrate: If True, write calibration to EEPROM.
 
         Returns:
-            OperationResult with fit parameters.
+            OperationResult with success status.
         """
         try:
-            # Import calibration module only when needed
-            from dpisamplingunit.calibration import SUCalibrationFit
+            from dpi import DPISourceMeasureUnit
+            from dpi.utilities import DPILogger
 
-            su = self._get_su()
-            fit = SUCalibrationFit(su, calibration_folder=folder)
+            from src.logic.calibration import SUCalibrationFit
 
-            if model == "linear":
-                params = fit.fit_linear()
-            else:
-                params = fit.fit_gp()
+            smf = SUCalibrationFit(
+                calibration_folder=folder_path,
+                load_raw=True,
+                verify_calibration=True,
+                log_level=DPILogger.DEBUG,
+            )
 
-            if generate_plot:
-                fit.generate_plot(output_folder=folder)
+            if draw_plot:
+                smf.plot_measurement_overview()
+                smf.plot_aggregated_overview()
 
-            if calibrate_device:
-                fit.write_to_device()
+            smf.train_linear_model()
+            smf.train_gp_model()
+            smf.analyze_ranges()
 
-            logger.info(f"SU calibration fit complete: model={model}")
-            return OperationResult(ok=True, data={"parameters": params})
+            if draw_plot:
+                smf.plot_calibrated_overview()
+
+            if auto_calibrate:
+                smu = DPISourceMeasureUnit(autoinit=True)
+                smu.calibrate_eeprom()
+                logger.info("Calibration written to EEPROM via SMU")
+
+            logger.info(f"SU calibration fit complete: {folder_path}")
+            return OperationResult(ok=True)
         except Exception as e:
             logger.error(f"SU calibration fit failed: {e}")
-            return OperationResult(ok=False, message=str(e))
-
-    def calibration_verify(
-        self,
-        folder: Path,
-        channel_id: str,
-        plot_type: str = "linear",
-        data_type: str = "measured",
-    ) -> OperationResult:
-        """Verify calibration using existing data.
-
-        Args:
-            folder: Folder containing calibration data.
-            channel_id: Channel to verify.
-            plot_type: Plot scale ("linear", "semilog", "error", "error-log", "gradient").
-            data_type: Data type ("measured", "linear", "linear-verify", "gp", "gp-verify").
-
-        Returns:
-            OperationResult with verification metrics.
-        """
-        try:
-            from dpisamplingunit.calibration import SUCalibrationFit
-
-            su = self._get_su()
-            fit = SUCalibrationFit(su, calibration_folder=folder)
-            metrics = fit.verify(channel_id=channel_id)
-
-            logger.info(f"SU calibration verify: channel={channel_id}")
-            return OperationResult(
-                ok=True,
-                data={
-                    "error": metrics.get("error"),
-                    "error_mean": metrics.get("error_mean"),
-                    "error_std": metrics.get("error_std"),
-                    "error_percent": metrics.get("error_percent"),
-                    "mse": metrics.get("mse"),
-                    "r2": metrics.get("r2"),
-                    "gradient": metrics.get("gradient"),
-                    "message": metrics.get("message", ""),
-                },
-            )
-        except Exception as e:
-            logger.error(f"SU calibration verify failed: {e}")
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
