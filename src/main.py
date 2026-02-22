@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 import qt_material  # isort: skip
 
-from gui.main_window import MainWindow
+
 from logging_config import get_logger, setup_logging
 
 
@@ -65,8 +65,9 @@ def main():
     if args.simulation:
         logger.info("Starting in SIMULATION mode")
         _install_simulation_services()
-    else:
         logger.info("Application starting")
+
+    from gui.main_window import MainWindow
 
     app = QApplication(sys.argv)
     qt_material.apply_stylesheet(app, "dark_blue.xml")
