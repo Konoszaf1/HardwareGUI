@@ -4,6 +4,7 @@ This controller encapsulates all SU hardware workflows including setup, test,
 and calibration operations. It uses direct imports from the dpi package.
 """
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from src.logging_config import get_logger
@@ -297,6 +298,7 @@ class SUController(HardwareController):
         su_interface: int | None,
         folder_path: str,
         verify_calibration: bool = False,
+        on_point_measured: Callable[[dict], None] | None = None,
     ) -> OperationResult:
         """Run the full calibration measurement workflow.
 
@@ -312,6 +314,8 @@ class SUController(HardwareController):
             su_interface: SU interface number.
             folder_path: Output folder for calibration data.
             verify_calibration: If True, also run verification measurements.
+            on_point_measured: Optional callback invoked after each measurement
+                point with a dict containing ``series``, ``x``, ``y``, ``v_set``.
 
         Returns:
             OperationResult with folder path in data.
@@ -334,9 +338,15 @@ class SUController(HardwareController):
             for verify in verify_list:
                 scm.data = []
                 voltage_values = scm.prepare_measurement_values(
-                    max_value=6.5, decades=7, delta_log=1 / 3, delta_lin=1 / 4,
+                    max_value=6.5,
+                    decades=7,
+                    delta_log=1 / 3,
+                    delta_lin=1 / 4,
                 )
-                scm.measure_all_ranges(voltage_values)
+                scm.measure_all_ranges(
+                    voltage_values,
+                    on_point_measured=on_point_measured,
+                )
                 filename = "raw_data_verify.h5" if verify else "raw_data.h5"
                 scm.save_measurement(
                     folder_path=folder_path,

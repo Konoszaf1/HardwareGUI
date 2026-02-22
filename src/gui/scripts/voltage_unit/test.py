@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.widgets.live_plot_widget import LivePlotWidget
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Styles
 from src.gui.utils.widget_factories import create_test_card
@@ -108,6 +109,16 @@ class VUTestPage(BaseHardwarePage):
         cards_layout.addStretch()
         main_layout.addWidget(cards_widget)
 
+        # ==== Live Plot ====
+        plot_box = self._create_group_box("Test Results", min_height=250, expanding=True)
+        plot_layout = QVBoxLayout(plot_box)
+        plot_layout.setContentsMargins(12, 18, 12, 12)
+        self.plot_widget = LivePlotWidget()
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        self.plot_widget.setMinimumHeight(200)
+        plot_layout.addWidget(self.plot_widget)
+        main_layout.addWidget(plot_box)
+
         # Stretch to fill remaining space
         main_layout.addStretch()
 
@@ -136,7 +147,11 @@ class VUTestPage(BaseHardwarePage):
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.test_outputs())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        task = self.service.test_outputs()
+        task.signals.data_chunk.connect(self._on_outputs_data_chunk)
+        self._start_task(task)
 
     def _on_test_ramp(self) -> None:
         """Run voltage ramp test."""
@@ -157,4 +172,16 @@ class VUTestPage(BaseHardwarePage):
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.test_all())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        task = self.service.test_all()
+        task.signals.data_chunk.connect(self._on_outputs_data_chunk)
+        self._start_task(task)
+
+    def _on_outputs_data_chunk(self, data: dict) -> None:
+        """Handle a live output-error data point from test_outputs."""
+        x = data.get("x", 0.0)
+        for ch in ("ch1", "ch2", "ch3"):
+            key = f"y_{ch}"
+            if key in data:
+                self.plot_widget.append_point(ch.upper(), x, data[key])

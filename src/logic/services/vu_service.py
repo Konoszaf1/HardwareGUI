@@ -228,10 +228,14 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def test_outputs(self) -> FunctionTask:
         def job():
-            result = self._controller.test_outputs()
+            def on_point(data: dict) -> None:
+                task.signals.data_chunk.emit(data)
+
+            result = self._controller.test_outputs(on_point_measured=on_point)
             return {"ok": result.ok, "artifacts": self._collect_artifacts()}
 
-        return make_task("test_outputs", job)
+        task = make_task("test_outputs", job)
+        return task
 
     @BaseHardwareService.require_instrument_ip
     def test_ramp(self) -> FunctionTask:
@@ -260,14 +264,24 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def autocal_python(self) -> FunctionTask:
         def job():
-            result = self._controller.auto_calibrate()
+            def on_iteration(data: dict) -> None:
+                task.signals.data_chunk.emit(data)
+
+            def on_point(data: dict) -> None:
+                task.signals.data_chunk.emit(data)
+
+            result = self._controller.auto_calibrate(
+                on_iteration=on_iteration,
+                on_point_measured=on_point,
+            )
             return {
                 "ok": result.ok,
                 "artifacts": self._collect_artifacts(),
                 "coeffs": self.coeffs,
             }
 
-        return make_task("autocal_python", job)
+        task = make_task("autocal_python", job)
+        return task
 
     @BaseHardwareService.require_instrument_ip
     def autocal_onboard(self) -> FunctionTask:

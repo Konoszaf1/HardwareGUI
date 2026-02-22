@@ -285,6 +285,9 @@ class SamplingUnitService(BaseHardwareService):
             folder_path = f"calibration/su_calibration_sn{serial}"
             self._calibration_folder = folder_path
 
+            def on_point(data: dict) -> None:
+                task.signals.data_chunk.emit(data)
+
             result = self._controller.calibration_measure(
                 keithley_ip=self._target_instrument_ip,
                 smu_serial=self._targets.smu_serial or None,
@@ -293,6 +296,7 @@ class SamplingUnitService(BaseHardwareService):
                 su_interface=self._targets.su_interface or None,
                 folder_path=folder_path,
                 verify_calibration=verify_calibration,
+                on_point_measured=on_point,
             )
             return {
                 "ok": result.ok,
@@ -301,7 +305,8 @@ class SamplingUnitService(BaseHardwareService):
                 "artifacts": self._collect_artifacts(),
             }
 
-        return make_task("calibration_measure", job)
+        task = make_task("calibration_measure", job)
+        return task
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True

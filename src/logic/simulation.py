@@ -10,8 +10,11 @@ Usage:
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from pathlib import Path
+
+import numpy as np
 
 from src.logging_config import get_logger
 from src.logic.qt_workers import FunctionTask, make_task
@@ -233,14 +236,32 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
         return self._sim_task("guard_ground", 0.2, result={"guard": "ground"})
 
     def test_outputs(self) -> FunctionTask:
-        def body():
-            print("Testing outputs at: -0.75V, -0.5V, -0.25V, 0V, 0.25V, 0.5V, 0.75V")
-            for v in [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]:
-                print(f"  Applied {v}V - Channel 1: OK, Channel 2: OK, Channel 3: OK")
+        def job():
+            self._simulate_work("test_outputs", 0.3)
+            voltages = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]
+            print("Testing outputs at: " + ", ".join(f"{v}V" for v in voltages))
+            for v in voltages:
+                e1 = float(np.random.normal(0, 0.001))
+                e2 = float(np.random.normal(0, 0.0015))
+                e3 = float(np.random.normal(0, 0.0008))
+                print(
+                    f"  Applied {v}V - CH1 err: {e1 * 1000:.2f}mV,"
+                    f" CH2 err: {e2 * 1000:.2f}mV, CH3 err: {e3 * 1000:.2f}mV"
+                )
+                task.signals.data_chunk.emit(
+                    {
+                        "x": v,
+                        "y_ch1": e1,
+                        "y_ch2": e2,
+                        "y_ch3": e3,
+                    }
+                )
+                time.sleep(0.15)
             artifacts = _artifact_gen.generate_artifacts("vu", ["output.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return self._sim_task("test_outputs", 1.0, body=body)
+        task = make_task("test_outputs", job)
+        return task
 
     def test_ramp(self) -> FunctionTask:
         def body():
@@ -264,26 +285,87 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
         return self._sim_task("test_transient", 1.0, body=body)
 
     def test_all(self) -> FunctionTask:
-        def body():
-            print("Running full test suite...")
+        def job():
+            self._simulate_work("test_all", 0.3)
+
+            # Outputs test phase — emit per-setpoint data
+            voltages = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]
+            print("Running outputs test...")
+            for v in voltages:
+                e1 = float(np.random.normal(0, 0.001))
+                e2 = float(np.random.normal(0, 0.0015))
+                e3 = float(np.random.normal(0, 0.0008))
+                print(
+                    f"  {v}V -> CH1: {e1 * 1000:.2f}mV, CH2: {e2 * 1000:.2f}mV, CH3: {e3 * 1000:.2f}mV"
+                )
+                task.signals.data_chunk.emit(
+                    {
+                        "x": v,
+                        "y_ch1": e1,
+                        "y_ch2": e2,
+                        "y_ch3": e3,
+                    }
+                )
+                time.sleep(0.1)
+
+            # Ramp and transient phases
+            self._simulate_work("test_ramp", 0.5)
+            self._simulate_work("test_transient", 0.5)
+
             artifacts = _artifact_gen.generate_artifacts(
                 "vu", ["output.png", "ramp.png", "transient.png"]
             )
             return {"ok": True, "artifacts": artifacts}
 
-        return self._sim_task("test_all", 3.0, body=body)
+        task = make_task("test_all", job)
+        return task
 
     def autocal_python(self) -> FunctionTask:
-        def body():
+        def job():
+            self._simulate_work("autocal_python", 0.3)
             print("Running Python auto-calibration...")
-            for i in range(5):
-                print(f"  Iteration {i + 1}: offset error < 2mV")
+            voltages = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]
+
+            for iteration in range(5):
+                print(f"\n  Iteration {iteration}: ramp test...")
+                time.sleep(0.2)
+
+                # test_outputs phase — emit per-setpoint errors (decreasing with iterations)
+                scale = max(0.1, 1.0 - iteration * 0.25)
+                print(f"  Iteration {iteration}: outputs test...")
+                for v in voltages:
+                    e1 = float(np.random.normal(0, 0.002 * scale))
+                    e2 = float(np.random.normal(0, 0.0025 * scale))
+                    e3 = float(np.random.normal(0, 0.0015 * scale))
+                    task.signals.data_chunk.emit(
+                        {
+                            "x": v,
+                            "y_ch1": e1,
+                            "y_ch2": e2,
+                            "y_ch3": e3,
+                        }
+                    )
+                    time.sleep(0.05)
+
+                converged = iteration >= 3
+                task.signals.data_chunk.emit(
+                    {
+                        "iteration": iteration,
+                        "converged": converged,
+                        "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                    }
+                )
+                print(f"  Iteration {iteration}: {'converged' if converged else 'continuing'}")
+                if converged:
+                    break
+
             artifacts = _artifact_gen.generate_artifacts(
                 "vu", ["output.png", "ramp.png", "transient.png"]
             )
             return {"ok": True, "artifacts": artifacts, "coeffs": self._coeffs}
 
-        return self._sim_task("autocal_python", 2.0, body=body)
+        task = make_task("autocal_python", job)
+        return task
 
     def autocal_onboard(self) -> FunctionTask:
         def body():
@@ -354,12 +436,34 @@ class SimulatedSMUService(SimulatedServiceBase):
     def run_calibration_measure(
         self, vsmu_mode: bool | None = None, verify_calibration: bool = False
     ) -> FunctionTask:
-        def body():
-            print("Measuring calibration data...")
+        def job():
+            self._simulate_work("calibration_measure", 0.3)
+            label = "verify" if verify_calibration else "measure"
+            print(f"Measuring SMU calibration data ({label})...")
+
+            # Simulate 4 IV-converter channels with current sweeps
+            channels = ["IV1", "IV2", "PA1", "PA2"]
+            for ch in channels:
+                currents = np.linspace(-1e-3, 1e-3, 12)
+                print(f"  Channel {ch}: {len(currents)} points")
+                for i_set in currents:
+                    i_ref = float(i_set)
+                    i_meas = float(i_ref * 1.001 + 2e-6 + np.random.normal(0, 5e-6))
+                    task.signals.data_chunk.emit(
+                        {
+                            "series": ch,
+                            "x": i_ref,
+                            "y": i_meas,
+                            "i_set": float(i_set),
+                        }
+                    )
+                    time.sleep(0.03)
+
             artifacts = _artifact_gen.generate_artifacts("smu", ["calibration.png"])
             return {"ok": True, "folder": "calibration/smu_1", "artifacts": artifacts}
 
-        return self._sim_task("calibration_measure", 2.0, body=body)
+        task = make_task("calibration_measure", job)
+        return task
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True
@@ -486,12 +590,37 @@ class SimulatedSUService(SimulatedServiceBase):
         return self._sim_task("verify", 0.5)
 
     def run_calibration_measure(self, verify_calibration: bool = False) -> FunctionTask:
-        def body():
-            print("Measuring calibration data...")
+        def job():
+            self._simulate_work("calibration_measure", 0.3)
+            label = "verify" if verify_calibration else "measure"
+            print(f"Measuring calibration data ({label})...")
+
+            amp_channels = ["AMP01", "AMP1", "AMP2"]
+            gains = [10.0, 1.0, 0.1]
+
+            for ch, gain in zip(amp_channels, gains):
+                max_v = 6.5 if ch != "AMP2" else 2.0
+                voltages = np.linspace(-max_v, max_v, 15)
+                print(f"  Channel {ch} (gain={gain}): {len(voltages)} points")
+                for v_set in voltages:
+                    v_ref = float(v_set / gain)
+                    # Simulated measurement: v_meas = v_ref * (1 + small_error) + offset + noise
+                    v_meas = float(v_ref * 1.002 + 0.005 + np.random.normal(0, 0.003))
+                    task.signals.data_chunk.emit(
+                        {
+                            "series": ch,
+                            "x": v_ref,
+                            "y": v_meas,
+                            "v_set": float(v_set),
+                        }
+                    )
+                    time.sleep(0.04)
+
             artifacts = _artifact_gen.generate_artifacts("su", ["calibration.png"])
             return {"ok": True, "folder": "calibration/su_1", "artifacts": artifacts}
 
-        return self._sim_task("calibration_measure", 2.0, body=body)
+        task = make_task("calibration_measure", job)
+        return task
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True

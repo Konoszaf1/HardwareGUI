@@ -39,6 +39,7 @@ class TaskSignals(QObject):
     log = Signal(str)
     progress = Signal(float, str)
     artifact = Signal(str)
+    data_chunk = Signal(dict)
     finished = Signal(object)
     error = Signal(str)
 

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.widgets.live_plot_widget import LivePlotWidget
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.vu_service import VoltageUnitService
 
@@ -90,6 +91,20 @@ class VUCalibrationPage(BaseHardwarePage):
 
         main_layout.addWidget(top_widget)
 
+        # ==== Live Plot ====
+        plot_box = self._create_group_box(
+            "Calibration Progress",
+            min_height=250,
+            expanding=True,
+        )
+        plot_layout = QVBoxLayout(plot_box)
+        plot_layout.setContentsMargins(12, 18, 12, 12)
+        self.plot_widget = LivePlotWidget()
+        self.plot_widget.set_labels("Output Error per Iteration", "Voltage / V", "Error / V")
+        self.plot_widget.setMinimumHeight(200)
+        plot_layout.addWidget(self.plot_widget)
+        main_layout.addWidget(plot_box)
+
         # Stretch to fill remaining space
         main_layout.addStretch()
 
@@ -116,7 +131,11 @@ class VUCalibrationPage(BaseHardwarePage):
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.autocal_python())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Output Error per Iteration", "Voltage / V", "Error / V")
+        task = self.service.autocal_python()
+        task.signals.data_chunk.connect(self._on_autocal_data_chunk)
+        self._start_task(task)
 
     def _on_autocal_onboard(self) -> None:
         """Run onboard (firmware) autocalibration."""
@@ -130,4 +149,29 @@ class VUCalibrationPage(BaseHardwarePage):
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.test_all())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        task = self.service.test_all()
+        task.signals.data_chunk.connect(self._on_autocal_data_chunk)
+        self._start_task(task)
+
+    def _on_autocal_data_chunk(self, data: dict) -> None:
+        """Handle live data chunks from auto-calibration.
+
+        Processes both per-setpoint output errors (from test_outputs) and
+        per-iteration convergence data (from auto_calibrate).
+        """
+        if "iteration" in data:
+            # Iteration convergence point -- log only (plot shows per-setpoint)
+            it = data["iteration"]
+            converged = data.get("converged", False)
+            status = "converged" if converged else "in progress"
+            self._log(f"Iteration {it}: {status}")
+            return
+
+        # Per-setpoint output error (from test_outputs within auto_calibrate)
+        x = data.get("x", 0.0)
+        for ch in ("ch1", "ch2", "ch3"):
+            key = f"y_{ch}"
+            if key in data:
+                self.plot_widget.append_point(ch.upper(), x, data[key])

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.widgets.live_plot_widget import LivePlotWidget
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.su_service import SamplingUnitService
 
@@ -124,11 +125,10 @@ class SUCalibrationPage(BaseHardwarePage):
         plot_layout = QVBoxLayout(plot_box)
         plot_layout.setContentsMargins(12, 18, 12, 12)
 
-        self.lbl_plot = QLabel("Calibration plot will appear here")
-        self.lbl_plot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_plot.setMinimumHeight(200)
-        self.lbl_plot.setStyleSheet("background-color: #2a2a2a; border: 1px solid #444;")
-        plot_layout.addWidget(self.lbl_plot)
+        self.plot_widget = LivePlotWidget()
+        self.plot_widget.set_labels("Calibration", "V_ref / V", "V_meas / V")
+        self.plot_widget.setMinimumHeight(200)
+        plot_layout.addWidget(self.plot_widget)
 
         main_layout.addWidget(plot_box)
 
@@ -178,5 +178,15 @@ class SUCalibrationPage(BaseHardwarePage):
 
         points = int(self.sp_verify_points.value())
         self._log(f"Verifying calibration with {points} points...")
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Calibration Verify", "V_ref / V", "V_meas / V")
         task = self.service.run_calibration_verify(num_points=points)
+        task.signals.data_chunk.connect(self._on_cal_data_chunk)
         self._start_task(task)
+
+    def _on_cal_data_chunk(self, data: dict) -> None:
+        """Handle a live calibration data point."""
+        series = data.get("series", "data")
+        x = data.get("x", 0.0)
+        y = data.get("y", 0.0)
+        self.plot_widget.append_point(series, x, y)

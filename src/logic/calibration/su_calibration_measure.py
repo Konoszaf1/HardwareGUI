@@ -106,7 +106,13 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
 
         return timestamps, voltagesamples
 
-    def measure_single_range(self, amp_channel, voltage_values, progress_bar=None):
+    def measure_single_range(
+        self,
+        amp_channel,
+        voltage_values,
+        progress_bar=None,
+        on_point_measured=None,
+    ):
         """Perform a measurement for a single measurement range.
 
         Parameters
@@ -117,6 +123,10 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             List of voltage values, relative to current and pa range.
         progress_bar : tqdm.tqdm or None, optional
             An optional tqdm progress bar object.
+        on_point_measured : callable or None, optional
+            Called after each measurement point with a dict containing
+            ``series``, ``x`` (reference voltage), ``y`` (mean measured),
+            and ``v_set``.
         """
         own_bar = False
 
@@ -177,11 +187,21 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             df.attrs["v_ref"] = reference_voltage
             df.attrs["amp_channel"] = amp_channel
             df.attrs["amp_range"] = amprange
-            df.attrs["name"] = f'amp={df.attrs["amp_channel"]} v_set={df.attrs["v_set"]:.3e}'
+            df.attrs["name"] = f"amp={df.attrs['amp_channel']} v_set={df.attrs['v_set']:.3e}"
             df.attrs["temperature_smu"] = self.smu.get_temperature()
             df.attrs["temperature_su"] = self.su.getTemperature()
 
             self.data.append(df)
+
+            if on_point_measured is not None:
+                on_point_measured(
+                    {
+                        "series": amp_channel,
+                        "x": float(reference_voltage),
+                        "y": float(np.mean(samples)),
+                        "v_set": float(meas_voltage),
+                    }
+                )
 
             progress_bar.update(1)
 
@@ -190,8 +210,18 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             progress_bar.n = progress_bar.total
             progress_bar.close()
 
-    def measure_all_ranges(self, voltage_values, progress_bar=None):
-        """Measure all amplifier ranges."""
+    def measure_all_ranges(self, voltage_values, progress_bar=None, on_point_measured=None):
+        """Measure all amplifier ranges.
+
+        Parameters
+        ----------
+        voltage_values : list
+            Voltage setpoints to sweep.
+        progress_bar : tqdm.tqdm or None, optional
+            Shared progress bar instance.
+        on_point_measured : callable or None, optional
+            Forwarded to :meth:`measure_single_range`.
+        """
         own_bar = False
 
         # Create progress bar
@@ -203,7 +233,12 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
         # Measure calibration values
         for amp_channel in self.ampchannels:
             progress_bar.set_description(f"AMP: {amp_channel}, VL: {len(voltage_values)}")
-            self.measure_single_range(amp_channel, voltage_values, progress_bar)
+            self.measure_single_range(
+                amp_channel,
+                voltage_values,
+                progress_bar,
+                on_point_measured,
+            )
 
         # Close progress bar
         if own_bar:

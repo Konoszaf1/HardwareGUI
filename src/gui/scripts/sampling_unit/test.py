@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
+from src.gui.widgets.live_plot_widget import LivePlotWidget
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.su_service import SamplingUnitService
 
@@ -173,12 +174,11 @@ class SUTestPage(BaseHardwarePage):
         trans_params.addStretch()
         transient_layout.addLayout(trans_params)
 
-        # Plot placeholder
-        self.lbl_trans_plot = QLabel("Plot Measurement")
-        self.lbl_trans_plot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_trans_plot.setMinimumHeight(100)
-        self.lbl_trans_plot.setStyleSheet("background-color: #2a2a2a; border: 1px solid #444;")
-        transient_layout.addWidget(self.lbl_trans_plot)
+        # Plot widget
+        self.plot_transient = LivePlotWidget()
+        self.plot_transient.set_labels("Transient", "Time / s", "Voltage / V")
+        self.plot_transient.setMinimumHeight(100)
+        transient_layout.addWidget(self.plot_transient)
 
         # Results table
         self.tbl_transient = QTableWidget()
@@ -221,12 +221,11 @@ class SUTestPage(BaseHardwarePage):
         pulse_params.addStretch()
         pulse_layout.addLayout(pulse_params)
 
-        # Plot placeholder
-        self.lbl_pulse_plot = QLabel("Plot Measure")
-        self.lbl_pulse_plot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_pulse_plot.setMinimumHeight(100)
-        self.lbl_pulse_plot.setStyleSheet("background-color: #2a2a2a; border: 1px solid #444;")
-        pulse_layout.addWidget(self.lbl_pulse_plot)
+        # Plot widget
+        self.plot_pulse = LivePlotWidget()
+        self.plot_pulse.set_labels("Pulse", "Time / s", "Voltage / V")
+        self.plot_pulse.setMinimumHeight(100)
+        pulse_layout.addWidget(self.plot_pulse)
 
         # Results table
         self.tbl_pulse = QTableWidget()
@@ -289,11 +288,22 @@ class SUTestPage(BaseHardwarePage):
         time_s = self.sp_trans_time.value()
         rate_us = self.sp_trans_rate.value()
 
+        self.plot_transient.clear()
+        self.plot_transient.set_labels("Transient", "Time / s", "Voltage / V")
+
+        def on_complete(result):
+            if result and result.data:
+                t = result.data.get("time")
+                v = result.data.get("values")
+                if t is not None and v is not None:
+                    self.plot_transient.plot_batch(t, v, "transient")
+
         self._log(f"Running transient: time={time_s}s, rate={rate_us}µs")
         task = self.service.run_transient_measure(
             measurement_time=time_s,
             sampling_rate=rate_us * 1e-6,
         )
+        task.signals.finished.connect(on_complete)
         self._start_task(task)
 
     def _on_pulse(self) -> None:
@@ -305,9 +315,20 @@ class SUTestPage(BaseHardwarePage):
         samples = self.sp_pulse_samples.value()
         rate_mhz = self.sp_pulse_rate.value()
 
+        self.plot_pulse.clear()
+        self.plot_pulse.set_labels("Pulse", "Time / s", "Voltage / V")
+
+        def on_complete(result):
+            if result and result.data:
+                t = result.data.get("time")
+                v = result.data.get("values")
+                if t is not None and v is not None:
+                    self.plot_pulse.plot_batch(t, v, "pulse")
+
         self._log(f"Running pulse: samples={samples}, rate={rate_mhz}MHz")
         task = self.service.run_pulse_measure(
             num_samples=samples,
             sampling_rate=rate_mhz * 1e6,
         )
+        task.signals.finished.connect(on_complete)
         self._start_task(task)

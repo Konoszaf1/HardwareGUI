@@ -7,6 +7,7 @@ the legacy setup_cal.py script into a structured controller.
 
 import os
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -259,11 +260,19 @@ class VUController(HardwareController):
     # Test Operations
     # =========================================================================
 
-    def test_outputs(self) -> OperationResult:
+    def test_outputs(
+        self,
+        on_point_measured: Callable[[dict], None] | None = None,
+    ) -> OperationResult:
         """Test output voltage accuracy across multiple setpoints.
 
         Measures scope channels at multiple voltages, computes error, adjusts
         offset coefficient, and saves a plot.
+
+        Args:
+            on_point_measured: Optional callback invoked after each voltage
+                setpoint with a dict containing ``x``, ``y_ch1``, ``y_ch2``,
+                ``y_ch3`` (error values in volts).
 
         Returns:
             OperationResult with ok status and artifacts list.
@@ -333,6 +342,16 @@ class VUController(HardwareController):
                         )
                     errors[channel - 1].append(corrected)
                     time.sleep(0.01)
+
+                if on_point_measured is not None:
+                    on_point_measured(
+                        {
+                            "x": voltage,
+                            "y_ch1": errors[0][-1],
+                            "y_ch2": errors[1][-1],
+                            "y_ch3": errors[2][-1],
+                        }
+                    )
 
             # Check offset errors and adjust coefficients
             all_ok = True
@@ -730,12 +749,22 @@ class VUController(HardwareController):
     # Python Auto-Calibration (iterative)
     # =========================================================================
 
-    def auto_calibrate(self) -> OperationResult:
+    def auto_calibrate(
+        self,
+        on_iteration: Callable[[dict], None] | None = None,
+        on_point_measured: Callable[[dict], None] | None = None,
+    ) -> OperationResult:
         """Run iterative Python-based autocalibration.
 
         Mirrors the legacy auto_calibrate() function. Alternates between
         test_ramp and test_outputs for up to 10 iterations, adjusting
         coefficients until convergence.
+
+        Args:
+            on_iteration: Optional callback invoked after each iteration with
+                a dict containing ``iteration``, ``converged``, and ``coeffs``.
+            on_point_measured: Optional callback forwarded to
+                :meth:`test_outputs` for per-setpoint live data.
 
         Returns:
             OperationResult with ok status, coefficients, and artifacts.
@@ -748,8 +777,20 @@ class VUController(HardwareController):
                 logger.info(f"\nCalibration iteration: {iteration}")
                 calibration_finished = self.test_ramp().ok
                 self.write_coefficients()
-                calibration_finished = self.test_outputs().ok and calibration_finished
+                calibration_finished = (
+                    self.test_outputs(on_point_measured=on_point_measured).ok
+                    and calibration_finished
+                )
                 self.write_coefficients()
+
+                if on_iteration is not None:
+                    on_iteration(
+                        {
+                            "iteration": iteration,
+                            "converged": calibration_finished,
+                            "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                        }
+                    )
 
                 if calibration_finished:
                     logger.info(f"\nCalibration finished at Iteration {iteration}")
