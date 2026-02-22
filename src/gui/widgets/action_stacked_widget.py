@@ -23,9 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import config
-from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.styles import Colors
 from src.gui.utils.animation import animate_value
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -229,10 +229,10 @@ class ContentWithPanels(QWidget):
 
         # Track panels in stacks
         self._console_map: dict[int, int] = {
-            id(shared_panels): self._console_stack.addWidget(shared_panels._console_panel)
+            id(shared_panels): self._console_stack.addWidget(shared_panels.console_panel)
         }
         self._artifacts_map: dict[int, int] = {
-            id(shared_panels): self._artifacts_stack.addWidget(shared_panels._artifacts_panel)
+            id(shared_panels): self._artifacts_stack.addWidget(shared_panels.artifacts_panel)
         }
 
         # Set initial stack indices
@@ -424,10 +424,10 @@ class ContentWithPanels(QWidget):
         # Add to stacks if not already there
         panel_id = id(new_panels)
         if panel_id not in self._console_map:
-            self._console_map[panel_id] = self._console_stack.addWidget(new_panels._console_panel)
+            self._console_map[panel_id] = self._console_stack.addWidget(new_panels.console_panel)
         if panel_id not in self._artifacts_map:
             self._artifacts_map[panel_id] = self._artifacts_stack.addWidget(
-                new_panels._artifacts_panel
+                new_panels.artifacts_panel
             )
 
         # Switch stack indices

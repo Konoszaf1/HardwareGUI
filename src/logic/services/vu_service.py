@@ -147,20 +147,10 @@ class VoltageUnitService(BaseHardwareService):
         logger.info("VU connected: serial=%s", vu_serial)
         self.connectedChanged.emit(True)
 
-    @property
-    def artifact_dir(self) -> str:
-        """Return the absolute path to the calibration artifact directory."""
-        serial = self._vu.get_serial() if self._vu else 0
-        return self._artifact_manager.get_artifact_dir(f"calibration_vu{serial}")
-
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        return self.artifact_dir
-
-    def _collect_artifacts(self) -> list[str]:
-        """Collect all artifact files for the current voltage unit."""
         serial = self._vu.get_serial() if self._vu else 0
-        return self._artifact_manager.collect_artifacts(f"calibration_vu{serial}")
+        return f"calibration_vu{serial}"
 
     # ---- Public operations (threaded) ----
     def connect_only(self) -> FunctionTask:

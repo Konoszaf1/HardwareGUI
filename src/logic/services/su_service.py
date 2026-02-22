@@ -111,24 +111,10 @@ class SamplingUnitService(BaseHardwareService):
         logger.info("SU connected: serial=%s", self._su.getSerial())
         self.connectedChanged.emit(True)
 
-    @property
-    def artifact_dir(self) -> str:
-        """Return the absolute path to the calibration artifact directory."""
-        serial = self._su.getSerial() if self._su else 0
-        return self._artifact_manager.get_artifact_dir(
-            f"calibration/su_calibration_sn{serial}"
-        )
-
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        return self.artifact_dir
-
-    def _collect_artifacts(self) -> list[str]:
-        """Collect all artifact files for the current SU."""
         serial = self._su.getSerial() if self._su else 0
-        return self._artifact_manager.collect_artifacts(
-            f"calibration/su_calibration_sn{serial}"
-        )
+        return f"calibration/su_calibration_sn{serial}"
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(

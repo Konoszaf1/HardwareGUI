@@ -350,6 +350,11 @@ class SharedPanelsWidget(QWidget):
         return self._artifacts_panel
 
     @property
+    def console_panel(self) -> HorizontalCollapsiblePanel:
+        """Return the console panel instance."""
+        return self._console_panel
+
+    @property
     def console(self) -> QPlainTextEdit:
         """Return the console widget.
 

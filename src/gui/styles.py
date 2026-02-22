@@ -152,44 +152,43 @@ class Styles:
     SCOPE_CONNECTED = f"color: {Colors.STATUS_CONNECTED}; padding: 0 8px;"
     SCOPE_DISCONNECTED = f"color: {Colors.STATUS_DISCONNECTED}; padding: 0 8px;"
 
-    # Menu bar (matching qt-material dark_blue theme)
-    # Theme colors: primary=#448aff, secondary=#232629, secondaryLight=#4f5b62
-    MENU_BAR = """
-        QMenuBar {
+    # Menu bar (unified with application palette)
+    MENU_BAR = f"""
+        QMenuBar {{
             background-color: transparent;
-            color: #ffffff;
+            color: {Colors.TEXT_PRIMARY};
             border: none;
             padding: 0;
-        }
-        QMenuBar::item {
+        }}
+        QMenuBar::item {{
             background-color: transparent;
             padding: 8px 12px;
             border-radius: 4px;
-        }
-        QMenuBar::item:selected {
-            background-color: #4f5b62;
-        }
-        QMenuBar::item:!selected {
+        }}
+        QMenuBar::item:selected {{
+            background-color: {Colors.BORDER_VISIBLE};
+        }}
+        QMenuBar::item:!selected {{
             background-color: transparent;
-        }
-        QMenu {
-            background-color: #31363b;
-            color: #ffffff;
-            border: 1px solid #4f5b62;
+        }}
+        QMenu {{
+            background-color: {Colors.BG_ELEVATED};
+            color: {Colors.TEXT_PRIMARY};
+            border: 1px solid {Colors.BORDER_VISIBLE};
             padding: 4px;
-        }
-        QMenu::item {
+        }}
+        QMenu::item {{
             padding: 6px 24px;
             border-radius: 4px;
-        }
-        QMenu::item:selected {
-            background-color: #448aff;
-        }
-        QMenu::separator {
+        }}
+        QMenu::item:selected {{
+            background-color: {Colors.ACCENT};
+        }}
+        QMenu::separator {{
             height: 1px;
-            background-color: #4f5b62;
+            background-color: {Colors.BORDER_VISIBLE};
             margin: 4px 8px;
-        }
+        }}
     """
 
     # Title bar (contains menu bar and window buttons)

@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from src.logging_config import get_logger
@@ -17,6 +18,15 @@ from src.logic.qt_workers import FunctionTask, make_task
 from src.logic.services.base_service import BaseHardwareService
 
 logger = get_logger(__name__)
+
+# =============================================================================
+# NOTE ON print() USAGE
+# =============================================================================
+# Simulation methods intentionally use print() instead of logger.* because
+# FunctionTask.run() captures stdout via contextlib.redirect_stdout and
+# routes it to the GUI console panel. Using logger.* would bypass this
+# capture mechanism and the output would not appear in the GUI.
+# =============================================================================
 
 # =============================================================================
 # SIMULATION ARTIFACT GENERATOR
@@ -105,12 +115,55 @@ class SimulationArtifactGenerator:
 _artifact_gen = SimulationArtifactGenerator()
 
 
+class SimulatedServiceBase(BaseHardwareService):
+    """Base class for simulated hardware services.
+
+    Provides common simulation infrastructure: no-op connections,
+    simulated ping, and a helper to create simulated FunctionTasks.
+    """
+
+    def _ensure_connected(self) -> None:
+        """No-op — simulation doesn't use real hardware."""
+        pass
+
+    def ping_instrument(self) -> bool:
+        """Simulate successful instrument ping."""
+        logger.info("[SIMULATION] Ping instrument - SUCCESS")
+        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
+        self.set_instrument_verified(True)
+        return True
+
+    def _sim_task(
+        self,
+        name: str,
+        duration: float = 0.5,
+        result: dict | None = None,
+        body: Callable[[], dict] | None = None,
+    ) -> FunctionTask:
+        """Create a FunctionTask with simulated delay and console output.
+
+        Args:
+            name: Human-readable task name.
+            duration: Simulated delay in seconds.
+            result: Static result dict (used if body is None).
+            body: Optional callable that runs after _simulate_work and returns a dict.
+        """
+
+        def job():
+            self._simulate_work(name, duration)
+            if body is not None:
+                return body()
+            return result or {"ok": True}
+
+        return make_task(name, job)
+
+
 # =============================================================================
 # SIMULATED VOLTAGE UNIT SERVICE
 # =============================================================================
 
 
-class SimulatedVoltageUnitService(BaseHardwareService):
+class SimulatedVoltageUnitService(SimulatedServiceBase):
     """Simulated VoltageUnitService that produces fake output without hardware.
 
     Overrides all public operations to print simulated console output
@@ -138,16 +191,6 @@ class SimulatedVoltageUnitService(BaseHardwareService):
         self._target_instrument_ip = scope_ip
         logger.info("[SIMULATION] VU targets set: scope=%s, vu=%s", scope_ip, vu_serial)
 
-    def ping_instrument(self) -> bool:
-        """Simulate successful ping."""
-        logger.info("[SIMULATION] Ping instrument - SUCCESS")
-        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
-        self.set_instrument_verified(True)
-        return True
-
-    def _ensure_connected(self) -> None:
-        pass  # No real hardware in simulation
-
     @property
     def coeffs(self) -> dict[str, list[float]]:
         return self._coeffs
@@ -158,66 +201,49 @@ class SimulatedVoltageUnitService(BaseHardwareService):
 
     # ---- Simulated operations ----
     def connect_and_read(self) -> FunctionTask:
-        def job():
-            self._simulate_work("connect_and_read", 0.3)
+        def body():
             self._connected = True
             self.connectedChanged.emit(True)
             print(f"Coefficients: {self._coeffs}")
             return {"coeffs": self._coeffs}
 
-        return make_task("connect_and_read", job)
+        return self._sim_task("connect_and_read", 0.3, body=body)
 
     def read_coefficients(self) -> FunctionTask:
-        def job():
-            self._simulate_work("read_coefficients", 0.2)
-            return {"coeffs": self._coeffs}
-
-        return make_task("read_coefficients", job)
+        return self._sim_task("read_coefficients", 0.2, result={"coeffs": self._coeffs})
 
     def reset_coefficients_ram(self) -> FunctionTask:
-        def job():
-            self._simulate_work("reset_coefficients_ram", 0.3)
+        def body():
             self._coeffs = {"CH1": [1.0, 0.0], "CH2": [1.0, 0.0], "CH3": [1.0, 0.0]}
             return {"coeffs": self._coeffs}
 
-        return make_task("reset_coefficients_ram", job)
+        return self._sim_task("reset_coefficients_ram", 0.3, body=body)
 
     def write_coefficients_eeprom(self) -> FunctionTask:
-        def job():
-            self._simulate_work("write_coefficients_eeprom", 0.5)
+        def body():
             print("Writing to EEPROM... Done")
             return {"coeffs": self._coeffs}
 
-        return make_task("write_coefficients_eeprom", job)
+        return self._sim_task("write_coefficients_eeprom", 0.5, body=body)
 
     def set_guard_signal(self) -> FunctionTask:
-        def job():
-            self._simulate_work("guard_signal", 0.2)
-            return {"guard": "signal"}
-
-        return make_task("guard_signal", job)
+        return self._sim_task("guard_signal", 0.2, result={"guard": "signal"})
 
     def set_guard_ground(self) -> FunctionTask:
-        def job():
-            self._simulate_work("guard_ground", 0.2)
-            return {"guard": "ground"}
-
-        return make_task("guard_ground", job)
+        return self._sim_task("guard_ground", 0.2, result={"guard": "ground"})
 
     def test_outputs(self) -> FunctionTask:
-        def job():
-            self._simulate_work("test_outputs", 1.0)
+        def body():
             print("Testing outputs at: -0.75V, -0.5V, -0.25V, 0V, 0.25V, 0.5V, 0.75V")
             for v in [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]:
                 print(f"  Applied {v}V - Channel 1: OK, Channel 2: OK, Channel 3: OK")
             artifacts = _artifact_gen.generate_artifacts("vu", ["output.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("test_outputs", job)
+        return self._sim_task("test_outputs", 1.0, body=body)
 
     def test_ramp(self) -> FunctionTask:
-        def job():
-            self._simulate_work("test_ramp", 1.5)
+        def body():
             print("Generating ramp signal...")
             print("  Channel 1: slope=20.0V/s, error=0.05%")
             print("  Channel 2: slope=-20.0V/s, error=0.08%")
@@ -225,33 +251,30 @@ class SimulatedVoltageUnitService(BaseHardwareService):
             artifacts = _artifact_gen.generate_artifacts("vu", ["ramp.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("test_ramp", job)
+        return self._sim_task("test_ramp", 1.5, body=body)
 
     def test_transient(self) -> FunctionTask:
-        def job():
-            self._simulate_work("test_transient", 1.0)
+        def body():
             print("Generating transient signal...")
             print("  Stress time: 10.0us, Recovery time: 10.0us")
             print("  Overshoot: 2.5%")
             artifacts = _artifact_gen.generate_artifacts("vu", ["transient.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("test_transient", job)
+        return self._sim_task("test_transient", 1.0, body=body)
 
     def test_all(self) -> FunctionTask:
-        def job():
-            self._simulate_work("test_all", 3.0)
+        def body():
             print("Running full test suite...")
             artifacts = _artifact_gen.generate_artifacts(
                 "vu", ["output.png", "ramp.png", "transient.png"]
             )
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("test_all", job)
+        return self._sim_task("test_all", 3.0, body=body)
 
     def autocal_python(self) -> FunctionTask:
-        def job():
-            self._simulate_work("autocal_python", 2.0)
+        def body():
             print("Running Python auto-calibration...")
             for i in range(5):
                 print(f"  Iteration {i + 1}: offset error < 2mV")
@@ -260,25 +283,23 @@ class SimulatedVoltageUnitService(BaseHardwareService):
             )
             return {"ok": True, "artifacts": artifacts, "coeffs": self._coeffs}
 
-        return make_task("autocal_python", job)
+        return self._sim_task("autocal_python", 2.0, body=body)
 
     def autocal_onboard(self) -> FunctionTask:
-        def job():
-            self._simulate_work("autocal_onboard", 2.0)
+        def body():
             print("Running onboard auto-calibration...")
             artifacts = _artifact_gen.generate_artifacts("vu", ["output.png"])
             return {"ok": True, "coeffs": self._coeffs, "artifacts": artifacts}
 
-        return make_task("autocal_onboard", job)
+        return self._sim_task("autocal_onboard", 2.0, body=body)
 
     def connect_only(self) -> FunctionTask:
-        def job():
-            self._simulate_work("connect", 0.3)
+        def body():
             self._connected = True
             self.connectedChanged.emit(True)
             return {"serial": 0, "ok": True}
 
-        return make_task("connect", job)
+        return self._sim_task("connect", 0.3, body=body)
 
 
 # =============================================================================
@@ -286,7 +307,7 @@ class SimulatedVoltageUnitService(BaseHardwareService):
 # =============================================================================
 
 
-class SimulatedSMUService(BaseHardwareService):
+class SimulatedSMUService(SimulatedServiceBase):
     """Simulated SourceMeasureUnitService.
 
     Mirrors the ``SourceMeasureUnitService`` public API with simulated
@@ -308,15 +329,6 @@ class SimulatedSMUService(BaseHardwareService):
         self._target_instrument_ip = keithley_ip
         logger.info("[SIMULATION] SMU targets set: keithley=%s", keithley_ip)
 
-    def ping_instrument(self) -> bool:
-        logger.info("[SIMULATION] Ping instrument - SUCCESS")
-        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
-        self.set_instrument_verified(True)
-        return True
-
-    def _ensure_connected(self) -> None:
-        pass  # No real hardware in simulation
-
     @property
     def smu_serial(self) -> int:
         return 1
@@ -329,41 +341,35 @@ class SimulatedSMUService(BaseHardwareService):
         self, serial: int, processor_type: str = "746", connector_type: str = "BNC"
     ) -> FunctionTask:
         """Simulate SMU device initialization."""
-        def job():
-            self._simulate_work("hw_setup", 1.0)
+
+        def body():
             print(f"Initializing SMU with serial={serial}")
             return {"serial": serial, "ok": True}
 
-        return make_task("hw_setup", job)
+        return self._sim_task("hw_setup", 1.0, body=body)
 
     def run_verify(self) -> FunctionTask:
-        def job():
-            self._simulate_work("verify", 0.5)
-            return {"ok": True}
-
-        return make_task("verify", job)
+        return self._sim_task("verify", 0.5)
 
     def run_calibration_measure(
         self, vsmu_mode: bool | None = None, verify_calibration: bool = False
     ) -> FunctionTask:
-        def job():
-            self._simulate_work("calibration_measure", 2.0)
+        def body():
             print("Measuring calibration data...")
             artifacts = _artifact_gen.generate_artifacts("smu", ["calibration.png"])
             return {"ok": True, "folder": "calibration/smu_1", "artifacts": artifacts}
 
-        return make_task("calibration_measure", job)
+        return self._sim_task("calibration_measure", 2.0, body=body)
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True
     ) -> FunctionTask:
-        def job():
-            self._simulate_work("calibration_fit", 1.5)
+        def body():
             print("Fitting calibration model...")
             artifacts = _artifact_gen.generate_artifacts("smu", ["fit_results.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("calibration_fit", job)
+        return self._sim_task("calibration_fit", 1.5, body=body)
 
     def run_measure(self, channel: str = "CH1") -> FunctionTask:
         return self.run_calibration_measure()
@@ -375,29 +381,29 @@ class SimulatedSMUService(BaseHardwareService):
         return self.run_calibration_measure(verify_calibration=True)
 
     def run_program_relais(self, **kwargs) -> FunctionTask:
-        def job():
-            self._simulate_work("program_relais", 0.5)
+        def body():
             print(f"Programming relais: {kwargs}")
             return {"ok": True}
 
-        return make_task("program_relais", job)
+        return self._sim_task("program_relais", 0.5, body=body)
 
     def run_temperature_read(self) -> FunctionTask:
         """Simulate SMU temperature reading."""
-        def job():
+
+        def body():
             import random
-            self._simulate_work("temperature", 0.3)
+
             temp = round(24.5 + random.uniform(-1.0, 1.0), 2)
             print(f"  SMU Board temperature: {temp} °C")
             print(f"  Status: {'OK' if 20 < temp < 40 else 'WARNING'}")
             return {"ok": True, "temperature": temp}
 
-        return make_task("temperature", job)
+        return self._sim_task("temperature", 0.3, body=body)
 
     def run_save_config(self) -> FunctionTask:
         """Simulate saving channel configuration to EEPROM."""
-        def job():
-            self._simulate_work("save_config", 0.5)
+
+        def body():
             print("  Writing channel configuration to EEPROM...")
             print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
             print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
@@ -406,12 +412,12 @@ class SimulatedSMUService(BaseHardwareService):
             print("  EEPROM write complete.")
             return {"ok": True}
 
-        return make_task("save_config", job)
+        return self._sim_task("save_config", 0.5, body=body)
 
     def run_load_config(self) -> FunctionTask:
         """Simulate loading channel configuration from EEPROM."""
-        def job():
-            self._simulate_work("load_config", 0.4)
+
+        def body():
             print("  Reading channel configuration from EEPROM...")
             print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
             print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
@@ -419,16 +425,15 @@ class SimulatedSMUService(BaseHardwareService):
             print("  CH4: PA, range=1.0, gain=1.0, offset=0.0")
             return {"ok": True, "data": {}}
 
-        return make_task("load_config", job)
+        return self._sim_task("load_config", 0.4, body=body)
 
     def connect_only(self) -> FunctionTask:
-        def job():
-            self._simulate_work("connect", 0.3)
+        def body():
             self._connected = True
             self.connectedChanged.emit(True)
             return {"serial": 1, "ok": True}
 
-        return make_task("connect", job)
+        return self._sim_task("connect", 0.3, body=body)
 
 
 # =============================================================================
@@ -436,7 +441,7 @@ class SimulatedSMUService(BaseHardwareService):
 # =============================================================================
 
 
-class SimulatedSUService(BaseHardwareService):
+class SimulatedSUService(SimulatedServiceBase):
     """Simulated SamplingUnitService.
 
     Mirrors the ``SamplingUnitService`` public API with simulated
@@ -458,15 +463,6 @@ class SimulatedSUService(BaseHardwareService):
         self._target_instrument_ip = keithley_ip
         logger.info("[SIMULATION] SU targets set: keithley=%s", keithley_ip)
 
-    def ping_instrument(self) -> bool:
-        logger.info("[SIMULATION] Ping instrument - SUCCESS")
-        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
-        self.set_instrument_verified(True)
-        return True
-
-    def _ensure_connected(self) -> None:
-        pass  # No real hardware in simulation
-
     @property
     def su_serial(self) -> int:
         return 1
@@ -479,39 +475,33 @@ class SimulatedSUService(BaseHardwareService):
         self, serial: int, processor_type: str = "746", connector_type: str = "BNC"
     ) -> FunctionTask:
         """Simulate SU device initialization."""
-        def job():
-            self._simulate_work("hw_setup", 1.0)
+
+        def body():
             print(f"Initializing SU with serial={serial}")
             return {"serial": serial, "ok": True}
 
-        return make_task("hw_setup", job)
+        return self._sim_task("hw_setup", 1.0, body=body)
 
     def run_verify(self) -> FunctionTask:
-        def job():
-            self._simulate_work("verify", 0.5)
-            return {"ok": True}
-
-        return make_task("verify", job)
+        return self._sim_task("verify", 0.5)
 
     def run_calibration_measure(self, verify_calibration: bool = False) -> FunctionTask:
-        def job():
-            self._simulate_work("calibration_measure", 2.0)
+        def body():
             print("Measuring calibration data...")
             artifacts = _artifact_gen.generate_artifacts("su", ["calibration.png"])
             return {"ok": True, "folder": "calibration/su_1", "artifacts": artifacts}
 
-        return make_task("calibration_measure", job)
+        return self._sim_task("calibration_measure", 2.0, body=body)
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True
     ) -> FunctionTask:
-        def job():
-            self._simulate_work("calibration_fit", 1.5)
+        def body():
             print("Fitting calibration model...")
             artifacts = _artifact_gen.generate_artifacts("su", ["fit_results.png"])
             return {"ok": True, "artifacts": artifacts}
 
-        return make_task("calibration_fit", job)
+        return self._sim_task("calibration_fit", 1.5, body=body)
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
         return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
@@ -521,23 +511,23 @@ class SimulatedSUService(BaseHardwareService):
 
     def run_temperature_read(self) -> FunctionTask:
         """Simulate SU temperature reading."""
-        def job():
+
+        def body():
             import random
-            self._simulate_work("temperature", 0.3)
+
             temp = round(25.0 + random.uniform(-1.5, 1.5), 2)
             print(f"  SU Board temperature: {temp} °C")
             print(f"  Status: {'OK' if 20 < temp < 40 else 'WARNING'}")
             return {"ok": True, "temperature": temp}
 
-        return make_task("temperature", job)
+        return self._sim_task("temperature", 0.3, body=body)
 
-    def run_single_shot(
-        self, dac_voltage: float = 0.0, source: str = "VCAL"
-    ) -> FunctionTask:
+    def run_single_shot(self, dac_voltage: float = 0.0, source: str = "VCAL") -> FunctionTask:
         """Simulate SU single-shot voltage measurement."""
-        def job():
+
+        def body():
             import random
-            self._simulate_work("single_shot", 0.4)
+
             voltage = dac_voltage + random.uniform(-0.001, 0.001)
             print(f"  DAC set to {dac_voltage:.3f} V")
             print(f"  Source path: {source}")
@@ -545,7 +535,7 @@ class SimulatedSUService(BaseHardwareService):
             print(f"  Measured voltage: {voltage:.6f} V")
             return {"ok": True, "voltage": round(voltage, 6)}
 
-        return make_task("single_shot", job)
+        return self._sim_task("single_shot", 0.4, body=body)
 
     def run_transient_measure(
         self,
@@ -554,9 +544,10 @@ class SimulatedSUService(BaseHardwareService):
         trigger: str = "none",
     ) -> FunctionTask:
         """Simulate SU transient measurement."""
-        def job():
+
+        def body():
             import random
-            self._simulate_work("transient", 1.0)
+
             n_samples = min(int(measurement_time / sampling_rate), 1000)
             print(f"  Measurement time: {measurement_time * 1e3:.1f} ms")
             print(f"  Sampling rate: {sampling_rate * 1e6:.1f} µs")
@@ -568,7 +559,7 @@ class SimulatedSUService(BaseHardwareService):
             print(f"  Std:  {(sum((v - 0.5) ** 2 for v in values) / len(values)) ** 0.5:.4f} V")
             return {"ok": True, "time": time_data, "values": values}
 
-        return make_task("transient", job)
+        return self._sim_task("transient", 1.0, body=body)
 
     def run_pulse_measure(
         self,
@@ -576,9 +567,10 @@ class SimulatedSUService(BaseHardwareService):
         sampling_rate: float = 1e6,
     ) -> FunctionTask:
         """Simulate SU pulse measurement."""
-        def job():
+
+        def body():
             import random
-            self._simulate_work("pulse", 1.2)
+
             n = min(num_samples, 1000)
             dt = 1.0 / sampling_rate
             print(f"  Samples: {num_samples}")
@@ -586,20 +578,18 @@ class SimulatedSUService(BaseHardwareService):
             print("  Acquiring pulse data...")
             time_data = [i * dt for i in range(n)]
             values = [
-                0.8 * (1 - 2.718 ** (-(i * dt) * 1e6))
-                + 0.02 * random.gauss(0, 1)
-                for i in range(n)
+                0.8 * (1 - 2.718 ** (-(i * dt) * 1e6)) + 0.02 * random.gauss(0, 1) for i in range(n)
             ]
             print(f"  Peak amplitude: {max(values):.4f} V")
             print(f"  Rise time (10-90%%): ~{dt * 10 * 1e6:.2f} µs")
             return {"ok": True, "time": time_data, "values": values}
 
-        return make_task("pulse", job)
+        return self._sim_task("pulse", 1.2, body=body)
 
     def run_save_config(self) -> FunctionTask:
         """Simulate saving channel configuration to EEPROM."""
-        def job():
-            self._simulate_work("save_config", 0.5)
+
+        def body():
             print("  Writing channel configuration to EEPROM...")
             print("  AMP1: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
             print("  AMP2: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
@@ -607,25 +597,24 @@ class SimulatedSUService(BaseHardwareService):
             print("  EEPROM write complete.")
             return {"ok": True}
 
-        return make_task("save_config", job)
+        return self._sim_task("save_config", 0.5, body=body)
 
     def run_load_config(self) -> FunctionTask:
         """Simulate loading channel configuration from EEPROM."""
-        def job():
-            self._simulate_work("load_config", 0.4)
+
+        def body():
             print("  Reading channel configuration from EEPROM...")
             print("  AMP1: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
             print("  AMP2: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
             print("  AMP3: AMP, INPUT, ADA4898, gain=0.3, bw=1.606, range=7.5V")
             return {"ok": True, "data": {}}
 
-        return make_task("load_config", job)
+        return self._sim_task("load_config", 0.4, body=body)
 
     def connect_only(self) -> FunctionTask:
-        def job():
-            self._simulate_work("connect", 0.3)
+        def body():
             self._connected = True
             self.connectedChanged.emit(True)
             return {"serial": 1, "ok": True}
 
-        return make_task("connect", job)
+        return self._sim_task("connect", 0.3, body=body)

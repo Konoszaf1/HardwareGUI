@@ -103,24 +103,10 @@ class SourceMeasureUnitService(BaseHardwareService):
         logger.info("SMU connected: serial=%s", self._smu.get_serial())
         self.connectedChanged.emit(True)
 
-    @property
-    def artifact_dir(self) -> str:
-        """Return the absolute path to the calibration artifact directory."""
-        serial = self._smu.get_serial() if self._smu else 0
-        return self._artifact_manager.get_artifact_dir(
-            f"calibration/smu_calibration_sn{serial}"
-        )
-
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        return self.artifact_dir
-
-    def _collect_artifacts(self) -> list[str]:
-        """Collect all artifact files for the current SMU."""
         serial = self._smu.get_serial() if self._smu else 0
-        return self._artifact_manager.collect_artifacts(
-            f"calibration/smu_calibration_sn{serial}"
-        )
+        return f"calibration/smu_calibration_sn{serial}"
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -415,9 +401,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 self._ensure_connected()
                 results = []
                 results.append(
-                    self._controller.set_iv_channel(
-                        channel=iv_channel, reference=iv_reference
-                    )
+                    self._controller.set_iv_channel(channel=iv_channel, reference=iv_reference)
                 )
                 results.append(self._controller.set_pa_channel(channel=pa_channel))
                 results.append(self._controller.set_highpass(enabled=highpass))

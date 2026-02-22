@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from src.config import config
-from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.gui.utils.artifact_watcher import ArtifactWatcher
 from src.gui.utils.image_viewer import ImageViewerDialog
+from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logging_config import get_logger
+from src.logic.protocols import ConnectableService
 from src.logic.qt_workers import FunctionTask, run_in_thread
-from src.logic.services.base_service import BaseHardwareService
 
 # Import status bar service lazily to avoid circular imports
 _status_bar_service = None
@@ -62,20 +62,20 @@ class BaseHardwarePage(QWidget):
     - Scope verification handling
 
     Attributes:
-        service (BaseHardwareService | None): Service for hardware operations.
+        service (ConnectableService | None): Service for hardware operations.
     """
 
     def __init__(
         self,
         parent: QWidget | None = None,
-        service: BaseHardwareService | None = None,
+        service: ConnectableService | None = None,
         shared_panels: SharedPanelsWidget | None = None,
     ):
         """Initialize the base page.
 
         Args:
             parent (QWidget | None): Parent widget.
-            service (BaseHardwareService | None): Hardware service instance.
+            service (ConnectableService | None): Hardware service instance.
             shared_panels (SharedPanelsWidget | None): Shared panels widget.
         """
         super().__init__(parent)
@@ -322,8 +322,7 @@ class BaseHardwarePage(QWidget):
     # ---- Layout Factory Methods ----
 
     def _create_scroll_area(
-        self,
-        min_width: int | None = None
+        self, min_width: int | None = None
     ) -> tuple[QScrollArea, QWidget, QVBoxLayout]:
         """Create a scroll area with properly configured content widget.
 

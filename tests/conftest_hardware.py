@@ -94,20 +94,15 @@ def patch_artifact_manager(mocker, artifact_dir: Path):
     """Patch ArtifactManager for all services."""
     artifact_files = [str(f) for f in artifact_dir.glob("*.png")]
 
-    # Patch at each service's import location
-    for service_module in [
-        "src.logic.services.vu_service",
-        "src.logic.services.smu_service",
-        "src.logic.services.su_service",
-    ]:
-        mocker.patch(
-            f"{service_module}.ArtifactManager.get_artifact_dir",
-            return_value=str(artifact_dir),
-        )
-        mocker.patch(
-            f"{service_module}.ArtifactManager.collect_artifacts",
-            return_value=artifact_files,
-        )
+    # Patch at the base service import location
+    mocker.patch(
+        "src.logic.services.base_service.ArtifactManager.get_artifact_dir",
+        return_value=str(artifact_dir),
+    )
+    mocker.patch(
+        "src.logic.services.base_service.ArtifactManager.collect_artifacts",
+        return_value=artifact_files,
+    )
 
 
 # =============================================================================

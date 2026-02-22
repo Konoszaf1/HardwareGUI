@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
+from src.logic.qt_workers import FunctionTask, make_task
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,7 @@ class BaseHardwareService(QObject):
         self._target_instrument_ip: str | None = None
         self._connected: bool = False
         self._instrument_verified_state: bool = False
-        self._hw_lock = threading.Lock()
+        self._hw_lock = threading.RLock()
         self._artifact_manager = ArtifactManager()
 
         # Input redirection for blocking hardware prompts
@@ -147,9 +148,9 @@ class BaseHardwareService(QObject):
     def require_instrument_ip(func):
         """Decorator: guard that instrument IP is configured before execution.
 
-        Acquires ``_hw_lock`` and calls ``_ensure_connected`` before
-        delegating to the wrapped method.  Returns ``None`` with a
-        ``UserWarning`` when the IP is missing.
+        Wraps the decorated method in a FunctionTask so that both the
+        IP check and ``_ensure_connected()`` run inside the worker thread,
+        preventing GUI freezes.
         """
 
         @functools.wraps(func)
@@ -161,9 +162,22 @@ class BaseHardwareService(QObject):
                     stacklevel=2,
                 )
                 return None
-            with self._hw_lock:
-                self._ensure_connected()
-                return func(self, *args, **kwargs)
+
+            # The original method must return a FunctionTask. We intercept its
+            # internal job and prepend _ensure_connected inside the task.
+            task = func(self, *args, **kwargs)
+            if task is None:
+                return None
+
+            original_fn = task.fn
+
+            def guarded_fn():
+                with self._hw_lock:
+                    self._ensure_connected()
+                return original_fn()
+
+            task.fn = guarded_fn
+            return task
 
         return wrapper
 
@@ -179,9 +193,46 @@ class BaseHardwareService(QObject):
         """Whether the instrument IP has been verified via ping."""
         return self._instrument_verified_state
 
+    # ---- Common Operations ----
+
+    @property
+    def artifact_dir(self) -> str:
+        """Return the absolute path to the calibration artifact directory.
+
+        Subclasses must implement ``_artifact_dir()`` to return the relative path.
+        """
+        return self._artifact_manager.get_artifact_dir(self._artifact_dir())
+
+    def _collect_artifacts(self) -> list[str]:
+        """Collect all artifact files from the artifact directory.
+
+        Returns:
+            List of artifact file paths.
+        """
+        return self._artifact_manager.collect_artifacts(self._artifact_dir())
+
+    def connect_only(self) -> FunctionTask:
+        """Connect to hardware without additional operations.
+
+        Returns:
+            FunctionTask that establishes hardware connection.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+            return {"serial": getattr(self, "_serial", 0), "ok": True}
+
+        return make_task("connect", job)
+
     # ---- Abstract ----
 
     @abstractmethod
     def _ensure_connected(self) -> None:
         """Establish hardware connections.  Called under ``_hw_lock``."""
+        ...
+
+    @abstractmethod
+    def _artifact_dir(self) -> str:
+        """Return the relative path to the artifact directory."""
         ...
