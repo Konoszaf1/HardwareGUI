@@ -151,23 +151,12 @@ class SUCalibrationPage(BaseHardwarePage):
             return
 
         model = "linear" if self.rb_linear.isChecked() else "gp"
-
-        def on_complete(result):
-            if result and result.data and result.data.get("ok"):
-                coeffs = result.data.get("coeffs", {})
-                k = coeffs.get("k", "--")
-                d = coeffs.get("d", "--")
-                sigma = coeffs.get("sigma", "--")
-                self.le_k.setText(f"{k:.8f}" if isinstance(k, float) else str(k))
-                self.le_d.setText(f"{d:.8f}" if isinstance(d, float) else str(d))
-                self.le_sigma.setText(f"{sigma:.8f}" if isinstance(sigma, float) else str(sigma))
-                self._log("Calibration complete.")
-            else:
-                self._log("Calibration failed.")
-
         self._log(f"Running {model} calibration...")
+        self.plot_widget.clear()
         task = self.service.run_calibrate(model=model)
-        task.signals.finished.connect(on_complete)
+        if not task:
+            self._log("Service unavailable.")
+            return
         self._start_task(task)
 
     def _on_verify(self) -> None:
@@ -181,12 +170,55 @@ class SUCalibrationPage(BaseHardwarePage):
         self.plot_widget.clear()
         self.plot_widget.set_labels("Calibration Verify", "V_ref / V", "V_meas / V")
         task = self.service.run_calibration_verify(num_points=points)
-        task.signals.data_chunk.connect(self._on_cal_data_chunk)
+        if not task:
+            self._log("Keithley IP not configured. Set it on the Connection page first.")
+            return
         self._start_task(task)
 
-    def _on_cal_data_chunk(self, data: dict) -> None:
-        """Handle a live calibration data point."""
-        series = data.get("series", "data")
-        x = data.get("x", 0.0)
-        y = data.get("y", 0.0)
-        self.plot_widget.append_point(series, x, y)
+    # ---- Plot rendering from finished result ----
+    def _on_task_finished(self, result) -> None:
+        """Handle results from calibration tasks."""
+        data = getattr(result, "data", None)
+        if isinstance(data, dict):
+            coeffs = data.get("coeffs", {})
+            if coeffs:
+                self._update_coeff_display(coeffs)
+
+            plot = data.get("plot")
+            if plot:
+                self._render_plot(plot)
+        super()._on_task_finished(result)
+
+    def _update_coeff_display(self, coeffs: dict) -> None:
+        """Update the k, d, sigma display fields from a coeffs dict."""
+        k = coeffs.get("k")
+        d = coeffs.get("d")
+        sigma = coeffs.get("sigma")
+        if k is not None:
+            self.le_k.setText(f"{k:.8f}" if isinstance(k, float) else str(k))
+        if d is not None:
+            self.le_d.setText(f"{d:.8f}" if isinstance(d, float) else str(d))
+        if sigma is not None:
+            self.le_sigma.setText(f"{sigma:.8f}" if isinstance(sigma, float) else str(sigma))
+
+    def _render_plot(self, plot: dict) -> None:
+        """Render a plot dict onto the LivePlotWidget."""
+        self.plot_widget.clear()
+        plot_type = plot.get("type")
+
+        try:
+            if plot_type == "calibration_overview":
+                self.plot_widget.set_labels(
+                    "Calibration Overview", "V_ref / V", "V_meas / V"
+                )
+                for wf in plot.get("waveforms", []):
+                    self.plot_widget.plot_batch(wf["x"], wf["y"], wf["series"])
+
+            elif plot_type == "calibration_error":
+                self.plot_widget.set_labels(
+                    "Calibration Error", "V_ref / V", "Error / V"
+                )
+                for wf in plot.get("waveforms", []):
+                    self.plot_widget.plot_batch(wf["x"], wf["y"], wf["series"])
+        except Exception as e:
+            self._log(f"Plot rendering failed: {e}")

@@ -72,8 +72,15 @@ class SamplingUnitService(BaseHardwareService):
     # ---- Accessors ----
     @property
     def su_serial(self) -> int | None:
-        """Return the SU serial number if connected."""
-        return self._su.getSerial() if self._su else None
+        """Return the SU serial number if connected.
+
+        Note: DPIUnit.serial stays None when autoinit=True because only
+        DPIIO_Legacy._serial is updated during autodetect.  We read
+        _serial (the IO layer's copy) to get the actual value.
+        """
+        if self._su is None:
+            return None
+        return getattr(self._su, "_serial", None) or self._su.serial
 
     @property
     def controller(self) -> SUController:
@@ -81,6 +88,12 @@ class SamplingUnitService(BaseHardwareService):
         if self._controller is None:
             self._ensure_connected()
         return self._controller
+
+    def _get_serial(self) -> int:
+        """Get the actual SU serial, preferring _serial over serial."""
+        if self._su is None:
+            return 0
+        return getattr(self._su, "_serial", None) or self._su.serial or 0
 
     # ---- Internals ----
     def _ensure_connected(self) -> None:
@@ -108,13 +121,20 @@ class SamplingUnitService(BaseHardwareService):
         self._controller = SUController(su=self._su, mcu=self._mcu)
 
         self._connected = True
-        logger.info("SU connected: serial=%s", self._su.getSerial())
+        logger.info("SU connected: serial=%s", self._get_serial())
         self.connectedChanged.emit(True)
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        serial = self._su.getSerial() if self._su else 0
-        return f"calibration/su_calibration_sn{serial}"
+        return f"calibration/su_calibration_sn{self._get_serial()}"
+
+    def _safe_collect_artifacts(self) -> list[str]:
+        """Collect artifacts without crashing if directory is missing."""
+        try:
+            return self._collect_artifacts()
+        except Exception as e:
+            logger.warning("Artifact collection failed: %s", e)
+            return []
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -143,7 +163,7 @@ class SamplingUnitService(BaseHardwareService):
                 )
                 return {"serial": result.serial, "ok": result.ok, "message": result.message}
 
-        return make_task("hw_setup", job)
+        return make_task("Hardware Setup", job)
 
     def run_verify(self) -> FunctionTask:
         """Run hardware verification (performautocalibration).
@@ -158,7 +178,7 @@ class SamplingUnitService(BaseHardwareService):
                 result = self._controller.perform_autocalibration()
                 return {"ok": result.ok, "serial": result.serial, "message": result.message}
 
-        return make_task("verify", job)
+        return make_task("Verify", job)
 
     def run_temperature_read(self) -> FunctionTask:
         """Read SU temperature.
@@ -173,7 +193,7 @@ class SamplingUnitService(BaseHardwareService):
                 result = self._controller.read_temperature()
                 return {"ok": result.ok, "temperature": result.data.get("temperature")}
 
-        return make_task("temperature", job)
+        return make_task("Read Temperature", job)
 
     def run_single_shot(
         self,
@@ -199,7 +219,7 @@ class SamplingUnitService(BaseHardwareService):
                 )
                 return {"ok": result.ok, "voltage": result.data.get("voltage")}
 
-        return make_task("single_shot", job)
+        return make_task("Single Shot Measure", job)
 
     def run_transient_measure(
         self,
@@ -232,7 +252,7 @@ class SamplingUnitService(BaseHardwareService):
                     "values": result.data.get("values"),
                 }
 
-        return make_task("transient", job)
+        return make_task("Transient Measure", job)
 
     def run_pulse_measure(
         self,
@@ -262,9 +282,8 @@ class SamplingUnitService(BaseHardwareService):
                     "values": result.data.get("values"),
                 }
 
-        return make_task("pulse", job)
+        return make_task("Pulse Measure", job)
 
-    @BaseHardwareService.require_instrument_ip
     def run_calibration_measure(
         self,
         verify_calibration: bool = False,
@@ -272,23 +291,49 @@ class SamplingUnitService(BaseHardwareService):
         """Run calibration measurement with Keithley.
 
         Delegates to SUController.calibration_measure for the actual workflow.
+        Does NOT pre-connect to SU — SUCalibrationMeasure creates its own
+        connections to SMU, SU, and Keithley internally.
 
         Args:
             verify_calibration: If True, also verify the calibration.
 
         Returns:
-            FunctionTask that runs calibration measurements.
+            FunctionTask that runs calibration measurements, or None if
+            Keithley IP is not configured.
         """
+        if not self._target_instrument_ip:
+            return None
 
         def job():
-            serial = self._su.getSerial() if self._su else 0
+            serial = self._targets.su_serial or self._get_serial() or "auto"
             folder_path = f"calibration/su_calibration_sn{serial}"
             self._calibration_folder = folder_path
 
             def on_point(data: dict) -> None:
                 task.signals.data_chunk.emit(data)
 
-            result = self._controller.calibration_measure(
+            # Keep a local controller ref, then release USB so
+            # SUCalibrationMeasure can claim the devices itself
+            with self._hw_lock:
+                controller = self._controller or SUController()
+                if self._su is not None:
+                    try:
+                        self._su.disconnect()
+                    except Exception:
+                        pass
+                if self._mcu is not None:
+                    try:
+                        self._mcu.disconnect()
+                    except Exception:
+                        pass
+                controller._su = None
+                controller._mcu = None
+                self._su = None
+                self._mcu = None
+                self._controller = None
+                self._connected = False
+
+            result = controller.calibration_measure(
                 keithley_ip=self._target_instrument_ip,
                 smu_serial=self._targets.smu_serial or None,
                 smu_interface=self._targets.smu_interface or None,
@@ -302,10 +347,10 @@ class SamplingUnitService(BaseHardwareService):
                 "ok": result.ok,
                 "message": result.message,
                 "folder": folder_path,
-                "artifacts": self._collect_artifacts(),
+                "artifacts": self._safe_collect_artifacts(),
             }
 
-        task = make_task("calibration_measure", job)
+        task = make_task("Calibration: Measure", job)
         return task
 
     def run_calibration_fit(
@@ -327,7 +372,7 @@ class SamplingUnitService(BaseHardwareService):
             with self._hw_lock:
                 self._ensure_connected()
 
-                serial = self._su.getSerial() if self._su else 0
+                serial = self._get_serial()
                 folder_path = self._calibration_folder or f"calibration/su_calibration_sn{serial}"
 
                 result = self._controller.calibration_fit(
@@ -338,10 +383,10 @@ class SamplingUnitService(BaseHardwareService):
                 return {
                     "ok": result.ok,
                     "message": result.message,
-                    "artifacts": self._collect_artifacts(),
+                    "artifacts": self._safe_collect_artifacts(),
                 }
 
-        return make_task("calibration_fit", job)
+        return make_task("Calibration: Fit", job)
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
         """Run calibration fit (called by calibration page Run Calibration button).
@@ -378,7 +423,7 @@ class SamplingUnitService(BaseHardwareService):
                 result = self._controller.save_channel_config()
                 return {"ok": result.ok, "message": result.message}
 
-        return make_task("save_config", job)
+        return make_task("Save Config", job)
 
     def run_load_config(self) -> FunctionTask:
         """Load channel configuration from device EEPROM.
@@ -393,7 +438,7 @@ class SamplingUnitService(BaseHardwareService):
                 result = self._controller.load_channel_config()
                 return {"ok": result.ok, "data": result.data, "message": result.message}
 
-        return make_task("load_config", job)
+        return make_task("Load Config", job)
 
     def connect_only(self) -> FunctionTask:
         """Connect to SU hardware without additional operations.
@@ -405,6 +450,6 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
-                return {"serial": self._su.getSerial() if self._su else None, "ok": True}
+                return {"serial": self._get_serial(), "ok": True}
 
-        return make_task("connect", job)
+        return make_task("Connect", job)

@@ -183,7 +183,7 @@ class SMUController(HardwareController):
         try:
             smu = self._get_smu()
             smu.calibrate_eeprom()
-            serial = smu.get_serial()
+            serial = smu.serial
             logger.info("SMU autocalibration complete: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
@@ -493,7 +493,7 @@ class SMUController(HardwareController):
 
             smf.train_linear_model()
             smf.train_gp_model()
-            smf.save_gp_model(script_dir=Path(folder_path))
+            smf.save_model(script_dir=Path(folder_path), model_type="linear")
             smf.analyze_ranges()
 
             if draw_plot:

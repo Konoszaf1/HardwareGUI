@@ -5,6 +5,7 @@ and calibration operations. It uses direct imports from the dpi package.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.logging_config import get_logger
@@ -159,7 +160,7 @@ class SUController(HardwareController):
         try:
             su = self._get_su()
             su.performautocalibration()
-            serial = su.getSerial()
+            serial = getattr(su, "_serial", None) or su.serial
             logger.info("SU autocalibration complete: serial=%s", serial)
             return OperationResult(ok=True, serial=serial)
         except Exception as e:
@@ -184,6 +185,7 @@ class SUController(HardwareController):
         """
         try:
             su = self._get_su()
+            su.singleshot_init(1)
             su.setDACValue(dac_voltage)
             su.setPath(source=source, ac=0, adc=None, amp=1.0)
             voltage = su.readInputVoltage()
@@ -381,7 +383,6 @@ class SUController(HardwareController):
             OperationResult with success status.
         """
         try:
-            from dpi import DPISourceMeasureUnit
             from dpi.utilities import DPILogger
 
             from src.logic.calibration import SUCalibrationFit
@@ -399,17 +400,18 @@ class SUController(HardwareController):
 
             smf.train_linear_model()
             smf.train_gp_model()
+            smf.save_model(script_dir=Path(folder_path), model_type="linear")
             smf.analyze_ranges()
 
             if draw_plot:
                 smf.plot_calibrated_overview()
 
             if auto_calibrate:
-                smu = DPISourceMeasureUnit(autoinit=True)
-                smu.calibrate_eeprom()
-                logger.info("Calibration written to EEPROM via SMU")
+                su = self._get_su()
+                su.calibrate_eeprom(folder_path=folder_path)
+                logger.info("Calibration written to SU EEPROM")
 
-            logger.info(f"SU calibration fit complete: {folder_path}")
+            logger.info("SU calibration fit complete: %s", folder_path)
             return OperationResult(ok=True)
         except Exception as e:
             logger.error("SU calibration fit failed: %s", e)

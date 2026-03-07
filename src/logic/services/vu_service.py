@@ -10,6 +10,8 @@ import re
 import subprocess
 from dataclasses import dataclass
 
+from PySide6.QtCore import Signal
+
 import dpi  # noqa: F401 - required to avoid circular imports
 import matplotlib
 import vxi11
@@ -50,6 +52,8 @@ class VoltageUnitService(BaseHardwareService):
     actual hardware operations to VUController.
     """
 
+    coeffsChanged = Signal(object)
+
     def __init__(self) -> None:
         super().__init__()
         logger.debug("VoltageUnitService initializing")
@@ -85,7 +89,7 @@ class VoltageUnitService(BaseHardwareService):
     @property
     def vu_serial(self) -> int | None:
         """Return the VU serial number if connected."""
-        return self._vu.get_serial() if self._vu else None
+        return self._vu.serial if self._vu else None
 
     @property
     def controller(self) -> VUController | None:
@@ -95,7 +99,7 @@ class VoltageUnitService(BaseHardwareService):
                 vu=self._vu,
                 mcu=self._mcu,
                 scope=self._scope,
-                vu_serial=self._vu.get_serial(),
+                vu_serial=self._vu.serial,
                 artifact_dir=self._artifact_dir(),
             )
         return self._controller
@@ -134,6 +138,9 @@ class VoltageUnitService(BaseHardwareService):
         self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
         self._scope = vxi11.Instrument(self._target_instrument_ip)
 
+        # Initialize DAC hardware (required after power glitch or firmware reset)
+        self._vu.dacInit()
+
         # Create controller with hardware instances
         self._controller = VUController(
             vu=self._vu,
@@ -146,10 +153,11 @@ class VoltageUnitService(BaseHardwareService):
         self._connected = True
         logger.info("VU connected: serial=%s", vu_serial)
         self.connectedChanged.emit(True)
+        self._emit_coeffs()
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        serial = self._vu.get_serial() if self._vu else 0
+        serial = self._vu.serial if self._vu else 0
         return f"calibration_vu{serial}"
 
     # ---- Public operations (threaded) ----
@@ -164,11 +172,11 @@ class VoltageUnitService(BaseHardwareService):
             with self._hw_lock:
                 self._ensure_connected()
                 return {
-                    "serial": self._vu.get_serial() if self._vu else None,
+                    "serial": self._vu.serial if self._vu else None,
                     "ok": True,
                 }
 
-        return make_task("connect", job)
+        return make_task("Connect", job)
 
     @BaseHardwareService.require_instrument_ip
     def connect_and_read(self) -> FunctionTask:
@@ -181,31 +189,38 @@ class VoltageUnitService(BaseHardwareService):
                 logger.warning(f"Failed to read scope IDN: {e}")
             return {"coeffs": self.coeffs}
 
-        return make_task("connect_and_read", job)
+        return make_task("Connect & Read Coefficients", job)
+
+    def _emit_coeffs(self) -> None:
+        """Emit coeffsChanged signal with current coefficients."""
+        self.coeffsChanged.emit(self.coeffs)
 
     @BaseHardwareService.require_instrument_ip
     def read_coefficients(self) -> FunctionTask:
         def job():
             result = self._controller.read_coefficients()
+            self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
-        return make_task("read_coefficients", job)
+        return make_task("Read Coefficients", job)
 
     @BaseHardwareService.require_instrument_ip
     def reset_coefficients_ram(self) -> FunctionTask:
         def job():
             result = self._controller.reset_coefficients()
+            self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
-        return make_task("reset_coefficients_ram", job)
+        return make_task("Reset Coefficients (RAM)", job)
 
     @BaseHardwareService.require_instrument_ip
     def write_coefficients_eeprom(self) -> FunctionTask:
         def job():
             result = self._controller.write_coefficients()
+            self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
 
-        return make_task("write_coefficients_eeprom", job)
+        return make_task("Write Coefficients (EEPROM)", job)
 
     # ---- Guard ----
     @BaseHardwareService.require_instrument_ip
@@ -214,7 +229,7 @@ class VoltageUnitService(BaseHardwareService):
             result = self._controller.set_guard_signal()
             return {"guard": "signal", "ok": result.ok}
 
-        return make_task("guard_signal", job)
+        return make_task("Set Guard → Signal", job)
 
     @BaseHardwareService.require_instrument_ip
     def set_guard_ground(self) -> FunctionTask:
@@ -222,75 +237,129 @@ class VoltageUnitService(BaseHardwareService):
             result = self._controller.set_guard_ground()
             return {"guard": "ground", "ok": result.ok}
 
-        return make_task("guard_ground", job)
+        return make_task("Set Guard → Ground", job)
 
     # ---- Tests and calibration ----
+    def _safe_collect_artifacts(self) -> list[str]:
+        """Collect artifacts without crashing the job if directory is missing."""
+        try:
+            return self._collect_artifacts()
+        except Exception as e:
+            logger.warning("Artifact collection failed: %s", e)
+            return []
+
     @BaseHardwareService.require_instrument_ip
     def test_outputs(self) -> FunctionTask:
+        task = FunctionTask("Test: Outputs", lambda: None)
+
+        def emit_chunk(data):
+            task.signals.data_chunk.emit(data)
+
         def job():
-            def on_point(data: dict) -> None:
-                task.signals.data_chunk.emit(data)
+            result = self._controller.test_outputs(on_point_measured=emit_chunk)
+            self._emit_coeffs()
+            return {
+                "ok": result.ok,
+                "artifacts": self._safe_collect_artifacts(),
+                "plot": result.data.get("plot") if result.data else None,
+            }
 
-            result = self._controller.test_outputs(on_point_measured=on_point)
-            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
-
-        task = make_task("test_outputs", job)
+        task.fn = job
         return task
 
     @BaseHardwareService.require_instrument_ip
     def test_ramp(self) -> FunctionTask:
-        def job():
-            result = self._controller.test_ramp()
-            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
+        task = FunctionTask("Test: Ramp", lambda: None)
 
-        return make_task("test_ramp", job)
+        def emit_chunk(data):
+            task.signals.data_chunk.emit(data)
+
+        def job():
+            result = self._controller.test_ramp(on_waveform=emit_chunk)
+            self._emit_coeffs()
+            return {
+                "ok": result.ok,
+                "artifacts": self._safe_collect_artifacts(),
+                "plot": result.data.get("plot") if result.data else None,
+            }
+
+        task.fn = job
+        return task
 
     @BaseHardwareService.require_instrument_ip
     def test_transient(self) -> FunctionTask:
-        def job():
-            result = self._controller.test_transient()
-            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
+        task = FunctionTask("Test: Transient", lambda: None)
 
-        return make_task("test_transient", job)
+        def emit_chunk(data):
+            task.signals.data_chunk.emit(data)
+
+        def job():
+            result = self._controller.test_transient(on_waveform=emit_chunk)
+            return {
+                "ok": result.ok,
+                "artifacts": self._safe_collect_artifacts(),
+                "plot": result.data.get("plot") if result.data else None,
+            }
+
+        task.fn = job
+        return task
 
     @BaseHardwareService.require_instrument_ip
     def test_all(self) -> FunctionTask:
+        task = FunctionTask("Test: All", lambda: None)
+
+        def emit_chunk(data):
+            task.signals.data_chunk.emit(data)
+
         def job():
-            result = self._controller.test_all()
-            return {"ok": result.ok, "artifacts": self._collect_artifacts()}
-
-        return make_task("test_all", job)
-
-    @BaseHardwareService.require_instrument_ip
-    def autocal_python(self) -> FunctionTask:
-        def job():
-            def on_iteration(data: dict) -> None:
-                task.signals.data_chunk.emit(data)
-
-            def on_point(data: dict) -> None:
-                task.signals.data_chunk.emit(data)
-
-            result = self._controller.auto_calibrate(
-                on_iteration=on_iteration,
-                on_point_measured=on_point,
+            result = self._controller.test_all(
+                on_point_measured=emit_chunk,
+                on_waveform=emit_chunk,
             )
+            self._emit_coeffs()
             return {
                 "ok": result.ok,
-                "artifacts": self._collect_artifacts(),
-                "coeffs": self.coeffs,
+                "artifacts": self._safe_collect_artifacts(),
+                "plots": result.data.get("plots") if result.data else None,
             }
 
-        task = make_task("autocal_python", job)
+        task.fn = job
+        return task
+
+    @BaseHardwareService.require_instrument_ip
+    def autocal_python(self, max_iterations: int = 10) -> FunctionTask:
+        task = FunctionTask("Autocalibration (Python)", lambda: None)
+
+        def emit_chunk(data):
+            task.signals.data_chunk.emit(data)
+
+        def job():
+            result = self._controller.auto_calibrate(
+                max_iterations=max_iterations,
+                on_iteration=emit_chunk,
+                on_point_measured=emit_chunk,
+                on_waveform=emit_chunk,
+            )
+            self._emit_coeffs()
+            return {
+                "ok": result.ok,
+                "artifacts": self._safe_collect_artifacts(),
+                "coeffs": self.coeffs,
+                "plot": result.data.get("plot") if result.data else None,
+            }
+
+        task.fn = job
         return task
 
     @BaseHardwareService.require_instrument_ip
     def autocal_onboard(self) -> FunctionTask:
         def job():
             result = self._controller.perform_autocalibration()
+            self._emit_coeffs()
             return {
                 "ok": result.ok,
                 "coeffs": self.coeffs,
-                "artifacts": self._collect_artifacts(),
+                "artifacts": self._safe_collect_artifacts(),
             }
 
-        return make_task("autocal_onboard", job)
+        return make_task("Autocalibration (Onboard)", job)

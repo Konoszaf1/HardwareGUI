@@ -77,7 +77,7 @@ class VUTestPage(BaseHardwarePage):
         self._configure_input(self.btn_test_ramp)
         card_ramp = create_test_card(
             "Ramp Test",
-            ["Range: 500 ms", "Slope: ~20 V/s", "Sync: 1 MHz"],
+            ["Range: 500 ms", "Slope: 20*amp V/s", "Sync: 1 MHz"],
             self.btn_test_ramp,
         )
         card_ramp.setMaximumWidth(280)
@@ -114,7 +114,7 @@ class VUTestPage(BaseHardwarePage):
         plot_layout = QVBoxLayout(plot_box)
         plot_layout.setContentsMargins(12, 18, 12, 12)
         self.plot_widget = LivePlotWidget()
-        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / mV")
         self.plot_widget.setMinimumHeight(200)
         plot_layout.addWidget(self.plot_widget)
         main_layout.addWidget(plot_box)
@@ -139,7 +139,7 @@ class VUTestPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
-        self._log("Tests page ready. Actions map 1:1 to script.")
+        self._log("Tests page ready.")
 
     # ---- Handlers ----
     def _on_test_outputs(self) -> None:
@@ -148,24 +148,39 @@ class VUTestPage(BaseHardwarePage):
             self._log("Service not available.")
             return
         self.plot_widget.clear()
-        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
+        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / mV")
         task = self.service.test_outputs()
-        task.signals.data_chunk.connect(self._on_outputs_data_chunk)
+        task.signals.data_chunk.connect(self._on_output_chunk)
         self._start_task(task)
+
+    def _on_output_chunk(self, data) -> None:
+        """Handle live data chunks during output test."""
+        if isinstance(data, dict) and "x" in data:
+            self.plot_widget.append_point("CH1", data["x"], 1000 * data["y_ch1"])
+            self.plot_widget.append_point("CH2", data["x"], 1000 * data["y_ch2"])
+            self.plot_widget.append_point("CH3", data["x"], 1000 * data["y_ch3"])
 
     def _on_test_ramp(self) -> None:
         """Run voltage ramp test."""
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.test_ramp())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Ramp Signal", "Time / s", "Signal / V")
+        task = self.service.test_ramp()
+        task.signals.data_chunk.connect(self._on_waveform_chunk)
+        self._start_task(task)
 
     def _on_test_transient(self) -> None:
         """Run transient response test."""
         if not self.service:
             self._log("Service not available.")
             return
-        self._start_task(self.service.test_transient())
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Transient Response", "Time / s", "Signal / V")
+        task = self.service.test_transient()
+        task.signals.data_chunk.connect(self._on_waveform_chunk)
+        self._start_task(task)
 
     def _on_test_all(self) -> None:
         """Run all tests sequentially (outputs, ramp, transient)."""
@@ -173,15 +188,72 @@ class VUTestPage(BaseHardwarePage):
             self._log("Service not available.")
             return
         self.plot_widget.clear()
-        self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / V")
         task = self.service.test_all()
-        task.signals.data_chunk.connect(self._on_outputs_data_chunk)
+        task.signals.data_chunk.connect(self._on_data_chunk)
         self._start_task(task)
 
-    def _on_outputs_data_chunk(self, data: dict) -> None:
-        """Handle a live output-error data point from test_outputs."""
-        x = data.get("x", 0.0)
-        for ch in ("ch1", "ch2", "ch3"):
-            key = f"y_{ch}"
-            if key in data:
-                self.plot_widget.append_point(ch.upper(), x, data[key])
+    # ---- Live data handlers ----
+    def _on_waveform_chunk(self, data) -> None:
+        """Handle live waveform data from ramp/transient tests."""
+        if not isinstance(data, dict) or "type" not in data:
+            return
+        series = data.get("series", "")
+        if series == "CH1":
+            title = "Ramp Signal" if data["type"] == "ramp" else "Transient Response"
+            self.plot_widget.clear()
+            self.plot_widget.set_labels(title, "Time / s", "Signal / V")
+        self.plot_widget.plot_batch(
+            data["x"], data["y"], series,
+            linestyle=data.get("linestyle", "-"),
+            alpha=data.get("alpha", 1.0),
+            color=data.get("color"),
+        )
+
+    def _on_data_chunk(self, data) -> None:
+        """Handle any live data chunk during test_all (outputs + waveforms)."""
+        if not isinstance(data, dict):
+            return
+        if "y_ch1" in data:
+            self._on_output_chunk(data)
+        elif "type" in data:
+            self._on_waveform_chunk(data)
+
+    # ---- Plot rendering from finished result ----
+    def _on_task_finished(self, result) -> None:
+        """Render plot data from task result, then call base handler."""
+        data = getattr(result, "data", None)
+        if isinstance(data, dict):
+            plot = data.get("plot")
+            plots = data.get("plots")
+            if plot:
+                self._render_plot(plot)
+            elif plots:
+                self._render_plot(plots[-1])
+        super()._on_task_finished(result)
+
+    def _render_plot(self, plot: dict) -> None:
+        """Render a plot dict onto the LivePlotWidget."""
+        self.plot_widget.clear()
+        plot_type = plot.get("type")
+
+        try:
+            if plot_type == "outputs":
+                self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / mV")
+                voltages = plot["voltages"]
+                errors = plot["errors"]
+                for i, ch in enumerate(("CH1", "CH2", "CH3")):
+                    for x, y in zip(voltages, errors[i]):
+                        self.plot_widget.append_point(ch, x, 1000 * y)
+
+            elif plot_type in ("ramp", "transient"):
+                title = "Ramp Signal" if plot_type == "ramp" else "Transient Response"
+                self.plot_widget.set_labels(title, "Time / s", "Signal / V")
+                for wf in plot["waveforms"]:
+                    self.plot_widget.plot_batch(
+                        wf["x"], wf["y"], wf["series"],
+                        linestyle=wf.get("linestyle", "-"),
+                        alpha=wf.get("alpha", 1.0),
+                        color=wf.get("color"),
+                    )
+        except Exception as e:
+            self._log(f"Plot rendering failed: {e}")

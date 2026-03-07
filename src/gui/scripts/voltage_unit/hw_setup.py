@@ -1,12 +1,10 @@
 """Hardware setup page for Voltage Unit initialization and coefficient management."""
 
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -22,7 +20,6 @@ class VUSetupPage(BaseHardwarePage):
     """Hardware setup page for VU initialization.
 
     Provides controls for:
-    - Unit EEPROM: Serial, Processor Type
     - Coefficient management: Read, Reset (RAM), Write (EEPROM)
     - Coefficient display table (CH1-CH3 slope/offset)
     """
@@ -53,23 +50,6 @@ class VUSetupPage(BaseHardwarePage):
         title = QLabel("Voltage Unit – Setup")
         title.setObjectName("title")
         main_layout.addWidget(title)
-
-        # ==== Unit EEPROM Section ====
-        eeprom_box = self._create_group_box("Unit EEPROM", min_height=120)
-        eeprom_form = self._create_form_layout(eeprom_box)
-
-        self.sp_serial = QSpinBox()
-        self.sp_serial.setRange(1, 9999)
-        self.sp_serial.setValue(5001)
-        self._configure_input(self.sp_serial)
-        eeprom_form.addRow("New Serial:", self.sp_serial)
-
-        self.cb_processor = QComboBox()
-        self.cb_processor.addItems(["746"])
-        self._configure_input(self.cb_processor)
-        eeprom_form.addRow("Processor Type:", self.cb_processor)
-
-        main_layout.addWidget(eeprom_box)
 
         # ==== Coefficients Section ====
         coeffs_box = self._create_group_box(
@@ -125,6 +105,9 @@ class VUSetupPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
+        if self.service:
+            self.service.coeffsChanged.connect(self._on_coeffs_changed)
+
         self._log("Setup page ready.")
 
     def _populate_coeffs(self, coeffs: dict[str, list[float]]) -> None:
@@ -141,6 +124,11 @@ class VUSetupPage(BaseHardwarePage):
             self.coeffs_table.setItem(row, 1, QTableWidgetItem(f"{k:.6f}"))
             self.coeffs_table.setItem(row, 2, QTableWidgetItem(f"{d:.6f}"))
 
+    def _on_coeffs_changed(self, coeffs) -> None:
+        """Auto-update table when coefficients change anywhere."""
+        if isinstance(coeffs, dict):
+            self._populate_coeffs(coeffs)
+
     def _on_read_coeffs(self) -> None:
         """Read coefficients from device hardware."""
         if not self.service:
@@ -149,16 +137,6 @@ class VUSetupPage(BaseHardwarePage):
         task = self.service.read_coefficients()
         if task is None:
             return
-
-        signals = task.signals
-        if signals:
-            # After task finishes, update the table
-            def _on_finished(result):
-                if isinstance(result, dict) and "coeffs" in result:
-                    self._populate_coeffs(result["coeffs"])
-
-            signals.finished.connect(_on_finished)
-
         self._start_task(task)
 
     def _on_reset_coeffs(self) -> None:
@@ -169,16 +147,6 @@ class VUSetupPage(BaseHardwarePage):
         task = self.service.reset_coefficients_ram()
         if task is None:
             return
-
-        signals = task.signals
-        if signals:
-
-            def _on_finished(result):
-                if isinstance(result, dict) and "coeffs" in result:
-                    self._populate_coeffs(result["coeffs"])
-
-            signals.finished.connect(_on_finished)
-
         self._start_task(task)
 
     def _on_write_coeffs(self) -> None:

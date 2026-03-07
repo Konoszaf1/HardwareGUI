@@ -181,7 +181,7 @@ class BaseHardwarePage(QWidget):
         signals = task.signals
         self._set_busy(True)
 
-        signals.started.connect(lambda: self._log("Started."))
+        signals.started.connect(lambda: self._log(f"Started: {task.name}"))
         signals.started.connect(
             lambda: _get_status_bar() and _get_status_bar().set_busy(f"Running: {task.name}")
         )
@@ -203,6 +203,7 @@ class BaseHardwarePage(QWidget):
         Args:
             result: The result of the task.
         """
+        task_name = self._active_task.name if self._active_task else "task"
         self._set_busy(False)
         self._active_task = None
         self._ensure_artifact_watcher()
@@ -210,16 +211,7 @@ class BaseHardwarePage(QWidget):
         if self._artifact_watcher:
             self._artifact_watcher.refresh_thumbnails()
 
-        # Handle coefficient updates if present
-        data = getattr(result, "data", None)
-        if isinstance(data, dict):
-            coeffs = data.get("coeffs")
-            if coeffs:
-                for ch, vals in coeffs.items():
-                    if len(vals) >= 2:
-                        self._log(f"Coeff {ch}: k={vals[0]:.6f}, d={vals[1]:.6f}")
-
-        self._log("Finished.")
+        self._log(f"Finished: {task_name}")
         status_svc = _get_status_bar()
         if status_svc:
             status_svc.set_ready()

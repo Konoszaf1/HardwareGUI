@@ -37,8 +37,8 @@ class ArtifactManager:
     def collect_artifacts(self, relative_path: str) -> list[str]:
         """Collect all PNG artifacts from the given artifact directory.
 
-        Priority files (output.png, ramp.png, transient.png) are listed first,
-        followed by any other PNG files in alphabetical order.
+        Files are sorted by prefix priority (output, ramp, transient first),
+        then by name (which includes timestamp, so newest last within group).
 
         Args:
             relative_path: Relative path within base_dir.
@@ -47,23 +47,27 @@ class ArtifactManager:
             List of absolute paths to artifact files, deduplicated.
         """
         artifact_dir = self.get_artifact_dir(relative_path)
-        paths: list[str] = []
+        all_pngs = sorted(glob.glob(os.path.join(artifact_dir, "*.png")))
 
-        # Priority files first
-        for name in ("output.png", "ramp.png", "transient.png"):
-            p = os.path.join(artifact_dir, name)
-            if os.path.exists(p):
-                paths.append(p)
+        # Group by prefix priority
+        priority_prefixes = ("output", "ramp", "transient")
+        prioritized: list[str] = []
+        rest: list[str] = []
 
-        # Add any other PNGs
-        paths.extend(sorted(glob.glob(os.path.join(artifact_dir, "*.png"))))
+        for p in all_pngs:
+            basename = os.path.basename(p).lower()
+            if any(basename.startswith(pfx) for pfx in priority_prefixes):
+                prioritized.append(p)
+            else:
+                rest.append(p)
 
-        # Deduplicate while preserving order
-        seen = set()
-        unique: list[str] = []
-        for p in paths:
-            if p not in seen:
-                unique.append(p)
-                seen.add(p)
+        # Sort prioritized by prefix order, then by name within each group
+        def _priority_key(path: str) -> tuple[int, str]:
+            basename = os.path.basename(path).lower()
+            for i, pfx in enumerate(priority_prefixes):
+                if basename.startswith(pfx):
+                    return (i, basename)
+            return (len(priority_prefixes), basename)
 
-        return unique
+        prioritized.sort(key=_priority_key)
+        return prioritized + rest

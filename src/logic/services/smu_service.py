@@ -71,8 +71,15 @@ class SourceMeasureUnitService(BaseHardwareService):
     # ---- Accessors ----
     @property
     def smu_serial(self) -> int | None:
-        """Return the SMU serial number if connected."""
-        return self._smu.get_serial() if self._smu else None
+        """Return the SMU serial number if connected.
+
+        Note: DPIUnit.serial stays None when autoinit=True because only
+        DPIIO_Legacy._serial is updated during autodetect.  We read
+        _serial (the IO layer's copy) to get the actual value.
+        """
+        if self._smu is None:
+            return None
+        return getattr(self._smu, "_serial", None) or self._smu.serial
 
     @property
     def controller(self) -> SMUController:
@@ -80,6 +87,12 @@ class SourceMeasureUnitService(BaseHardwareService):
         if self._controller is None:
             self._ensure_connected()
         return self._controller
+
+    def _get_serial(self) -> int:
+        """Get the actual SMU serial, preferring _serial over serial."""
+        if self._smu is None:
+            return 0
+        return getattr(self._smu, "_serial", None) or self._smu.serial or 0
 
     # ---- Internals ----
     def _ensure_connected(self) -> None:
@@ -100,13 +113,20 @@ class SourceMeasureUnitService(BaseHardwareService):
         self._controller = SMUController(smu=self._smu)
 
         self._connected = True
-        logger.info("SMU connected: serial=%s", self._smu.get_serial())
+        logger.info("SMU connected: serial=%s", self._get_serial())
         self.connectedChanged.emit(True)
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
-        serial = self._smu.get_serial() if self._smu else 0
-        return f"calibration/smu_calibration_sn{serial}"
+        return f"calibration/smu_calibration_sn{self._get_serial()}"
+
+    def _safe_collect_artifacts(self) -> list[str]:
+        """Collect artifacts without crashing if directory is missing."""
+        try:
+            return self._collect_artifacts()
+        except Exception as e:
+            logger.warning("Artifact collection failed: %s", e)
+            return []
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -135,7 +155,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 )
                 return {"serial": result.serial, "ok": result.ok, "message": result.message}
 
-        return make_task("hw_setup", job)
+        return make_task("Hardware Setup", job)
 
     def run_verify(self) -> FunctionTask:
         """Run hardware verification (calibrate_eeprom).
@@ -150,7 +170,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.calibrate_eeprom()
                 return {"ok": result.ok, "message": result.message}
 
-        return make_task("verify", job)
+        return make_task("Verify", job)
 
     def run_temperature_read(self) -> FunctionTask:
         """Read SMU temperature.
@@ -165,7 +185,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.read_temperature()
                 return {"ok": result.ok, "temperature": result.data.get("temperature")}
 
-        return make_task("temperature", job)
+        return make_task("Read Temperature", job)
 
     # ---- Relay Control Operations ----
     def run_set_iv_channel(
@@ -189,7 +209,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.set_iv_channel(channel=channel, reference=reference)
                 return {"ok": result.ok, "channel": result.data.get("channel")}
 
-        return make_task("iv_channel", job)
+        return make_task("Set IV Channel", job)
 
     def run_set_pa_channel(self, channel: int) -> FunctionTask:
         """Set Post-Amplifier channel.
@@ -207,7 +227,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.set_pa_channel(channel=channel)
                 return {"ok": result.ok, "channel": result.data.get("channel")}
 
-        return make_task("pa_channel", job)
+        return make_task("Set PA Channel", job)
 
     def run_set_highpass(self, enabled: bool) -> FunctionTask:
         """Enable/disable highpass filter.
@@ -225,7 +245,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.set_highpass(enabled=enabled)
                 return {"ok": result.ok, "enabled": result.data.get("enabled")}
 
-        return make_task("highpass", job)
+        return make_task("Set Highpass", job)
 
     def run_set_input_routing(self, target: str) -> FunctionTask:
         """Set input routing.
@@ -243,7 +263,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.set_input_routing(target=target)
                 return {"ok": result.ok, "target": result.data.get("target")}
 
-        return make_task("input_routing", job)
+        return make_task("Set Input Routing", job)
 
     def run_set_vguard(self, target: str) -> FunctionTask:
         """Set VGUARD routing.
@@ -261,9 +281,8 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.set_vguard(target=target)
                 return {"ok": result.ok, "target": result.data.get("target")}
 
-        return make_task("vguard", job)
+        return make_task("Set VGUARD", job)
 
-    @BaseHardwareService.require_instrument_ip
     def run_calibration_measure(
         self,
         vsmu_mode: bool | None = None,
@@ -272,25 +291,47 @@ class SourceMeasureUnitService(BaseHardwareService):
         """Run calibration measurement with Keithley.
 
         Delegates to SMUController.calibration_measure for the actual workflow.
+        Does NOT pre-connect to SMU — SMUCalibrationMeasure creates its own
+        connections to SMU, SU, and Keithley internally.
 
         Args:
             vsmu_mode: True for VSMU mode, False for normal, None for both.
             verify_calibration: If True, also verify the calibration.
 
         Returns:
-            FunctionTask that runs calibration measurements.
+            FunctionTask that runs calibration measurements, or None if
+            Keithley IP is not configured.
         """
+        if not self._target_instrument_ip:
+            return None
 
         def job():
-            serial = self._smu.get_serial() if self._smu else 0
+            smu_serial = self._targets.smu_serial or None
+            su_serial = self._targets.su_serial or None
+            # Use target serial for folder name, fall back to autodetect placeholder
+            serial = self._targets.smu_serial or self._get_serial() or "auto"
             folder_path = f"calibration/smu_calibration_sn{serial}"
             self._calibration_folder = folder_path
 
-            result = self._controller.calibration_measure(
+            # Keep a local controller ref, then release USB so
+            # SMUCalibrationMeasure can claim the devices itself
+            with self._hw_lock:
+                controller = self._controller or SMUController()
+                if self._smu is not None:
+                    try:
+                        self._smu.disconnect()
+                    except Exception:
+                        pass
+                controller._smu = None
+                self._smu = None
+                self._controller = None
+                self._connected = False
+
+            result = controller.calibration_measure(
                 keithley_ip=self._target_instrument_ip,
-                smu_serial=self._targets.smu_serial or None,
+                smu_serial=smu_serial,
                 smu_interface=self._targets.smu_interface or None,
-                su_serial=self._targets.su_serial or None,
+                su_serial=su_serial,
                 su_interface=self._targets.su_interface or None,
                 folder_path=folder_path,
                 vsmu_mode=vsmu_mode,
@@ -300,10 +341,10 @@ class SourceMeasureUnitService(BaseHardwareService):
                 "ok": result.ok,
                 "message": result.message,
                 "folder": folder_path,
-                "artifacts": self._collect_artifacts(),
+                "artifacts": self._safe_collect_artifacts(),
             }
 
-        return make_task("calibration_measure", job)
+        return make_task("Calibration: Measure", job)
 
     def run_calibration_fit(
         self, draw_plot: bool = True, auto_calibrate: bool = True
@@ -324,7 +365,7 @@ class SourceMeasureUnitService(BaseHardwareService):
             with self._hw_lock:
                 self._ensure_connected()
 
-                serial = self._smu.get_serial() if self._smu else 0
+                serial = self._get_serial()
                 folder_path = self._calibration_folder or f"calibration/smu_calibration_sn{serial}"
 
                 result = self._controller.calibration_fit(
@@ -335,10 +376,10 @@ class SourceMeasureUnitService(BaseHardwareService):
                 return {
                     "ok": result.ok,
                     "message": result.message,
-                    "artifacts": self._collect_artifacts(),
+                    "artifacts": self._safe_collect_artifacts(),
                 }
 
-        return make_task("calibration_fit", job)
+        return make_task("Calibration: Fit", job)
 
     def run_measure(self, channel: str = "CH1") -> FunctionTask:
         """Run calibration measurement (called by calibration page Measure button).
@@ -410,7 +451,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 all_ok = all(r.ok for r in results)
                 return {"ok": all_ok}
 
-        return make_task("program_relais", job)
+        return make_task("Program Relays", job)
 
     def run_save_config(self) -> FunctionTask:
         """Save current channel configuration to device EEPROM.
@@ -425,7 +466,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.save_channel_config()
                 return {"ok": result.ok, "message": result.message}
 
-        return make_task("save_config", job)
+        return make_task("Save Config", job)
 
     def run_load_config(self) -> FunctionTask:
         """Load channel configuration from device EEPROM.
@@ -440,7 +481,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 result = self._controller.load_channel_config()
                 return {"ok": result.ok, "data": result.data, "message": result.message}
 
-        return make_task("load_config", job)
+        return make_task("Load Config", job)
 
     def connect_only(self) -> FunctionTask:
         """Connect to SMU hardware without additional operations.
@@ -452,6 +493,6 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
-                return {"serial": self._smu.get_serial() if self._smu else None, "ok": True}
+                return {"serial": self._get_serial(), "ok": True}
 
-        return make_task("connect", job)
+        return make_task("Connect", job)

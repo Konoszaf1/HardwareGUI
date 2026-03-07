@@ -8,6 +8,7 @@ the legacy setup_cal.py script into a structured controller.
 import os
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -141,11 +142,19 @@ class VUController(HardwareController):
             OperationResult with updated coefficients.
         """
         try:
+            print("── Onboard Autocalibration ──")
             for ch in ("CH1", "CH2", "CH3"):
+                print(f"  Calibrating {ch}...")
                 self._vu.performautocalibration(ch)
+                print(f"  {ch} done.")
             # Re-read coefficients after calibration
+            print("Reading back coefficients...")
             for ch in ("CH1", "CH2", "CH3"):
                 self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
+            print("Coefficients:")
+            for ch in ("CH1", "CH2", "CH3"):
+                k, d = self._coeffs[ch]
+                print(f"  {ch}  k={k:.6f}  d={d:.6f}")
             logger.info("VU onboard autocalibration complete")
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
         except Exception as e:
@@ -171,10 +180,14 @@ class VUController(HardwareController):
             logger.error("VU coefficient read failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
-    def reset_coefficients(self) -> OperationResult:
-        """Reset correction coefficients to defaults (k=1.0, d=0.0) in RAM.
+    def reset_coefficients(self, write_eeprom: bool = False) -> OperationResult:
+        """Reset correction coefficients to defaults (k=1.0, d=0.0).
 
-        Mirrors the legacy reset_coefficients() with wait_input=False.
+        By default only updates RAM so that EEPROM retains the previous
+        calibration.  Pass ``write_eeprom=True`` to also persist the reset.
+
+        Args:
+            write_eeprom: If True, also write the reset values to EEPROM.
 
         Returns:
             OperationResult with reset coefficients.
@@ -189,7 +202,7 @@ class VUController(HardwareController):
                     slope=k,
                     offset=d,
                     zeroword=zw,
-                    writetoeeprom=True,
+                    writetoeeprom=write_eeprom,
                 )
                 logger.debug("VU %s coeffs reset: k=%s, d=%s", ch, k, d)
             return OperationResult(ok=True, data={"coeffs": self._coeffs})
@@ -198,7 +211,7 @@ class VUController(HardwareController):
             return OperationResult(ok=False, message=str(e))
 
     def write_coefficients(self) -> OperationResult:
-        """Write current coefficients to EEPROM.
+        """Write current coefficients to EEPROM and verify by reading back.
 
         Mirrors the legacy write_coefficients() with wait_input=False.
 
@@ -216,8 +229,20 @@ class VUController(HardwareController):
                     zeroword=zw,
                     writetoeeprom=True,
                 )
-                logger.info("VU %s coeffs written: k=%s, d=%s", ch, k, d)
-            return OperationResult(ok=True, data={"coeffs": self._coeffs})
+            # Verify by reading back
+            mismatch = False
+            for ch in ("CH1", "CH2", "CH3"):
+                readback = list(self._vu.get_correctionvalues(ch))
+                expected_k, expected_d = self._coeffs[ch]
+                if abs(readback[0] - expected_k) > 1e-9 or abs(readback[1] - expected_d) > 1e-9:
+                    print(
+                        f"  {ch}  ⚠ EEPROM mismatch: wrote k={expected_k:.6f} d={expected_d:.6f}"
+                        f"  read k={readback[0]:.6f} d={readback[1]:.6f}"
+                    )
+                    mismatch = True
+            if mismatch:
+                logger.warning("Coefficient EEPROM verification failed")
+            return OperationResult(ok=not mismatch, data={"coeffs": self._coeffs})
         except Exception as e:
             logger.error("VU coefficient write failed: %s", e)
             return OperationResult(ok=False, message=str(e))
@@ -288,6 +313,9 @@ class VUController(HardwareController):
                 self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
 
             scope = self._scope
+
+            # Scope setup at 0.20 V/div — setOutputVoltage already accounts
+            # for amplification, so ±0.75V setpoints produce ±0.75V output.
             scope.write("*RST")
             scope.write("CHAN:TYPE HRES")
             scope.write("ACQ:POIN 5000")
@@ -302,18 +330,18 @@ class VUController(HardwareController):
             scope.write("CHAN2:STAT ON")
             scope.write("CHAN3:STAT ON")
 
-            # Measure offsets with outputs disabled
             self._vu.setOutputsEnabled(0)
-            logger.info("Disable VU Outputs")
+            print("── Output Voltage Test ──")
+            print("Measuring scope offsets...")
             scope.ask("SING;*OPC?")
             offsets = [0.0, 0.0, 0.0]
             for channel in (1, 2, 3):
                 off, _ = self._scope_get_data(channel)
                 offsets[channel - 1] = np.mean(off)
-                logger.info(f"Scope Channel{channel} offset: {offsets[channel - 1] * 1000}mV")
+                print(f"  CH{channel} offset: {offsets[channel - 1] * 1000:+.2f} mV")
 
             self._vu.setOutputsEnabled(1)
-            logger.info("Enable VU Outputs")
+            print("Testing output voltages...")
 
             # Test at multiple voltages
             measured = [0, 0, 0]
@@ -329,17 +357,19 @@ class VUController(HardwareController):
                     data, _t = self._scope_get_data(channel)
                     if voltage == 0:
                         measured[channel - 1] = np.mean(data) - offsets[channel - 1]
-                    corrected = np.mean(data) - offsets[channel - 1] - voltage
-                    if abs(1000 * corrected) < 5:
-                        logger.info(
-                            f"  Channel {channel}: measured {np.mean(data):.4f}V"
-                            f"     error corrected {corrected:.6f}V ✓"
-                        )
-                    else:
-                        logger.warning(
-                            f"  Channel {channel}: measured {np.mean(data):.4f}V"
-                            f"     error corrected {corrected:.6f}V ✗"
-                        )
+                    mean_val = float(np.mean(data))
+                    corrected = mean_val - offsets[channel - 1] - voltage
+                    # Detect scope clipping (±1V for 0.20 V/div scale)
+                    clipping = abs(mean_val) > 0.95
+                    err_mv = 1000 * corrected
+                    ok_mark = "✓" if abs(err_mv) < 5 else "✗"
+                    clip_warn = "  ⚠ CLIP" if clipping and voltage != 0 else ""
+                    print(
+                        f"  CH{channel} @ {voltage:+.2f}V  "
+                        f"meas={mean_val:+.4f}V  err={err_mv:+.2f} mV  {ok_mark}{clip_warn}"
+                    )
+                    if clipping and voltage != 0:
+                        logger.warning("CH%d clipping at %.4fV", channel, mean_val)
                     errors[channel - 1].append(corrected)
                     time.sleep(0.01)
 
@@ -354,42 +384,74 @@ class VUController(HardwareController):
                     )
 
             # Check offset errors and adjust coefficients
+            print("Offset check:")
             all_ok = True
             for channel in (1, 2, 3):
                 offset_err = 1000 * measured[channel - 1]
-                logger.info(f"Channel {channel} offset error: {offset_err:.2f}mV")
-                if abs(offset_err) < 2:
-                    logger.info("  error within 2mV ✓")
-                else:
-                    logger.warning("  error larger than 2mV! ✗")
+                ok_mark = "✓" if abs(offset_err) < 2 else "✗"
+                print(f"  CH{channel} offset error: {offset_err:+.2f} mV  {ok_mark}")
+                if abs(offset_err) >= 2:
                     all_ok = False
-                self._coeffs[f"CH{channel}"][1] -= (
-                    measured[channel - 1] / self._coeffs[f"CH{channel}"][0]
-                )
+                slope = self._coeffs[f"CH{channel}"][0]
+                if abs(slope) > 1e-6:
+                    offset_adj = measured[channel - 1] / slope
+                    offset_adj = np.clip(offset_adj, -0.5, 0.5)
+                    self._coeffs[f"CH{channel}"][1] -= offset_adj
+                else:
+                    print(f"  CH{channel}  ⚠ slope too small ({slope:.6f}), skipping")
+                    all_ok = False
 
             # Save plot
             os.makedirs(self._artifact_dir, exist_ok=True)
-            plt.plot(voltages, errors[0], "x-", label="CH1")
-            plt.plot(voltages, errors[1], "x-", label="CH2")
-            plt.plot(voltages, errors[2], "x-", label="CH3")
-            plt.legend(loc="upper left")
-            plt.savefig(f"{self._artifact_dir}/output.png")
-            plt.close()
+            fig, ax = plt.subplots(figsize=(8, 5))
+            for i, (ch, c) in enumerate(zip(("CH1", "CH2", "CH3"), COLORS)):
+                ax.plot(voltages, [1000 * e for e in errors[i]], "x-", label=ch, c=c)
+            ax.set_title(
+                f"Output Voltage Error — VU {self._vu_serial}",
+                fontsize=11, fontweight="bold",
+            )
+            ax.set_xlabel("Setpoint Voltage / V")
+            ax.set_ylabel("Error / mV")
+            ax.legend(loc="upper left")
+            ax.grid(True, alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(self._artifact_path("output"), dpi=150)
+            plt.close(fig)
 
-            # Reset outputs
-            self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
-            self._vu.setOutputsEnabled(0)
+            # Build result before hardware reset so plot data is
+            # preserved even if the reset commands fail.
+            result = OperationResult(ok=all_ok, data={
+                "artifacts": self._list_artifacts(),
+                "plot": {
+                    "type": "outputs",
+                    "voltages": list(voltages),
+                    "errors": [list(map(float, e)) for e in errors],
+                },
+            })
 
-            return OperationResult(ok=all_ok, data={"artifacts": self._list_artifacts()})
+            # Reset outputs (best-effort — don't lose plot data)
+            try:
+                self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
+                self._vu.setOutputsEnabled(0)
+            except Exception as e:
+                logger.warning("Failed to reset VU outputs: %s", e)
+
+            return result
         except Exception as e:
             logger.error("VU test_outputs failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
-    def test_ramp(self) -> OperationResult:
+    def test_ramp(
+        self,
+        on_waveform: Callable[[dict], None] | None = None,
+    ) -> OperationResult:
         """Test voltage ramp linearity and slope accuracy.
 
         Generates a ramp signal, measures it with the scope, fits a linear model,
         and adjusts the slope coefficient.
+
+        Args:
+            on_waveform: Optional callback with waveform data per channel.
 
         Returns:
             OperationResult with ok status and artifacts list.
@@ -414,8 +476,9 @@ class VUController(HardwareController):
                 else:
                     slopes.append(20 * amp)
 
-            logger.info(f"Scale {scale}")
-            logger.info(f"Slopes {slopes}")
+            print("── Ramp Linearity Test ──")
+            print(f"Scope scales: CH1={scale[0]:.1f}  CH2={scale[1]:.1f}  CH3={scale[2]:.1f} V/div")
+            print(f"Ramp slopes:  CH1={slopes[0]:.1f}  CH2={slopes[1]:.1f}  CH3={slopes[2]:.1f} V/s")
 
             scope = self._scope
 
@@ -435,16 +498,16 @@ class VUController(HardwareController):
             scope.write("CHAN3:STAT ON")
 
             self._vu.setOutputsEnabled(0)
-            logger.info("Disable VU Outputs")
+            print("Measuring scope offsets...")
             scope.ask("SING;*OPC?")
             offsets = [0.0, 0.0, 0.0]
             for channel in (1, 2, 3):
                 off, _ = self._scope_get_data(channel)
                 offsets[channel - 1] = np.mean(off)
-                logger.info(f"Scope Channel{channel} offset: {offsets[channel - 1] * 1000}mV")
+                print(f"  CH{channel} offset: {offsets[channel - 1] * 1000:+.2f} mV")
 
             self._vu.setOutputsEnabled(1)
-            logger.info("Enable VU Outputs")
+            print("Generating ramp signal...")
 
             # Configure scope for ramp measurement
             scope.write("*RST")
@@ -501,7 +564,7 @@ class VUController(HardwareController):
             time.sleep(0.3)
 
             self._vu.startTransientSignal()
-            logger.info(f"Setting kch1={slopes[0]}V/s, kch2={slopes[1]}V/s, kch3={slopes[2]}V/s")
+            print("Ramp started, acquiring...")
             time.sleep(0.3)
             self._vu.setOutputsEnabled(0)
 
@@ -510,7 +573,8 @@ class VUController(HardwareController):
             scope.ask("*OPC?")
 
             # Process data and plot
-            fig, axs = plt.subplots(2, 1, sharex=True)
+            waveforms = []
+            fig, axs = plt.subplots(2, 1, sharex=True, figsize=(10, 6))
             for channel in range(3):
                 head = scope.ask("CHAN1:DATA:HEAD?")
                 scope.write(f"CHAN{channel + 1}:DATA?")
@@ -538,28 +602,91 @@ class VUController(HardwareController):
                 tr = t[(t > 405e-3) * (t < 445e-3)]
                 datar = data[(t > 405e-3) * (t < 445e-3)]
 
-                # Fit slope
-                k, d = np.polyfit(tm, datam, deg=1)
-                logger.info(f"  Channel{channel + 1}: k={k:.3f}V/s")
+                # Fit slope — filter NaN before polyfit
+                valid = ~(np.isnan(tm) | np.isnan(datam))
+                tm_clean = tm[valid]
+                datam_clean = datam[valid]
 
-                kre = (k - slopes[channel]) / slopes[channel]
-                logger.info(f"    slope relative error: {kre * 100:.2f}%")
-                if abs(100 * kre) < 0.1:
-                    logger.info("    error within 0.1% ✓")
-                else:
-                    logger.warning("    error larger than 0.1%! ✗")
+                fit_ok = False
+                k, d_fit = 0.0, 0.0
+
+                if len(tm_clean) < 10:
+                    print(f"  CH{channel + 1}  ⚠ insufficient data ({len(tm_clean)} pts), skipping")
                     flag_return = False
+                elif np.ptp(datam_clean) < 0.5:
+                    print(f"  CH{channel + 1}  ⚠ signal too flat (pk-pk={np.ptp(datam_clean):.3f}V), skipping")
+                    flag_return = False
+                else:
+                    k, d_fit = np.polyfit(tm_clean, datam_clean, deg=1)
 
-                # Adjust coefficient
-                self._coeffs[f"CH{channel + 1}"][0] *= slopes[channel] / k
+                    # Sanity check: slope must be finite and not near zero
+                    if not np.isfinite(k) or abs(k) < abs(slopes[channel]) * 0.001:
+                        print(f"  CH{channel + 1}  ⚠ slope {k:.3f} V/s unreliable, skipping")
+                        logger.warning("CH%d ramp: slope %.3f unreliable, skipping", channel + 1, k)
+                        flag_return = False
+                    else:
+                        kre = (k - slopes[channel]) / slopes[channel]
+                        ok_mark = "✓" if abs(100 * kre) < 0.1 else "✗"
+                        print(
+                            f"  CH{channel + 1}  slope={k:.1f} V/s  "
+                            f"(expected {slopes[channel]:.1f})  "
+                            f"err={kre * 100:+.2f}%  {ok_mark}"
+                        )
+                        if abs(100 * kre) >= 0.1:
+                            flag_return = False
+
+                        # Adjust coefficient (bounded to prevent divergence)
+                        if np.sign(k) != np.sign(slopes[channel]):
+                            print(f"         ⚠ slope sign mismatch")
+                        ratio = slopes[channel] / k
+                        if abs(ratio) > 5.0:
+                            print(f"         ⚠ correction ratio {ratio:.2f} clamped to ±5.0")
+                            ratio = np.clip(ratio, -5.0, 5.0)
+                        self._coeffs[f"CH{channel + 1}"][0] *= ratio
+                        fit_ok = True
+
+                # Compute ideal ramp for this channel
+                ideal = (t - 0.2) * slopes[channel]
+                ideal[t < 0] = 0.0
+                ideal[t > 0.4] = 0.0
+
+                # Always collect waveform and plot (even if fit failed)
+                waveforms.append({
+                    "series": f"CH{channel + 1}",
+                    "x": t.tolist(),
+                    "y": data.tolist(),
+                })
+                waveforms.append({
+                    "series": f"CH{channel + 1} (ideal)",
+                    "x": t.tolist(),
+                    "y": ideal.tolist(),
+                    "linestyle": "--",
+                    "alpha": 0.5,
+                    "color": COLORS[channel],
+                })
+
+                if on_waveform is not None:
+                    on_waveform({
+                        "type": "ramp",
+                        "series": f"CH{channel + 1}",
+                        "x": t.tolist(),
+                        "y": data.tolist(),
+                    })
+                    on_waveform({
+                        "type": "ramp",
+                        "series": f"CH{channel + 1} (ideal)",
+                        "x": t.tolist(),
+                        "y": ideal.tolist(),
+                        "linestyle": "--",
+                        "alpha": 0.5,
+                        "color": COLORS[channel],
+                    })
 
                 # Plot
                 c = COLORS[channel]
                 axs[0].plot(t, data, label=f"CH{channel + 1}", c=c)
-                axs[0].plot(tm, tm * k + d, "k:")
-                ideal = (t - 0.2) * slopes[channel]
-                ideal[t < 0] = 0.0
-                ideal[t > 0.4] = 0.0
+                if fit_ok:
+                    axs[0].plot(tm, tm * k + d_fit, "k:")
                 axs[0].plot(t, ideal, ls="-", c=c, alpha=0.5)
 
                 idealm = (tm - 0.2) * slopes[channel]
@@ -567,27 +694,53 @@ class VUController(HardwareController):
                 axs[1].plot(tm, 1000 * (datam - idealm), c=c)
                 axs[1].plot(tr, 1000 * (datar - 0), c=c)
 
+            print("Updated coefficients:")
+            for ch in ("CH1", "CH2", "CH3"):
+                k_c, d_c = self._coeffs[ch]
+                print(f"  {ch}  k={k_c:.6f}  d={d_c:.6f}")
+
             os.makedirs(self._artifact_dir, exist_ok=True)
-            axs[1].set_xlabel("t / s")
+            axs[0].set_title(
+                f"Ramp Linearity Test — VU {self._vu_serial}",
+                fontsize=11, fontweight="bold",
+            )
+            axs[1].set_xlabel("Time / s")
             axs[0].set_ylabel("Signal / V")
             axs[1].set_ylabel("Error / mV")
             axs[0].legend()
-            axs[0].grid()
-            axs[1].grid()
-            plt.savefig(f"{self._artifact_dir}/ramp.png")
-            plt.close()
+            axs[0].grid(True, alpha=0.3)
+            axs[1].grid(True, alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(self._artifact_path("ramp"), dpi=150)
+            plt.close(fig)
 
-            self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
+            # Build result before hardware reset so plot data is
+            # preserved even if the reset commands fail.
+            result = OperationResult(ok=flag_return, data={
+                "artifacts": self._list_artifacts(),
+                "plot": {"type": "ramp", "waveforms": waveforms},
+            })
 
-            return OperationResult(ok=flag_return, data={"artifacts": self._list_artifacts()})
+            try:
+                self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
+            except Exception as e:
+                logger.warning("Failed to reset VU outputs: %s", e)
+
+            return result
         except Exception as e:
             logger.error("VU test_ramp failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
-    def test_transient(self) -> OperationResult:
+    def test_transient(
+        self,
+        on_waveform: Callable[[dict], None] | None = None,
+    ) -> OperationResult:
         """Test transient response with MSM signal.
 
         Generates a step signal, measures timing and overshoot, and saves a plot.
+
+        Args:
+            on_waveform: Optional callback with waveform data per channel.
 
         Returns:
             OperationResult with ok status and artifacts list.
@@ -599,6 +752,7 @@ class VUController(HardwareController):
             from dpi.configuration import DPIConfiguration
             from matplotlib import pyplot as plt
 
+            print("── Transient Step Response ──")
             dac_bits = self._vu.get_DAC_bits()
             amplitude = 1
             timestep = 5e-6
@@ -665,10 +819,29 @@ class VUController(HardwareController):
             scope.ask("*OPC?")
 
             # Process data and plot
+            waveforms = []
+            fig_t, ax_t = plt.subplots(figsize=(8, 5))
             for channel in range(3):
                 data, t = self._scope_get_data(channel + 1)
+
+                # Collect waveform for result
+                waveforms.append({
+                    "series": f"CH{channel + 1}",
+                    "x": t.tolist(),
+                    "y": data.tolist(),
+                })
+
+                # Emit waveform for live plot
+                if on_waveform is not None:
+                    on_waveform({
+                        "type": "transient",
+                        "series": f"CH{channel + 1}",
+                        "x": t.tolist(),
+                        "y": data.tolist(),
+                    })
+
                 c = COLORS[channel]
-                plt.plot(t, data, label=f"CH{channel + 1}", c=c)
+                ax_t.plot(t, data, label=f"CH{channel + 1}", c=c)
 
                 # Timing analysis
                 tl = t[t < -3e-6]
@@ -678,23 +851,18 @@ class VUController(HardwareController):
                 mtl = tl[np.argmin(abs(datal - (-0.5)))]
                 mtm = 0.0
                 mtr = tr_seg[np.argmin(abs(datar - 0.5))]
-                plt.plot([mtl, mtm, mtr], [-0.5, 0.0, 0.5], marker="x", ls="none", c=c)
+                ax_t.plot([mtl, mtm, mtr], [-0.5, 0.0, 0.5], marker="x", ls="none", c=c)
 
                 stress_time = 1e6 * (mtm - mtl)
                 recovery_time = 1e6 * (mtr - mtm)
-                logger.info(f"  Channel{channel + 1} Stress time: {stress_time:.2f}us")
                 el = (mtm - mtl) - 5e-6
-                if abs(el) < 0.5e-6:
-                    logger.info("    error within 0.5us ✓")
-                else:
-                    logger.warning("    error larger than 0.5us! ✗")
-
-                logger.info(f"  Channel{channel + 1} Recovery time: {recovery_time:.2f}us")
+                ok_s = "✓" if abs(el) < 0.5e-6 else "✗"
                 er = (mtr - mtm) - 5e-6
-                if abs(er) < 0.5e-6:
-                    logger.info("    error within 0.5us ✓")
-                else:
-                    logger.warning("    error larger than 0.5us! ✗")
+                ok_r = "✓" if abs(er) < 0.5e-6 else "✗"
+                print(
+                    f"  CH{channel + 1}  stress={stress_time:.2f}µs (err={el*1e6:+.2f}µs) {ok_s}  "
+                    f"recovery={recovery_time:.2f}µs (err={er*1e6:+.2f}µs) {ok_r}"
+                )
 
                 # Overshoot analysis
                 osl = min(data[t < -4e-6]) - (-1)
@@ -703,15 +871,12 @@ class VUController(HardwareController):
                 rosl = osl / -1
                 rosm = osm / 2
                 rosr = osr / -1
-                for os_val, ros, txt in (
-                    (osl, rosl, "left"),
-                    (osm, rosm, "mid"),
-                    (osr, rosr, "right"),
-                ):
-                    logger.info(
-                        f"  Channel{channel + 1} Overshoot {txt}:"
-                        f" {1000 * os_val:.2f}mV, {100 * ros:.2f}%"
-                    )
+                print(
+                    f"         overshoot: "
+                    f"left={1000*osl:+.1f}mV ({100*rosl:.1f}%)  "
+                    f"mid={1000*osm:+.1f}mV ({100*rosm:.1f}%)  "
+                    f"right={1000*osr:+.1f}mV ({100*rosr:.1f}%)"
+                )
 
             # Plot ideal and save
             os.makedirs(self._artifact_dir, exist_ok=True)
@@ -720,30 +885,54 @@ class VUController(HardwareController):
             ideal[t >= 0] = 1.0
             ideal[t < -5e-6] = 0
             ideal[t > 5e-6] = 0
-            plt.plot(t, ideal, ls="--", c="k", alpha=0.75)
-            plt.xlabel("t / s")
-            plt.ylabel("Signal / V")
-            plt.legend()
-            plt.grid()
-            plt.savefig(f"{self._artifact_dir}/transient.png")
-            plt.close()
+            ax_t.plot(t, ideal, ls="--", c="k", alpha=0.75, label="Ideal")
+            ax_t.set_title(
+                f"Transient Step Response — VU {self._vu_serial}",
+                fontsize=11, fontweight="bold",
+            )
+            ax_t.set_xlabel("Time / s")
+            ax_t.set_ylabel("Signal / V")
+            ax_t.legend()
+            ax_t.grid(True, alpha=0.3)
+            fig_t.tight_layout()
+            fig_t.savefig(self._artifact_path("transient"), dpi=150)
+            plt.close(fig_t)
 
-            return OperationResult(ok=True, data={"artifacts": self._list_artifacts()})
+            return OperationResult(ok=True, data={
+                "artifacts": self._list_artifacts(),
+                "plot": {"type": "transient", "waveforms": waveforms},
+            })
         except Exception as e:
             logger.error("VU test_transient failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
-    def test_all(self) -> OperationResult:
+    def test_all(
+        self,
+        on_point_measured: Callable[[dict], None] | None = None,
+        on_waveform: Callable[[dict], None] | None = None,
+    ) -> OperationResult:
         """Run all tests sequentially (outputs, ramp, transient).
+
+        Args:
+            on_point_measured: Optional callback forwarded to test_outputs.
+            on_waveform: Optional callback forwarded to test_ramp/test_transient.
 
         Returns:
             OperationResult with combined ok status and artifacts.
         """
-        r1 = self.test_outputs()
-        r2 = self.test_ramp()
-        r3 = self.test_transient()
+        r1 = self.test_outputs(on_point_measured=on_point_measured)
+        r2 = self.test_ramp(on_waveform=on_waveform)
+        r3 = self.test_transient(on_waveform=on_waveform)
         all_ok = r1.ok and r2.ok and r3.ok
-        return OperationResult(ok=all_ok, data={"artifacts": self._list_artifacts()})
+        # Collect plot data from the last test that has waveform data
+        plots = []
+        for r in (r1, r2, r3):
+            if r.data and "plot" in r.data:
+                plots.append(r.data["plot"])
+        return OperationResult(ok=all_ok, data={
+            "artifacts": self._list_artifacts(),
+            "plots": plots,
+        })
 
     # =========================================================================
     # Python Auto-Calibration (iterative)
@@ -751,16 +940,19 @@ class VUController(HardwareController):
 
     def auto_calibrate(
         self,
+        max_iterations: int = 10,
         on_iteration: Callable[[dict], None] | None = None,
         on_point_measured: Callable[[dict], None] | None = None,
+        on_waveform: Callable[[dict], None] | None = None,
     ) -> OperationResult:
         """Run iterative Python-based autocalibration.
 
         Mirrors the legacy auto_calibrate() function. Alternates between
-        test_ramp and test_outputs for up to 10 iterations, adjusting
-        coefficients until convergence.
+        test_ramp and test_outputs for up to *max_iterations* iterations,
+        adjusting coefficients until convergence.
 
         Args:
+            max_iterations: Maximum number of calibration iterations.
             on_iteration: Optional callback invoked after each iteration with
                 a dict containing ``iteration``, ``converged``, and ``coeffs``.
             on_point_measured: Optional callback forwarded to
@@ -773,36 +965,62 @@ class VUController(HardwareController):
             self.reset_coefficients()
             calibration_finished = False
 
-            for iteration in range(10):
-                logger.info(f"\nCalibration iteration: {iteration}")
-                calibration_finished = self.test_ramp().ok
+            for iteration in range(max_iterations):
+                print(f"\n── Iteration {iteration + 1}/{max_iterations} ──")
+
+                calibration_finished = self.test_ramp(on_waveform=on_waveform).ok
                 self.write_coefficients()
+
+                # Emit iteration marker BEFORE test_outputs so the GUI
+                # clears the plot before new data points arrive.
+                if on_iteration is not None:
+                    on_iteration(
+                        {
+                            "iteration": iteration,
+                            "converged": False,
+                            "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                        }
+                    )
+
                 calibration_finished = (
                     self.test_outputs(on_point_measured=on_point_measured).ok
                     and calibration_finished
                 )
                 self.write_coefficients()
 
-                if on_iteration is not None:
-                    on_iteration(
-                        {
-                            "iteration": iteration,
-                            "converged": calibration_finished,
-                            "coeffs": {k: list(v) for k, v in self._coeffs.items()},
-                        }
-                    )
+                print("Coefficients:")
+                for ch in ("CH1", "CH2", "CH3"):
+                    k, d = self._coeffs[ch]
+                    print(f"  {ch}  k={k:.6f}  d={d:.6f}")
 
                 if calibration_finished:
-                    logger.info(f"\nCalibration finished at Iteration {iteration}")
+                    print(f"\n✓ Converged at iteration {iteration + 1}")
                     break
+                else:
+                    print("Tolerance not met, continuing...")
 
-            self.test_transient()
-            self.test_outputs()
-            self.test_ramp()
+            print("\n── Final Verification ──")
+            if on_iteration is not None:
+                on_iteration({"iteration": "final", "converged": True, "coeffs": {
+                    k: list(v) for k, v in self._coeffs.items()
+                }})
+            self.test_transient(on_waveform=on_waveform)
+            final_outputs = self.test_outputs(on_point_measured=on_point_measured)
+            final_ramp = self.test_ramp(on_waveform=on_waveform)
 
+            plots = []
+            if final_outputs.data and "plot" in final_outputs.data:
+                plots.append(final_outputs.data["plot"])
+            if final_ramp.data and "plot" in final_ramp.data:
+                plots.append(final_ramp.data["plot"])
             return OperationResult(
                 ok=True,
-                data={"coeffs": self._coeffs, "artifacts": self._list_artifacts()},
+                data={
+                    "coeffs": self._coeffs,
+                    "artifacts": self._list_artifacts(),
+                    "plot": plots[0] if len(plots) == 1 else None,
+                    "plots": plots if len(plots) > 1 else None,
+                },
             )
         except Exception as e:
             logger.error("VU auto_calibrate failed: %s", e)
@@ -834,6 +1052,18 @@ class VUController(HardwareController):
         t1 = float(head.split(",")[1])
         t = np.linspace(t0, t1, len(data))
         return data, t
+
+    def _artifact_path(self, prefix: str) -> str:
+        """Generate a timestamped artifact file path.
+
+        Args:
+            prefix: File prefix (e.g. "output", "ramp", "transient").
+
+        Returns:
+            Path like ``calibration_vu2503/output_20260307_131042.png``.
+        """
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.path.join(self._artifact_dir, f"{prefix}_{ts}.png")
 
     def _list_artifacts(self) -> list[str]:
         """List all artifact files in the artifact directory.

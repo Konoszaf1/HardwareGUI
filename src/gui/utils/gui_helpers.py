@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap
@@ -9,6 +10,12 @@ from PySide6.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit
 from src.config import config
 
 THUMBNAIL_SIZE = QSize(config.thumbnails.icon_size, config.thumbnails.icon_size)
+
+# Regex to strip any ANSI escape sequence (colors, cursor, etc.)
+_ANSI_RE = re.compile(r"\033\[[0-9;]*[A-Za-z]")
+
+# Box-drawing characters used by rich tables
+_BOX_CHARS = frozenset("│─┼┤├┬┴┐┘┌└╴╵╶╷")
 
 # ANSI escape code to HTML span mapping
 # Maps common terminal color codes to styled HTML spans
@@ -39,13 +46,30 @@ def _convert_ansi_to_html(text: str) -> str:
 
 
 def append_log(console: QPlainTextEdit, text: str) -> None:
-    """Append a line to a QPlainTextEdit, parsing ANSI color codes."""
+    """Append a line to a QPlainTextEdit, parsing ANSI color codes.
+
+    Lines containing box-drawing characters (from rich tables) get
+    whitespace preserved via ``&nbsp;`` so column alignment is maintained.
+    """
     if not console:
         return
 
     line = text.rstrip("\n")
-    line = _convert_ansi_to_html(line)
-    line = line.replace("\n", "<br>")
+
+    # Detect table-formatted lines (box-drawing chars from rich)
+    is_table = any(c in _BOX_CHARS for c in line)
+
+    if is_table:
+        # Strip ALL ANSI codes, escape HTML entities, preserve spaces
+        line = _ANSI_RE.sub("", line)
+        line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        line = line.replace(" ", "&nbsp;")
+    else:
+        line = _convert_ansi_to_html(line)
+        # Strip any remaining ANSI codes not in our mapping
+        line = _ANSI_RE.sub("", line)
+        line = line.replace("\n", "<br>")
+
     console.appendHtml(line)
 
 

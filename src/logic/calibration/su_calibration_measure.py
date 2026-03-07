@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from dpi import DPISamplingUnit, DPISourceMeasureUnit
 from dpi.calibration import CalibrationMeasureBase, Keithley
-from dpi.unit import DPIEpromEntry_new as DPIEpromEntry
+from dpi.unit import DPIEpromEntry
 from dpi.utilities import DPILogger
 
 
@@ -64,11 +64,15 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
         return self.su.deviceInfoJson() + self.smu.deviceInfoJson()
 
     def _get_measurement_channels(self):
-        eprom = self.su.get_eeprom_interface()
+        eprom = self.su.get_eeprom_interface().entries
         keys = eprom.keys()
 
-        self.ampchannels = keys[:-1]
-        self.ampranges = [np.abs(eprom[k]["gain"]) for k in keys][:-1]
+        self.ampchannels = [
+            k for k in keys
+            if eprom[k].type == DPIEpromEntry.AmplifierType.AMP
+            and eprom[k].ch_type == DPIEpromEntry.ChannelType.INPUT
+        ]
+        self.ampranges = [np.log10(abs(eprom[k].gain)) for k in self.ampchannels]
 
     def _calculate_total_measurements(self, channels_info, measurement_values):
         return len(channels_info) * len(measurement_values)
@@ -102,7 +106,7 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
         self.su.transientSampling_start()
         time.sleep(tmeasure + 0.1)
 
-        voltagesamples, (timestamps, timestampssplit) = self.su.transientSampling_readData()
+        voltagesamples, (timestamps, timestampssplit) = self.su.transientSampling_readData(calibrated=False)
 
         return timestamps, voltagesamples
 
@@ -142,33 +146,41 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             self._logger.error("IV Channel does not exist!")
             return
 
-        try:
-            if "AMP01" == amp_channel:
-                channel_val = 10.0
-            if "AMP1" == amp_channel:
-                channel_val = 1.0
-            if "AMP2" == amp_channel:
-                channel_val = 0.1
-                self._logger.warning("Care measurement values are reseted!")
-                voltage_values = self.prepare_measurement_values(
-                    max_value=2.0, decades=7, delta_log=1 / 2, delta_lin=1 / 6
-                )
-        except ValueError:
-            self._logger.error("Amplifier does not exist!")
-            return
+        if "su_v5.2" in self.su.getHardwareVersion():
+            try:
+                if "AMP1" == amp_channel:
+                    channel_val = 0.1
+                if "AMP2" == amp_channel:
+                    channel_val = 1.0
+                if "AMP3" == amp_channel:
+                    channel_val = 10.0
+            except ValueError:
+                self._logger.error("Amplifier does not exist!")
+                return
+        else:
+            try:
+                if "AMP01" == amp_channel:
+                    channel_val = 10.0
+                if "AMP1" == amp_channel:
+                    channel_val = 1.0
+                if "AMP2" == amp_channel:
+                    channel_val = 0.1
+            except ValueError:
+                self._logger.error("Amplifier does not exist!")
+                return
 
         amprange = self.ampranges[amp_index]
 
         # tmeasure depends on bandwidth of the amplifier
-        tmeasure = 0.1
+        tmeasure = 0.2
         tsample = 1e-4
 
         # prepare measurement
         self.prepare_measure(tmeasure, tsample, amp_channel=channel_val)
 
-        # calculate the adjusted measurement currents
+        # calculate the adjusted measurement voltages
         voltage_values_array = np.array(voltage_values)
-        meas_voltages = voltage_values_array * 1 / channel_val
+        meas_voltages = voltage_values_array / 10**amprange
 
         for meas_voltage in meas_voltages:
             # keithley is in source mode, a positive current flows out of the keithley
@@ -189,7 +201,7 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             df.attrs["amp_range"] = amprange
             df.attrs["name"] = f"amp={df.attrs['amp_channel']} v_set={df.attrs['v_set']:.3e}"
             df.attrs["temperature_smu"] = self.smu.get_temperature()
-            df.attrs["temperature_su"] = self.su.getTemperature()
+            df.attrs["temperature_su"] = self.su.get_temperature()
 
             self.data.append(df)
 
