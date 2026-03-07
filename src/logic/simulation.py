@@ -129,12 +129,20 @@ class SimulatedServiceBase(BaseHardwareService):
         """No-op — simulation doesn't use real hardware."""
         pass
 
-    def ping_instrument(self) -> bool:
+    def _artifact_dir(self) -> str:
+        """Return a default artifact directory for simulation."""
+        return "calibration/simulation"
+
+    def ping_instrument(self) -> FunctionTask:
         """Simulate successful instrument ping."""
-        logger.info("[SIMULATION] Ping instrument - SUCCESS")
-        print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
-        self.set_instrument_verified(True)
-        return True
+
+        def job():
+            logger.info("[SIMULATION] Ping instrument - SUCCESS")
+            print(f"Pinging {self._target_instrument_ip}... OK (simulated)")
+            self.set_instrument_verified(True)
+            return {"ok": True}
+
+        return make_task("ping", job)
 
     def _sim_task(
         self,
@@ -466,10 +474,13 @@ class SimulatedSMUService(SimulatedServiceBase):
         return task
 
     def run_calibration_fit(
-        self, draw_plot: bool = True, auto_calibrate: bool = True
+        self,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
+        model_type: str = "linear",
     ) -> FunctionTask:
         def body():
-            print("Fitting calibration model...")
+            print(f"Fitting calibration model ({model_type})...")
             artifacts = _artifact_gen.generate_artifacts("smu", ["fit_results.png"])
             return {"ok": True, "artifacts": artifacts}
 
@@ -479,7 +490,7 @@ class SimulatedSMUService(SimulatedServiceBase):
         return self.run_calibration_measure()
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         return self.run_calibration_measure(verify_calibration=True)
@@ -623,17 +634,20 @@ class SimulatedSUService(SimulatedServiceBase):
         return task
 
     def run_calibration_fit(
-        self, draw_plot: bool = True, auto_calibrate: bool = True
+        self,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
+        model_type: str = "linear",
     ) -> FunctionTask:
         def body():
-            print("Fitting calibration model...")
+            print(f"Fitting calibration model ({model_type})...")
             artifacts = _artifact_gen.generate_artifacts("su", ["fit_results.png"])
             return {"ok": True, "artifacts": artifacts}
 
         return self._sim_task("calibration_fit", 1.5, body=body)
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         return self.run_calibration_measure(verify_calibration=True)

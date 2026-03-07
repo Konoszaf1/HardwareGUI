@@ -240,10 +240,10 @@ class StatusBarService:
 
         is_connected = self._hardware_scope_states.get(self._active_hardware_id, False)
         if is_connected:
-            self._scope_label.setText("Instrument: Connected")
+            self._scope_label.setText("Device: Connected")
             self._scope_label.setStyleSheet(Styles.SCOPE_CONNECTED)
         else:
-            self._scope_label.setText("Instrument: Disconnected")
+            self._scope_label.setText("Device: Disconnected")
             self._scope_label.setStyleSheet(Styles.SCOPE_DISCONNECTED)
 
     # ---- Animation ----

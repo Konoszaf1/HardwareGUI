@@ -1,9 +1,7 @@
 """Calibration page for Sampling Unit voltage channel calibration."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -49,6 +47,18 @@ class SUCalibrationPage(BaseHardwarePage):
         title.setObjectName("title")
         main_layout.addWidget(title)
 
+        # ==== Measure Section ====
+        measure_box = self._create_group_box("Measure", min_height=80)
+        measure_layout = QHBoxLayout(measure_box)
+        measure_layout.setContentsMargins(12, 18, 12, 12)
+        measure_layout.addStretch()
+
+        self.btn_measure = QPushButton("Measure")
+        self._configure_input(self.btn_measure)
+        measure_layout.addWidget(self.btn_measure)
+
+        main_layout.addWidget(measure_box)
+
         # ==== Fitting Section ====
         fitting_box = self._create_group_box("Fitting", min_height=120)
         fitting_layout = QVBoxLayout(fitting_box)
@@ -81,13 +91,6 @@ class SUCalibrationPage(BaseHardwarePage):
         verify_box = self._create_group_box("Verify", min_height=80)
         verify_layout = QHBoxLayout(verify_box)
         verify_layout.setContentsMargins(12, 18, 12, 12)
-
-        self.sp_verify_points = QDoubleSpinBox()
-        self.sp_verify_points.setRange(1, 100)
-        self.sp_verify_points.setValue(10)
-        self._configure_input(self.sp_verify_points)
-        verify_layout.addWidget(QLabel("Points:"))
-        verify_layout.addWidget(self.sp_verify_points)
         verify_layout.addStretch()
 
         self.btn_verify = QPushButton("Verify")
@@ -133,9 +136,10 @@ class SUCalibrationPage(BaseHardwarePage):
         main_layout.addWidget(plot_box)
 
         # Register action buttons
-        self._action_buttons = [self.btn_run_cal, self.btn_verify]
+        self._action_buttons = [self.btn_measure, self.btn_run_cal, self.btn_verify]
 
         # ==== Signals ====
+        self.btn_measure.clicked.connect(self._on_measure)
         self.btn_run_cal.clicked.connect(self._on_run_calibration)
         self.btn_verify.clicked.connect(self._on_verify)
 
@@ -143,6 +147,28 @@ class SUCalibrationPage(BaseHardwarePage):
         self._connect_service_signals()
 
         self._log("Calibration page ready.")
+
+    def _on_measure(self) -> None:
+        """Run calibration measurement (all ranges)."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+
+        self._log("Starting calibration measurement...")
+        self.plot_widget.clear()
+        self.plot_widget.set_labels("Calibration Measure", "V_ref / V", "V_meas / V")
+        task = self.service.run_calibration_measure()
+        if not task:
+            self._log("Keithley IP not configured. Set it on the Connection page first.")
+            return
+        task.signals.data_chunk.connect(self._on_measure_chunk)
+        self._start_task(task)
+
+    def _on_measure_chunk(self, data) -> None:
+        """Handle live measurement data points."""
+        if isinstance(data, dict) and "x" in data:
+            series = data.get("series", "measure")
+            self.plot_widget.append_point(series, data["x"], data["y"])
 
     def _on_run_calibration(self) -> None:
         """Run voltage calibration."""
@@ -160,19 +186,19 @@ class SUCalibrationPage(BaseHardwarePage):
         self._start_task(task)
 
     def _on_verify(self) -> None:
-        """Verify calibration."""
+        """Verify calibration by re-measuring."""
         if not self.service:
             self._log("Service not available.")
             return
 
-        points = int(self.sp_verify_points.value())
-        self._log(f"Verifying calibration with {points} points...")
+        self._log("Verifying calibration (re-measuring all ranges)...")
         self.plot_widget.clear()
         self.plot_widget.set_labels("Calibration Verify", "V_ref / V", "V_meas / V")
-        task = self.service.run_calibration_verify(num_points=points)
+        task = self.service.run_calibration_measure(verify_calibration=True)
         if not task:
             self._log("Keithley IP not configured. Set it on the Connection page first.")
             return
+        task.signals.data_chunk.connect(self._on_measure_chunk)
         self._start_task(task)
 
     # ---- Plot rendering from finished result ----

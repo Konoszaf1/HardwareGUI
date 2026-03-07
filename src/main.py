@@ -7,8 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 import qt_material  # isort: skip
 
-
-from logging_config import get_logger, setup_logging
+from src.logging_config import get_logger, setup_logging
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,37 +21,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _install_simulation_services():
-    """Replace real service modules with simulated ones in sys.modules.
+def _create_simulation_services() -> dict:
+    """Create simulated service instances for DI.
 
-    This must run BEFORE any imports that would trigger loading the real
-    service modules. We replace the entire module entries in sys.modules
-    so that any subsequent imports get the simulated versions.
+    Returns:
+        Dict with keys 'vu', 'smu', 'su' mapping to simulated service instances.
     """
-    from types import ModuleType
-
-    from logic.simulation import (
+    from src.logic.simulation import (
         SimulatedSMUService,
         SimulatedSUService,
         SimulatedVoltageUnitService,
     )
 
-    fake_vu_module = ModuleType("src.logic.services.vu_service")
-    fake_vu_module.VoltageUnitService = SimulatedVoltageUnitService
-
-    fake_smu_module = ModuleType("src.logic.services.smu_service")
-    fake_smu_module.SourceMeasureUnitService = SimulatedSMUService
-
-    fake_su_module = ModuleType("src.logic.services.su_service")
-    fake_su_module.SamplingUnitService = SimulatedSUService
-
-    sys.modules["src.logic.services.vu_service"] = fake_vu_module
-    sys.modules["src.logic.services.smu_service"] = fake_smu_module
-    sys.modules["src.logic.services.su_service"] = fake_su_module
-
     print("\033[1;36m" + "=" * 60 + "\033[0m")
     print("\033[1;36m  SIMULATION MODE ACTIVE - No hardware required\033[0m")
     print("\033[1;36m" + "=" * 60 + "\033[0m")
+
+    return {
+        "vu": SimulatedVoltageUnitService(),
+        "smu": SimulatedSMUService(),
+        "su": SimulatedSUService(),
+    }
 
 
 def main():
@@ -62,18 +51,20 @@ def main():
     setup_logging()
     logger = get_logger(__name__)
 
+    services = None
     if args.simulation:
         logger.info("Starting in SIMULATION mode")
-        _install_simulation_services()
-        logger.info("Application starting")
+        services = _create_simulation_services()
 
-    from gui.main_window import MainWindow
+    logger.info("Application starting")
+
+    from src.gui.main_window import MainWindow
 
     app = QApplication(sys.argv)
     qt_material.apply_stylesheet(app, "dark_blue.xml")
     logger.debug("Qt Material stylesheet applied")
 
-    window = MainWindow()
+    window = MainWindow(services=services)
     window.show()
     logger.info("Main window displayed")
 

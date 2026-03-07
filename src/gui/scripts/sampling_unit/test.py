@@ -1,18 +1,15 @@
 """Test page for Sampling Unit hardware verification and measurements."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
     QRadioButton,
     QSpinBox,
-    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -110,13 +107,6 @@ class SUTestPage(BaseHardwarePage):
         acdc_layout.addWidget(self.rb_none)
         acdc_layout.addWidget(self.rb_vf)
 
-        # Separator
-        acdc_layout.addWidget(QLabel("|"))
-
-        # Calibration status
-        self.lbl_cal_status = QLabel("Not Calibrated")
-        self.lbl_cal_status.setStyleSheet("color: orange;")
-        acdc_layout.addWidget(self.lbl_cal_status)
         acdc_layout.addStretch()
         config_form.addRow("", acdc_layout)
 
@@ -180,15 +170,6 @@ class SUTestPage(BaseHardwarePage):
         self.plot_transient.setMinimumHeight(100)
         transient_layout.addWidget(self.plot_transient)
 
-        # Results table
-        self.tbl_transient = QTableWidget()
-        self.tbl_transient.setColumnCount(2)
-        self.tbl_transient.setHorizontalHeaderLabels(["Time", "Value"])
-        self.tbl_transient.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tbl_transient.setMinimumHeight(80)
-        self.tbl_transient.verticalHeader().setDefaultSectionSize(28)
-        transient_layout.addWidget(self.tbl_transient)
-
         main_layout.addWidget(transient_box)
 
         # ==== Pulse Measurement ====
@@ -226,15 +207,6 @@ class SUTestPage(BaseHardwarePage):
         self.plot_pulse.set_labels("Pulse", "Time / s", "Voltage / V")
         self.plot_pulse.setMinimumHeight(100)
         pulse_layout.addWidget(self.plot_pulse)
-
-        # Results table
-        self.tbl_pulse = QTableWidget()
-        self.tbl_pulse.setColumnCount(2)
-        self.tbl_pulse.setHorizontalHeaderLabels(["Time", "Value"])
-        self.tbl_pulse.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tbl_pulse.setMinimumHeight(80)
-        self.tbl_pulse.verticalHeader().setDefaultSectionSize(28)
-        pulse_layout.addWidget(self.tbl_pulse)
 
         main_layout.addWidget(pulse_box)
 

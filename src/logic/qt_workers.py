@@ -81,12 +81,12 @@ class TaskResult:
     Attributes:
         name: Human-readable task name.
         ok: Whether the task completed without error.
-        data: Arbitrary result data returned by the task callable.
+        data: Result dict returned by the task callable.
     """
 
     name: str
     ok: bool
-    data: Any | None = None
+    data: dict[str, Any] | None = None
 
 
 class FunctionTask(QRunnable):

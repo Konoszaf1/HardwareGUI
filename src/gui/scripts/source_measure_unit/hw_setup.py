@@ -176,14 +176,14 @@ class SMUSetupPage(BaseHardwarePage):
             self._log(f"Loaded preset: {preset_name}")
 
     def _on_save(self) -> None:
-        """Save current channel configuration to device EEPROM."""
+        """Initialize device with serial and processor type from the form."""
         if not self.service:
             self._log("Service not available.")
             return
         serial = self.sp_serial.value()
         processor = self.cb_processor.currentText()
-        self._log(f"Saving configuration: serial={serial}, processor={processor}")
-        self._start_task(self.service.run_save_config())
+        self._log(f"Initializing device: serial={serial}, processor={processor}")
+        self._start_task(self.service.run_hw_setup(serial=serial, processor_type=processor))
 
     def _on_load(self) -> None:
         """Load channel configuration from device EEPROM."""

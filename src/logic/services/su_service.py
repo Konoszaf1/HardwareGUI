@@ -354,7 +354,10 @@ class SamplingUnitService(BaseHardwareService):
         return task
 
     def run_calibration_fit(
-        self, draw_plot: bool = True, auto_calibrate: bool = True
+        self,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
+        model_type: str = "linear",
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -363,6 +366,7 @@ class SamplingUnitService(BaseHardwareService):
         Args:
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
+            model_type: Model to save ("linear" or "gp").
 
         Returns:
             FunctionTask that fits calibration data.
@@ -379,6 +383,7 @@ class SamplingUnitService(BaseHardwareService):
                     folder_path=folder_path,
                     draw_plot=draw_plot,
                     auto_calibrate=auto_calibrate,
+                    model_type=model_type,
                 )
                 return {
                     "ok": result.ok,
@@ -397,7 +402,7 @@ class SamplingUnitService(BaseHardwareService):
         Returns:
             FunctionTask that fits calibration data.
         """
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         """Verify calibration by re-measuring (called by calibration page Verify button).

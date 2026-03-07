@@ -373,11 +373,11 @@ class SharedPanelsWidget(QWidget):
         return self._artifacts
 
     @property
-    def input_field(self) -> QPlainTextEdit:
+    def input_field(self) -> QWidget:
         """Return the input field widget.
 
         Returns:
-            QWidget: The input field.
+            QWidget: The input field (QLineEdit).
         """
         return self._input_field
 
@@ -435,12 +435,16 @@ class SharedPanelsWidget(QWidget):
     def show_input(self, prompt: str = "") -> None:
         """Show the input field with optional placeholder.
 
+        Auto-expands the console panel so the input field is visible.
+
         Args:
             prompt (str): Placeholder text.
         """
         self._input_field.setPlaceholderText(prompt or "Type input here...")
         self._input_field.setVisible(True)
         self._input_field.setFocus()
+        if not self._console_visible:
+            self.show_console(True)
 
     def _on_input_return(self) -> None:
         """Handle Enter in input field - to be connected by pages."""

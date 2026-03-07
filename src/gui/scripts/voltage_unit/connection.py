@@ -190,7 +190,7 @@ class VUConnectionPage(BaseHardwarePage):
         self.sp_mcu_interface.setEnabled(is_manual)
 
     def _on_ping(self) -> None:
-        """Ping scope to verify connectivity."""
+        """Ping scope to verify connectivity (async)."""
         if not self.service:
             self._log("Service not available.")
             return
@@ -202,11 +202,7 @@ class VUConnectionPage(BaseHardwarePage):
 
         self.service.set_instrument_ip(ip)
         self._log(f"Pinging scope at {ip}...")
-        result = self.service.ping_instrument()
-        if result:
-            self._log("✅ Scope is reachable.")
-        else:
-            self._log("❌ Scope ping failed.")
+        self._start_task(self.service.ping_instrument())
 
     def _on_instrument_verified(self, verified: bool) -> None:
         """Update scope status display."""
@@ -221,11 +217,15 @@ class VUConnectionPage(BaseHardwarePage):
             self._log("Service not available.")
             return
 
+        scope_ip = self.le_scope_ip.text().strip()
+        if not scope_ip:
+            self._log("Please enter a scope IP address before connecting.")
+            return
+
         vu_serial = 0 if self.rb_vu_auto.isChecked() else self.sp_vu_serial.value()
         vu_interface = 0 if self.rb_vu_auto.isChecked() else self.sp_vu_interface.value()
         mcu_serial = 0 if self.rb_mcu_auto.isChecked() else self.sp_mcu_serial.value()
         mcu_interface = 0 if self.rb_mcu_auto.isChecked() else self.sp_mcu_interface.value()
-        scope_ip = self.le_scope_ip.text().strip()
 
         self.service.set_targets(
             scope_ip=scope_ip,

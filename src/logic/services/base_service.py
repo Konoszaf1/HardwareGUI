@@ -30,12 +30,10 @@ class BaseHardwareService(QObject):
 
     Signals:
         connectedChanged: Emitted when connection state changes.
-        inputRequested: Emitted when user input is needed from the GUI.
         instrumentVerified: Emitted when instrument (scope/keithley) ping state changes.
     """
 
     connectedChanged = Signal(bool)
-    inputRequested = Signal(str)
     instrumentVerified = Signal(bool)
 
     def __init__(self) -> None:
@@ -45,43 +43,6 @@ class BaseHardwareService(QObject):
         self._instrument_verified_state: bool = False
         self._hw_lock = threading.RLock()
         self._artifact_manager = ArtifactManager()
-
-        # Input redirection for blocking hardware prompts
-        self._input_event = threading.Event()
-        self._input_value: str = ""
-
-    # ---- Input Redirection ----
-
-    def provide_input(self, text: str) -> None:
-        """Provide user input to a blocking hardware operation.
-
-        Called from the GUI thread when the user submits text via the
-        shared input field.  Unblocks any worker thread waiting on
-        ``_input_event``.
-
-        Args:
-            text: The text entered by the user.
-        """
-        self._input_value = text
-        self._input_event.set()
-
-    def wait_for_input(self, prompt: str) -> str:
-        """Block the calling (worker) thread until the user provides input.
-
-        Emits ``inputRequested`` to trigger the GUI input field, then
-        blocks until ``provide_input`` is called.
-
-        Args:
-            prompt: Prompt text shown to the user.
-
-        Returns:
-            The text entered by the user.
-        """
-        self._input_event.clear()
-        self._input_value = ""
-        self.inputRequested.emit(prompt)
-        self._input_event.wait()
-        return self._input_value
 
     # ---- Simulation Helper ----
 
@@ -123,26 +84,33 @@ class BaseHardwareService(QObject):
             self._instrument_verified_state = verified
             self.instrumentVerified.emit(verified)
 
-    def ping_instrument(self) -> bool:
-        """Ping the instrument IP address to verify connectivity.
+    def ping_instrument(self) -> FunctionTask:
+        """Ping the instrument IP in a worker thread.
 
         Returns:
-            True if the instrument is reachable, False otherwise.
+            FunctionTask that performs the ping and updates verification state.
         """
-        logger.info("Pinging instrument at %s", self._target_instrument_ip)
-        try:
-            subprocess.check_call(
-                ["ping", "-c", "1", "-W", "1", self._target_instrument_ip],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            logger.info("Instrument ping successful")
-            self.set_instrument_verified(True)
-            return True
-        except subprocess.CalledProcessError:
-            logger.warning("Instrument ping failed for %s", self._target_instrument_ip)
-            self.set_instrument_verified(False)
-            return False
+        ip = self._target_instrument_ip
+
+        def job():
+            logger.info("Pinging instrument at %s", ip)
+            try:
+                subprocess.check_call(
+                    ["ping", "-c", "1", "-W", "1", ip],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("Instrument ping successful")
+                print(f"Ping {ip}: OK")
+                self.set_instrument_verified(True)
+                return {"ok": True}
+            except subprocess.CalledProcessError:
+                logger.warning("Instrument ping failed for %s", ip)
+                print(f"Ping {ip}: FAILED")
+                self.set_instrument_verified(False)
+                return {"ok": False}
+
+        return make_task("ping", job)
 
     @staticmethod
     def require_instrument_ip(func):

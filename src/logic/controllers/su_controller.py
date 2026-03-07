@@ -105,14 +105,18 @@ class SUController(HardwareController):
     def save_channel_config(self) -> OperationResult:
         """Save current channel configuration to EEPROM.
 
+        Note: Channel calibration is managed by the calibration workflow.
+
         Returns:
-            OperationResult with success status.
+            OperationResult with informational message.
         """
         try:
-            su = self._get_su()
-            # Implementation depends on dpi package EEPROM API
-            logger.info("SU channel config saved to EEPROM")
-            return OperationResult(ok=True)
+            self._get_su()
+            print("Note: Channel calibration is managed by the calibration workflow.")
+            print("Use 'Run Calibration' on the Calibration page to write to EEPROM.")
+            return OperationResult(
+                ok=True, message="Use calibration workflow for EEPROM writes."
+            )
         except Exception as e:
             logger.error("SU EEPROM save failed: %s", e)
             return OperationResult(ok=False, message=str(e))
@@ -125,8 +129,11 @@ class SUController(HardwareController):
         """
         try:
             su = self._get_su()
-            # Implementation depends on dpi package EEPROM API
-            logger.info("SU channel config loaded from EEPROM")
+            print("Reading SU EEPROM content...")
+            try:
+                su.printEpromContent()
+            except AttributeError:
+                print("EEPROM content display not available for this device.")
             return OperationResult(ok=True, data={})
         except Exception as e:
             logger.error("SU EEPROM load failed: %s", e)
@@ -327,6 +334,10 @@ class SUController(HardwareController):
 
             from src.logic.calibration import SUCalibrationMeasure
 
+            print(f"Starting SU calibration measurement...")
+            print(f"  Keithley: {keithley_ip}")
+            print(f"  Output folder: {folder_path}")
+
             scm = SUCalibrationMeasure(
                 keithley_ip,
                 smu_serial,
@@ -338,6 +349,8 @@ class SUController(HardwareController):
 
             verify_list = [False, True] if verify_calibration else [False]
             for verify in verify_list:
+                phase = "verification" if verify else "calibration"
+                print(f"Measuring all ranges ({phase})...")
                 scm.data = []
                 voltage_values = scm.prepare_measurement_values(
                     max_value=6.5,
@@ -355,8 +368,10 @@ class SUController(HardwareController):
                     file_name=filename,
                     append_data=True,
                 )
+                print(f"Saved {filename}")
 
             scm.cleanup()
+            print("SU calibration measurement complete.")
             logger.info("SU calibration measure complete: %s", folder_path)
             return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
@@ -368,6 +383,7 @@ class SUController(HardwareController):
         folder_path: str,
         draw_plot: bool = True,
         auto_calibrate: bool = True,
+        model_type: str = "linear",
     ) -> OperationResult:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -378,14 +394,19 @@ class SUController(HardwareController):
             folder_path: Folder containing calibration measurements.
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
+            model_type: Model to save ("linear" or "gp").
 
         Returns:
-            OperationResult with success status.
+            OperationResult with success status and folder path.
         """
         try:
             from dpi.utilities import DPILogger
 
             from src.logic.calibration import SUCalibrationFit
+
+            print(f"Starting SU calibration fit...")
+            print(f"  Folder: {folder_path}")
+            print(f"  Model: {model_type}")
 
             smf = SUCalibrationFit(
                 calibration_folder=folder_path,
@@ -395,24 +416,31 @@ class SUController(HardwareController):
             )
 
             if draw_plot:
+                print("Plotting measurement overview...")
                 smf.plot_measurement_overview()
                 smf.plot_aggregated_overview()
 
+            print("Training linear model...")
             smf.train_linear_model()
+            print("Training GP model...")
             smf.train_gp_model()
-            smf.save_model(script_dir=Path(folder_path), model_type="linear")
+            smf.save_model(script_dir=Path(folder_path), model_type=model_type)
+            print("Analyzing ranges...")
             smf.analyze_ranges()
 
             if draw_plot:
+                print("Plotting calibrated overview...")
                 smf.plot_calibrated_overview()
 
             if auto_calibrate:
+                print("Writing calibration to EEPROM...")
                 su = self._get_su()
                 su.calibrate_eeprom(folder_path=folder_path)
-                logger.info("Calibration written to SU EEPROM")
+                print("Calibration written to EEPROM.")
 
+            print("SU calibration fit complete.")
             logger.info("SU calibration fit complete: %s", folder_path)
-            return OperationResult(ok=True)
+            return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
             logger.error("SU calibration fit failed: %s", e)
             return OperationResult(ok=False, message=str(e))

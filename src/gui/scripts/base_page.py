@@ -88,10 +88,6 @@ class BaseHardwarePage(QWidget):
         # Buttons to enable/disable during task execution
         self._action_buttons: list[QPushButton] = []
 
-        # Connect input field if available
-        if self._shared_panels and self._shared_panels.input_field:
-            self._shared_panels.input_field.returnPressed.connect(self._on_input_return)
-
     # ---- Shared panel accessors ----
 
     @property
@@ -240,28 +236,6 @@ class BaseHardwarePage(QWidget):
             dlg = ImageViewerDialog(path, self)
             dlg.exec()
 
-    def _on_input_requested(self, prompt: str) -> None:
-        """Show input field when service requests input.
-
-        Args:
-            prompt (str): Prompt text to display.
-        """
-        if not self.isVisible() or not self._shared_panels:
-            return
-        self._log(f"<b>Input requested:</b> {prompt}")
-        self._shared_panels.show_input(prompt)
-
-    def _on_input_return(self) -> None:
-        """Handle Enter key in input field."""
-        if not self._shared_panels or not self._shared_panels.input_field:
-            return
-        text = self._shared_panels.input_field.text()
-        self._log(f"> {text}")
-        self._shared_panels.input_field.clear()
-        self._shared_panels.input_field.setVisible(False)
-        if self.service and hasattr(self.service, "provide_input"):
-            self.service.provide_input(text)
-
     def _update_action_buttons_state(self) -> None:
         """Enable or disable action buttons based on service connection state.
 
@@ -305,7 +279,6 @@ class BaseHardwarePage(QWidget):
         """Connect common service signals. Call in subclass __init__."""
         if not self.service:
             return
-        self.service.inputRequested.connect(self._on_input_requested)
         self.service.instrumentVerified.connect(self._on_instrument_verified)
         self.service.connectedChanged.connect(self._on_connected_changed)
         # Apply initial state — buttons disabled until connected

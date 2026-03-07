@@ -43,9 +43,15 @@ class MainWindow(QMainWindow):
         buttons (list[SidebarButton]): Hardware sidebar buttons.
     """
 
-    def __init__(self) -> None:
-        """Initialize the main window."""
+    def __init__(self, services: dict | None = None) -> None:
+        """Initialize the main window.
+
+        Args:
+            services: Optional dict with keys 'vu', 'smu', 'su' mapping to
+                      service instances (used for simulation/DI).
+        """
         super().__init__()
+        self._injected_services = services or {}
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self._init_attributes()
@@ -80,25 +86,28 @@ class MainWindow(QMainWindow):
         self._current_hardware_id: int | None = None
 
     def _setup_status_bar(self) -> None:
-        """Configure the status bar and connect instrument signals.
+        """Configure the status bar and connect device connection signals.
 
-        Connects ``instrumentVerified`` from every hardware service so that
-        the status bar reflects verification state regardless of which
-        hardware unit the user is interacting with.
+        Connects ``connectedChanged`` from every hardware service so that
+        the status bar reflects device connection state per hardware unit.
         """
         self.ui.statusbar.setStyleSheet(Styles.STATUS_BAR)
         self.ui.statusbar.setVisible(True)
         self.ui.statusbar.setSizeGripEnabled(True)
         StatusBarService.init(self.ui.statusbar)
         if self.presenter:
-            for svc in (
-                self.presenter.vu_service,
-                self.presenter.smu_service,
-                self.presenter.su_service,
-            ):
+            # Map each service to its hardware_id (from populate_items.py)
+            service_hw_map = [
+                (self.presenter.vu_service, 1),   # VU
+                (self.presenter.su_service, 2),   # SU
+                (self.presenter.smu_service, 3),  # SMU
+            ]
+            for svc, hw_id in service_hw_map:
                 if svc:
-                    svc.instrumentVerified.connect(
-                        self._on_instrument_status_changed
+                    svc.connectedChanged.connect(
+                        lambda connected, hid=hw_id: (
+                            StatusBarService.instance().set_instrument_connected(hid, connected)
+                        )
                     )
 
     def _setup_window_properties(self) -> None:
@@ -153,7 +162,15 @@ class MainWindow(QMainWindow):
         self.list_view = self.ui.listView
         self.sidebar = self.ui.sidebar
         self.actions = ACTIONS
-        self.presenter = ActionsPresenter(self, self.buttons, self.actions, self._current_panels)
+        self.presenter = ActionsPresenter(
+            self,
+            self.buttons,
+            self.actions,
+            self._current_panels,
+            vu_service=self._injected_services.get("vu"),
+            smu_service=self._injected_services.get("smu"),
+            su_service=self._injected_services.get("su"),
+        )
         self.splitter.setup(self.sidebar, self.list_view, self.buttons, self._on_hardware_selected)
 
     def toggle_max_restore(self) -> None:
@@ -197,16 +214,6 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             event.accept()
-
-    def _on_instrument_status_changed(self, verified: bool) -> None:
-        """Handle instrument verification status changes.
-
-        Args:
-            verified (bool): Whether the instrument is verified.
-        """
-        StatusBarService.instance().set_instrument_connected(connected=verified)
-        if verified:
-            StatusBarService.instance().set_ready()
 
     def _on_hardware_selected(self, hardware_id: int) -> None:
         """Handle hardware selection changes.

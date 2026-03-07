@@ -222,7 +222,7 @@ class SUConnectionPage(BaseHardwarePage):
         self.cb_mcu_interface.setEnabled(is_manual)
 
     def _on_ping(self) -> None:
-        """Ping Keithley to verify connectivity."""
+        """Ping Keithley to verify connectivity (async)."""
         if not self.service:
             self._log("Service not available.")
             return
@@ -234,11 +234,7 @@ class SUConnectionPage(BaseHardwarePage):
 
         self.service.set_instrument_ip(ip)
         self._log(f"Pinging Keithley at {ip}...")
-        result = self.service.ping_instrument()
-        if result:
-            self._log("✅ Keithley is reachable.")
-        else:
-            self._log("❌ Keithley ping failed.")
+        self._start_task(self.service.ping_instrument())
 
     def _on_instrument_verified(self, verified: bool) -> None:
         """Update Keithley status display."""
@@ -253,11 +249,20 @@ class SUConnectionPage(BaseHardwarePage):
             self._log("Service not available.")
             return
 
-        su_serial = 0 if self.rb_su_auto.isChecked() else self.sp_su_serial.value()
-        su_interface = 0 if self.rb_su_auto.isChecked() else self.cb_su_interface.currentIndex()
-        smu_serial = 0 if self.rb_smu_auto.isChecked() else self.sp_smu_serial.value()
-        smu_interface = 0 if self.rb_smu_auto.isChecked() else self.cb_smu_interface.currentIndex()
         keithley_ip = self.le_keithley_ip.text().strip()
+        if not keithley_ip:
+            self._log("Please enter a Keithley IP address before connecting.")
+            return
+
+        su_serial = 0 if self.rb_su_auto.isChecked() else self.sp_su_serial.value()
+        su_interface = 0 if self.rb_su_auto.isChecked() else max(self.cb_su_interface.currentIndex(), 0)
+        smu_serial = 0 if self.rb_smu_auto.isChecked() else self.sp_smu_serial.value()
+        smu_interface = 0 if self.rb_smu_auto.isChecked() else max(self.cb_smu_interface.currentIndex(), 0)
+
+        if not self.rb_su_auto.isChecked() and self.cb_su_interface.currentIndex() == 0:
+            self._log("Warning: SU interface not selected, defaulting to auto.")
+        if not self.rb_smu_auto.isChecked() and self.cb_smu_interface.currentIndex() == 0:
+            self._log("Warning: SMU interface not selected, defaulting to auto.")
 
         self.service.set_targets(
             keithley_ip=keithley_ip,

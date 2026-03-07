@@ -195,7 +195,7 @@ class SUSetupPage(BaseHardwarePage):
             self._log(f"Loaded preset: {preset_name}")
 
     def _on_save(self) -> None:
-        """Save current channel configuration to device EEPROM."""
+        """Initialize device with serial, processor and connector from the form."""
         if not self.service:
             self._log("Service not available.")
             return
@@ -203,10 +203,14 @@ class SUSetupPage(BaseHardwarePage):
         processor = self.cb_processor.currentText()
         connector = self.cb_connector.currentText()
         self._log(
-            f"Saving configuration: serial={serial}, processor={processor}, "
+            f"Initializing device: serial={serial}, processor={processor}, "
             f"connector={connector}"
         )
-        self._start_task(self.service.run_save_config())
+        self._start_task(
+            self.service.run_hw_setup(
+                serial=serial, processor_type=processor, connector_type=connector,
+            )
+        )
 
     def _on_load(self) -> None:
         """Load channel configuration from device EEPROM."""

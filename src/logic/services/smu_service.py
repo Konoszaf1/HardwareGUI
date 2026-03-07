@@ -347,7 +347,10 @@ class SourceMeasureUnitService(BaseHardwareService):
         return make_task("Calibration: Measure", job)
 
     def run_calibration_fit(
-        self, draw_plot: bool = True, auto_calibrate: bool = True
+        self,
+        draw_plot: bool = True,
+        auto_calibrate: bool = True,
+        model_type: str = "linear",
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -356,6 +359,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         Args:
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
+            model_type: Model to save ("linear" or "gp").
 
         Returns:
             FunctionTask that fits calibration data.
@@ -372,6 +376,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                     folder_path=folder_path,
                     draw_plot=draw_plot,
                     auto_calibrate=auto_calibrate,
+                    model_type=model_type,
                 )
                 return {
                     "ok": result.ok,
@@ -382,10 +387,10 @@ class SourceMeasureUnitService(BaseHardwareService):
         return make_task("Calibration: Fit", job)
 
     def run_measure(self, channel: str = "CH1") -> FunctionTask:
-        """Run calibration measurement (called by calibration page Measure button).
+        """Run calibration measurement (measures all ranges regardless of channel).
 
         Args:
-            channel: Channel to measure (currently unused — measures all ranges).
+            channel: Informational only — the library measures all ranges.
 
         Returns:
             FunctionTask that runs calibration measurement.
@@ -401,7 +406,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         Returns:
             FunctionTask that fits calibration data.
         """
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True)
+        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         """Verify calibration by re-measuring (called by calibration page Verify button).
