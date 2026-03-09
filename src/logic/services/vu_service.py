@@ -111,9 +111,42 @@ class VoltageUnitService(BaseHardwareService):
         return {"CH1": [1.0, 0.0], "CH2": [1.0, 0.0], "CH3": [1.0, 0.0]}
 
     # ---- Internals ----
+    def _reconnect_scope(self) -> None:
+        """Recreate the scope connection and update the controller reference.
+
+        Creates the new connection FIRST, then cleans up the old one with a
+        short timeout so a broken old socket never blocks the worker thread.
+        """
+        old = self._scope
+        # Create new scope before touching the old one
+        self._scope = vxi11.Instrument(self._target_instrument_ip)
+        self._scope.timeout = 30
+        if self._controller:
+            self._controller._scope = self._scope
+        # Clean up old scope with short timeout to avoid blocking
+        if old:
+            try:
+                old.timeout = 2
+                old.close()
+            except Exception:
+                # close() may fail partway through (destroy_link blocks).
+                # Ensure the TCP socket is closed so we don't leak
+                # connections to the scope.
+                try:
+                    if old.client is not None:
+                        old.client.close()
+                except Exception:
+                    pass
+            finally:
+                # Prevent __del__ from retrying a broken close()
+                old.link = None
+                old.client = None
+
     def _ensure_connected(self) -> None:
         """Ensure VU hardware is connected and controller is initialized."""
         if self._connected and self._vu and self._mcu and self._scope and self._controller:
+            # Reuse existing connection — just like setup_cal.py does.
+            # Each test sends *RST which resets the scope to a clean state.
             return
 
         # Resolve serials that are zero via lsusb as in the script
@@ -137,6 +170,7 @@ class VoltageUnitService(BaseHardwareService):
         self._vu = DPIVoltageUnit(serial=vu_serial, interface=vu_if, busaddress=vu_if)
         self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
         self._scope = vxi11.Instrument(self._target_instrument_ip)
+        self._scope.timeout = 30
 
         # Initialize DAC hardware (required after power glitch or firmware reset)
         self._vu.dacInit()
@@ -181,12 +215,12 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def connect_and_read(self) -> FunctionTask:
         def job():
-            self._ensure_connected()
+            # _ensure_connected() already called by @require_instrument_ip
             try:
                 idn = self._scope.ask("*IDN?")
-                logger.debug(f"Scope IDN: {idn}")
+                print(f"Scope: {idn}")
             except Exception as e:
-                logger.warning(f"Failed to read scope IDN: {e}")
+                print(f"Scope IDN query failed: {e}")
             return {"coeffs": self.coeffs}
 
         return make_task("Connect & Read Coefficients", job)

@@ -64,7 +64,7 @@ class ArtifactWatcher(QObject):
         if current_files != self._known_artifacts:
             self._known_artifacts = current_files
 
-            # Clear and re-add all thumbnails in sorted order
+            # Clear and re-add all thumbnails, newest first
             self.list_widget.clear()
-            for filepath in sorted(current_files):
+            for filepath in sorted(current_files, reverse=True):
                 add_thumbnail_item(self.list_widget, filepath)

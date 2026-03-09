@@ -80,6 +80,62 @@ class VUController(HardwareController):
         return self._coeffs
 
     # =========================================================================
+    # Scope Helpers
+    # =========================================================================
+
+    def _scope_setup_and_acquire(self, scope: "vxi11.Instrument") -> None:
+        """Send SING and wait for acquisition, with diagnostics.
+
+        Works for AUTO trigger mode (after *RST with no TRIG:A:MODE NORM).
+        Uses a short per-attempt timeout so we can log progress.
+        """
+        saved = scope.timeout
+        try:
+            scope.timeout = 15
+            scope.ask("SING;*OPC?")
+        finally:
+            scope.timeout = saved
+
+    def _scope_wait_trigger(
+        self, scope: "vxi11.Instrument", timeout: float = 20
+    ) -> bool:
+        """Wait for a NORM-mode triggered acquisition to complete.
+
+        Returns True if the scope triggered normally, False if it timed out.
+        When False, the scope has no valid data — the caller must NOT
+        attempt to read waveform data.
+        """
+        saved = scope.timeout
+        try:
+            scope.timeout = timeout
+            try:
+                scope.ask("*OPC?")
+                return True
+            except Exception:
+                print(f"  ⚠ Scope did not trigger within {timeout}s — check probe connections")
+                logger.warning("Scope NORM trigger timed out after %ss", timeout)
+
+            # The timed-out *OPC? leaves a stale response in the
+            # per-link output buffer.  Close the link to discard it.
+            # The next scope.write() will lazily reopen a fresh link,
+            # and *RST at the start of the next test cancels the stuck
+            # acquisition.
+            try:
+                scope.timeout = 2
+                scope.close()
+            except Exception:
+                try:
+                    if scope.client is not None:
+                        scope.client.close()
+                except Exception:
+                    pass
+                scope.link = None
+                scope.client = None
+            return False
+        finally:
+            scope.timeout = saved
+
+    # =========================================================================
     # Setup Operations
     # =========================================================================
 
@@ -333,7 +389,7 @@ class VUController(HardwareController):
             self._vu.setOutputsEnabled(0)
             print("── Output Voltage Test ──")
             print("Measuring scope offsets...")
-            scope.ask("SING;*OPC?")
+            self._scope_setup_and_acquire(scope)
             offsets = [0.0, 0.0, 0.0]
             for channel in (1, 2, 3):
                 off, _ = self._scope_get_data(channel)
@@ -351,7 +407,7 @@ class VUController(HardwareController):
             for voltage in voltages:
                 self._vu.setOutputVoltage("all", (voltage, voltage, voltage))
                 logger.info(f"Applied {voltage}V")
-                scope.ask("SING;*OPC?")
+                self._scope_setup_and_acquire(scope)
 
                 for channel in (1, 2, 3):
                     data, _t = self._scope_get_data(channel)
@@ -438,6 +494,7 @@ class VUController(HardwareController):
 
             return result
         except Exception as e:
+            print(f"  ✗ test_outputs failed: {e}")
             logger.error("VU test_outputs failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -472,7 +529,7 @@ class VUController(HardwareController):
                 scale.append(abs(self._vu.get_Vout_Amplification(ch)))
                 amp = self._vu.get_Vout_Amplification(ch)
                 if ch == "CH1":
-                    slopes.append(-1 * 20 * amp)
+                    slopes.append(1 * 20 * amp)
                 else:
                     slopes.append(20 * amp)
 
@@ -499,7 +556,7 @@ class VUController(HardwareController):
 
             self._vu.setOutputsEnabled(0)
             print("Measuring scope offsets...")
-            scope.ask("SING;*OPC?")
+            self._scope_setup_and_acquire(scope)
             offsets = [0.0, 0.0, 0.0]
             for channel in (1, 2, 3):
                 off, _ = self._scope_get_data(channel)
@@ -522,7 +579,9 @@ class VUController(HardwareController):
             scope.write("TRIG:A:SOUR CH1")
             scope.write("TRIG:A:TYPE EDGE")
             scope.write("TRIG:A:EDGE:SLOPE NEG")
-            scope.write(f"TRIG:A:LEVEL1:VAL {-3.95 * scale[0]}")
+            trig_level = -1.5 * scale[0] + offsets[0]
+            scope.write(f"TRIG:A:LEVEL1:VAL {trig_level}")
+            print(f"  Trigger level: {trig_level:+.2f} V  (NEG edge, CH1)")
             scope.write("FORM REAL")
             scope.write("FORM:BORD LSBF")
             scope.write("CHAN:DATA:POIN DMAX")
@@ -568,9 +627,20 @@ class VUController(HardwareController):
             time.sleep(0.3)
             self._vu.setOutputsEnabled(0)
 
-            # Wait and acquire
+            # Wait for trigger
             time.sleep(1)
-            scope.ask("*OPC?")
+            triggered = self._scope_wait_trigger(scope, timeout=15)
+
+            if not triggered:
+                print("  ⚠ No valid data — trigger did not fire")
+                try:
+                    self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
+                except Exception:
+                    pass
+                return OperationResult(
+                    ok=False,
+                    message="Trigger did not fire — check scope probe connections",
+                )
 
             # Process data and plot
             waveforms = []
@@ -728,6 +798,7 @@ class VUController(HardwareController):
 
             return result
         except Exception as e:
+            print(f"  ✗ test_ramp failed: {e}")
             logger.error("VU test_ramp failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -758,9 +829,29 @@ class VUController(HardwareController):
             timestep = 5e-6
 
             scope = self._scope
+
+            # Quick offset measurement (outputs disabled) so we can
+            # offset-correct the NORM trigger level and channel offsets.
+            # Use 5V/div so probes with up to ±25V DC offset don't clip.
             scope.write("*RST")
             scope.write("CHAN:TYPE HRES")
             scope.write("ACQ:POIN 5000")
+            scope.write("TIM:SCAL 1e-2")
+            scope.write("CHAN1:SCAL 5")
+            scope.write("CHAN2:SCAL 5")
+            scope.write("CHAN3:SCAL 5")
+            scope.write("CHAN1:STAT ON")
+            scope.write("CHAN2:STAT ON")
+            scope.write("CHAN3:STAT ON")
+            scope.write("FORM REAL")
+            scope.write("FORM:BORD LSBF")
+            scope.write("CHAN:DATA:POIN DMAX")
+            self._vu.setOutputsEnabled(0)
+            self._scope_setup_and_acquire(scope)
+            offsets = [0.0, 0.0, 0.0]
+            for ch in (1, 2, 3):
+                offsets[ch - 1] = float(np.mean(self._scope_get_data(ch)[0]))
+                print(f"  CH{ch} DC offset: {offsets[ch - 1] * 1000:+.1f} mV")
 
             if dac_bits == 20:
                 timestep = 20e-6
@@ -768,15 +859,24 @@ class VUController(HardwareController):
             v_scale = 0.5 * amplitude
             timescale = timestep / 5.0
 
+            scope.write("*RST")
+            scope.write("CHAN:TYPE HRES")
+            scope.write("ACQ:POIN 5000")
             scope.write(f"TIM:SCAL {timescale}")
             scope.write(f"CHAN1:SCAL {v_scale}")
             scope.write(f"CHAN2:SCAL {v_scale}")
             scope.write(f"CHAN3:SCAL {v_scale}")
+            # Compensate probe DC offset so the step response is on-screen
+            scope.write(f"CHAN1:OFFS {-offsets[0]}")
+            scope.write(f"CHAN2:OFFS {-offsets[1]}")
+            scope.write(f"CHAN3:OFFS {-offsets[2]}")
             scope.write("TRIG:A:MODE NORM")
             scope.write("TRIG:A:SOUR CH1")
             scope.write("TRIG:A:TYPE EDGE")
             scope.write("TRIG:A:EDGE:SLOPE POS")
-            scope.write("TRIG:A:LEVEL1:VAL 0.0")
+            trig_level = offsets[0]
+            scope.write(f"TRIG:A:LEVEL1:VAL {trig_level}")
+            print(f"  Trigger level: {trig_level:+.3f} V  (POS edge, CH1)")
             scope.write("FORM REAL")
             scope.write("FORM:BORD LSBF")
             scope.write("CHAN:DATA:POIN DMAX")
@@ -816,7 +916,14 @@ class VUController(HardwareController):
             time.sleep(0.3)
             self._vu.setOutputsEnabled(0)
 
-            scope.ask("*OPC?")
+            triggered = self._scope_wait_trigger(scope, timeout=15)
+
+            if not triggered:
+                print("  ⚠ No valid data — trigger did not fire")
+                return OperationResult(
+                    ok=False,
+                    message="Trigger did not fire — check scope probe connections",
+                )
 
             # Process data and plot
             waveforms = []
@@ -903,6 +1010,7 @@ class VUController(HardwareController):
                 "plot": {"type": "transient", "waveforms": waveforms},
             })
         except Exception as e:
+            print(f"  ✗ test_transient failed: {e}")
             logger.error("VU test_transient failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
