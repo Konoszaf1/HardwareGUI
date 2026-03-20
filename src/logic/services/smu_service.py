@@ -7,6 +7,7 @@ by delegating to SMUController for actual device interactions.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib
 from dpi import DPISourceMeasureUnit
@@ -115,6 +116,47 @@ class SourceMeasureUnitService(BaseHardwareService):
         self._connected = True
         logger.info("SMU connected: serial=%s", self._get_serial())
         self.connectedChanged.emit(True)
+
+    def _resolve_calibration_folder(self) -> str:
+        """Resolve the calibration folder path.
+
+        Priority: stored folder > serial-based > scan for existing folder.
+        Updates ``_calibration_folder`` when a valid folder is found.
+        """
+        if self._calibration_folder and Path(self._calibration_folder).exists():
+            return self._calibration_folder
+
+        serial = self._targets.smu_serial or self._get_serial() or 0
+        if serial:
+            candidate = str(Path(f"calibration/smu_calibration_sn{serial}").resolve())
+            if Path(candidate).exists():
+                self._calibration_folder = candidate
+                return candidate
+
+        # Scan for existing calibration folders
+        cal_dir = Path("calibration")
+        if cal_dir.exists():
+            folders = sorted(
+                cal_dir.glob("smu_calibration_sn*"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            if folders:
+                self._calibration_folder = str(folders[-1].resolve())
+                return self._calibration_folder
+
+        # Fallback: construct path (may not exist yet, e.g. before first measurement)
+        folder = str(Path(f"calibration/smu_calibration_sn{serial or 'auto'}").resolve())
+        return folder
+
+    def _disconnect(self) -> None:
+        """Tear down SMU hardware connections."""
+        if self._smu:
+            try:
+                self._smu.disconnect()
+            except Exception:
+                pass
+            self._smu = None
+        self._controller = None
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
@@ -287,16 +329,26 @@ class SourceMeasureUnitService(BaseHardwareService):
         self,
         vsmu_mode: bool | None = None,
         verify_calibration: bool = False,
-    ) -> FunctionTask:
+        pa_channels: list[str] | None = None,
+        speed_preset: str = "normal",
+        single_range: tuple[str, str] | None = None,
+    ) -> FunctionTask | None:
         """Run calibration measurement with Keithley.
 
         Delegates to SMUController.calibration_measure for the actual workflow.
         Does NOT pre-connect to SMU — SMUCalibrationMeasure creates its own
         connections to SMU, SU, and Keithley internally.
 
+        Emits data_chunk signals for live progress:
+        - {"type": "cal_range", ...} when a range starts/finishes
+        - {"type": "cal_point", ...} for each measured point
+
         Args:
             vsmu_mode: True for VSMU mode, False for normal, None for both.
             verify_calibration: If True, also verify the calibration.
+            pa_channels: PA channels to measure.
+            speed_preset: "fast", "normal", or "precise".
+            single_range: If set, (pa_channel, iv_channel) for single range.
 
         Returns:
             FunctionTask that runs calibration measurements, or None if
@@ -308,13 +360,13 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             smu_serial = self._targets.smu_serial or None
             su_serial = self._targets.su_serial or None
-            # Use target serial for folder name, fall back to autodetect placeholder
             serial = self._targets.smu_serial or self._get_serial() or "auto"
-            folder_path = f"calibration/smu_calibration_sn{serial}"
+            folder_path = str(
+                Path(f"calibration/smu_calibration_sn{serial}").resolve()
+            )
             self._calibration_folder = folder_path
 
-            # Keep a local controller ref, then release USB so
-            # SMUCalibrationMeasure can claim the devices itself
+            # Release USB so SMUCalibrationMeasure can claim devices
             with self._hw_lock:
                 controller = self._controller or SMUController()
                 if self._smu is not None:
@@ -336,21 +388,33 @@ class SourceMeasureUnitService(BaseHardwareService):
                 folder_path=folder_path,
                 vsmu_mode=vsmu_mode,
                 verify_calibration=verify_calibration,
+                pa_channels=pa_channels,
+                speed_preset=speed_preset,
+                single_range=single_range,
+                on_point_measured=lambda d: task.signals.data_chunk.emit(d),
+                on_range_started=lambda d: task.signals.data_chunk.emit(d),
+                cancel_event=task.cancel_event,
             )
+            data = result.data or {}
             return {
                 "ok": result.ok,
                 "message": result.message,
                 "folder": folder_path,
+                "cancelled": data.get("cancelled", False),
+                "completed_ranges": data.get("completed_ranges"),
+                "total_ranges": data.get("total_ranges"),
                 "artifacts": self._safe_collect_artifacts(),
             }
 
-        return make_task("Calibration: Measure", job)
+        task = make_task("Calibration: Measure", job)
+        return task
 
     def run_calibration_fit(
         self,
         draw_plot: bool = True,
-        auto_calibrate: bool = True,
+        auto_calibrate: bool = False,
         model_type: str = "linear",
+        verify_calibration: bool = True,
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -360,6 +424,7 @@ class SourceMeasureUnitService(BaseHardwareService):
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
             model_type: Model to save ("linear" or "gp").
+            verify_calibration: If True, load verification data too.
 
         Returns:
             FunctionTask that fits calibration data.
@@ -369,54 +434,51 @@ class SourceMeasureUnitService(BaseHardwareService):
             with self._hw_lock:
                 self._ensure_connected()
 
-                serial = self._get_serial()
-                folder_path = self._calibration_folder or f"calibration/smu_calibration_sn{serial}"
+                folder_path = self._resolve_calibration_folder()
 
                 result = self._controller.calibration_fit(
                     folder_path=folder_path,
                     draw_plot=draw_plot,
                     auto_calibrate=auto_calibrate,
                     model_type=model_type,
+                    verify_calibration=verify_calibration,
                 )
+                data = result.data or {}
                 return {
                     "ok": result.ok,
                     "message": result.message,
+                    "analysis_plots": data.get("analysis_plots", []),
+                    "calibrated_ranges": data.get("calibrated_ranges", []),
                     "artifacts": self._safe_collect_artifacts(),
                 }
 
         return make_task("Calibration: Fit", job)
 
-    def run_measure(self, channel: str = "CH1") -> FunctionTask:
-        """Run calibration measurement (measures all ranges regardless of channel).
-
-        Args:
-            channel: Informational only — the library measures all ranges.
+    def run_load_calibration_status(self) -> FunctionTask | None:
+        """Load calibration status by scanning the calibration folder.
 
         Returns:
-            FunctionTask that runs calibration measurement.
+            FunctionTask with calibration_status list, or None if no folder.
         """
-        return self.run_calibration_measure()
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SMUController()
+            status = controller.get_calibration_status(folder)
+            return {"ok": True, "calibration_status": status}
+
+        return make_task("Load Cal Status", job)
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
-        """Run calibration fit (called by calibration page Run Calibration button).
+        """Run calibration fit (called by calibration page Run Calibration button)."""
+        return self.run_calibration_fit(
+            draw_plot=True, auto_calibrate=False, model_type=model,
+        )
 
-        Args:
-            model: Calibration model type ("linear" or "gp").
-
-        Returns:
-            FunctionTask that fits calibration data.
-        """
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
-
-    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
-        """Verify calibration by re-measuring (called by calibration page Verify button).
-
-        Args:
-            num_points: Number of verification points (informational).
-
-        Returns:
-            FunctionTask that verifies calibration.
-        """
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask | None:
+        """Verify calibration by re-measuring."""
         return self.run_calibration_measure(verify_calibration=True)
 
     def run_program_relais(
@@ -458,6 +520,55 @@ class SourceMeasureUnitService(BaseHardwareService):
 
         return make_task("Program Relays", job)
 
+    def run_set_pa_clip(self, channel: int, enabled: bool) -> FunctionTask:
+        """Set Post-Amplifier clip detection for a channel.
+
+        Args:
+            channel: PA channel number (1-4).
+            enabled: Whether to enable clip detection.
+
+        Returns:
+            FunctionTask that sets PA clip state.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.set_pa_clip(channel=channel, enabled=enabled)
+                return {"ok": result.ok}
+
+        return make_task("Set PA Clip", job)
+
+    def run_get_saturation_state(self) -> FunctionTask:
+        """Read saturation detection state.
+
+        Returns:
+            FunctionTask with iv_saturated and pa_saturated in data.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.get_saturation_state()
+                return result.data if result.ok else {"ok": False}
+
+        return make_task("Read Saturation", job)
+
+    def run_clear_saturation(self) -> FunctionTask:
+        """Clear saturation detection flags.
+
+        Returns:
+            FunctionTask that clears saturation.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._ensure_connected()
+                result = self._controller.clear_saturation()
+                return {"ok": result.ok}
+
+        return make_task("Clear Saturation", job)
+
     def run_save_config(self) -> FunctionTask:
         """Save current channel configuration to device EEPROM.
 
@@ -484,7 +595,11 @@ class SourceMeasureUnitService(BaseHardwareService):
             with self._hw_lock:
                 self._ensure_connected()
                 result = self._controller.load_channel_config()
-                return {"ok": result.ok, "data": result.data, "message": result.message}
+                channels = result.data.get("channels", []) if result.data else []
+                return {
+                    "ok": result.ok, "data": result.data,
+                    "channels": channels, "message": result.message,
+                }
 
         return make_task("Load Config", job)
 

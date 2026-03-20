@@ -158,14 +158,23 @@ class VUConnectionPage(BaseHardwarePage):
         mcu_layout.addLayout(mcu_form)
         main_layout.addWidget(mcu_box)
 
-        # ==== Connect Button ====
+        # ==== Connect / Disconnect Buttons ====
+        conn_layout = QHBoxLayout()
         self.btn_connect = QPushButton("Connect")
         self._configure_input(self.btn_connect, min_height=40)
-        main_layout.addWidget(self.btn_connect)
+        self.btn_disconnect = QPushButton("Disconnect")
+        self._configure_input(self.btn_disconnect, min_height=40)
+        self.btn_disconnect.setEnabled(False)
+        self.lbl_connection_status = QLabel("Not connected")
+        conn_layout.addWidget(self.btn_connect)
+        conn_layout.addWidget(self.btn_disconnect)
+        conn_layout.addWidget(self.lbl_connection_status)
+        conn_layout.addStretch()
+        main_layout.addLayout(conn_layout)
 
         main_layout.addStretch()
 
-        # Register action buttons
+        # Register action buttons (disconnect NOT included — managed separately)
         self._action_buttons = [self.btn_connect, self.btn_ping]
 
         # ==== Signals ====
@@ -173,11 +182,11 @@ class VUConnectionPage(BaseHardwarePage):
         self.rb_mcu_manual.toggled.connect(self._on_mcu_mode_changed)
         self.btn_ping.clicked.connect(self._on_ping)
         self.btn_connect.clicked.connect(self._on_connect)
+        self.btn_disconnect.clicked.connect(self._on_disconnect)
 
         if self.service:
             self.service.instrumentVerified.connect(self._on_instrument_verified)
-
-        self._log("Connection page ready.")
+            self.service.connectedChanged.connect(self._on_connected_changed)
 
     def _on_vu_mode_changed(self, is_manual: bool) -> None:
         """Enable/disable VU manual inputs based on mode."""
@@ -237,3 +246,30 @@ class VUConnectionPage(BaseHardwarePage):
 
         self._log("Connecting to VU hardware...")
         self._start_task(self.service.connect_only())
+
+    def _on_disconnect(self) -> None:
+        """Disconnect from VU hardware."""
+        if not self.service:
+            return
+        self._log("Disconnecting from VU hardware...")
+        self._start_task(self.service.disconnect_hardware())
+
+    def _update_action_buttons_state(self) -> None:
+        """Connect/Ping are always available on connection pages."""
+        for btn in self._action_buttons:
+            btn.setEnabled(True)
+
+    def _on_connected_changed(self, connected: bool) -> None:
+        """Toggle button states based on connection.
+
+        Does NOT call super() — Connect/Ping must stay enabled regardless
+        of connection state so the user can always reconnect.
+        """
+        self.btn_disconnect.setEnabled(connected)
+        self.btn_connect.setText("Reconnect" if connected else "Connect")
+        self.lbl_connection_status.setText(
+            "Connected" if connected else "Not connected"
+        )
+        self.lbl_connection_status.setStyleSheet(
+            "color: #4ec9b0;" if connected else "color: #cccccc;"
+        )

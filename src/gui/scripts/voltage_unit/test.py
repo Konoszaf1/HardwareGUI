@@ -139,8 +139,6 @@ class VUTestPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
-        self._log("Tests page ready.")
-
     # ---- Handlers ----
     def _on_test_outputs(self) -> None:
         """Run output voltage accuracy test."""
@@ -233,11 +231,11 @@ class VUTestPage(BaseHardwarePage):
 
     def _render_plot(self, plot: dict) -> None:
         """Render a plot dict onto the LivePlotWidget."""
-        self.plot_widget.clear()
         plot_type = plot.get("type")
 
         try:
             if plot_type == "outputs":
+                self.plot_widget.clear()
                 self.plot_widget.set_labels("Output Error", "Voltage / V", "Error / mV")
                 voltages = plot["voltages"]
                 errors = plot["errors"]
@@ -246,9 +244,13 @@ class VUTestPage(BaseHardwarePage):
                         self.plot_widget.append_point(ch, x, 1000 * y)
 
             elif plot_type in ("ramp", "transient"):
+                waveforms = plot.get("waveforms", [])
+                if not waveforms:
+                    return
+                self.plot_widget.clear()
                 title = "Ramp Signal" if plot_type == "ramp" else "Transient Response"
                 self.plot_widget.set_labels(title, "Time / s", "Signal / V")
-                for wf in plot["waveforms"]:
+                for wf in waveforms:
                     self.plot_widget.plot_batch(
                         wf["x"], wf["y"], wf["series"],
                         linestyle=wf.get("linestyle", "-"),

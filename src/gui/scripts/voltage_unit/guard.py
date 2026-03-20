@@ -86,8 +86,6 @@ class VUGuardPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
-        self._log("Guard page ready.")
-
     # ---- Handlers ----
     def _on_guard_signal(self) -> None:
         """Set output guard to signal mode.

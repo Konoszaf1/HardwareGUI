@@ -4,6 +4,10 @@ This controller encapsulates all SMU hardware workflows including setup, test,
 relay control, and calibration operations. Uses direct imports from dpi package.
 """
 
+import re
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -23,6 +27,74 @@ logger = get_logger(__name__)
 InputRouting = Literal["GND", "GUARD", "VSMU", "SU", "VSMU_AND_SU"]
 VGuardRouting = Literal["GND", "VSMU"]
 ReferenceType = Literal["GND", "VSMU"]
+
+
+class _ProgressAdapter:
+    """Mimics tqdm interface to redirect measurement progress to callbacks."""
+
+    def __init__(self, total, scm, on_point, on_range):
+        self.total = total
+        self.n = 0
+        self._scm = scm
+        self._on_point = on_point
+        self._on_range = on_range
+        self._current_desc = ""
+        self._range_points = 0
+        self._range_start = 0.0
+
+    def update(self, n=1):
+        self.n += n
+        self._range_points += n
+        if self._on_point and self._scm.data:
+            df = self._scm.data[-1]
+            self._on_point({
+                "type": "cal_point",
+                "vsmu": df.attrs.get("vsmu_mode"),
+                "pa": df.attrs.get("pa_channel"),
+                "iv": df.attrs.get("iv_channel"),
+                "x": float(df.attrs.get("i_ref", 0)),
+                "y": float(df["current"].mean()),
+                "i_set": float(df.attrs.get("i_set", 0)),
+                "point_index": self.n,
+                "total_points": self.total,
+            })
+
+    def set_description(self, desc):
+        if desc != self._current_desc:
+            # Mark previous range as done
+            if self._current_desc and self._on_range:
+                elapsed = time.time() - self._range_start
+                self._on_range({
+                    "type": "cal_range",
+                    "status": "done",
+                    "desc": self._current_desc,
+                    "points": self._range_points,
+                    "duration": elapsed,
+                })
+            self._current_desc = desc
+            self._range_points = 0
+            self._range_start = time.time()
+            if self._on_range:
+                m = re.match(r"PA: (\w+), IV: (\w+), VSMU: (\w+)", desc)
+                if m:
+                    self._on_range({
+                        "type": "cal_range",
+                        "pa": m.group(1),
+                        "iv": m.group(2),
+                        "vsmu": m.group(3) == "True",
+                        "status": "running",
+                    })
+
+    def close(self):
+        if self._current_desc and self._on_range:
+            elapsed = time.time() - self._range_start
+            self._on_range({
+                "type": "cal_range",
+                "status": "done",
+                "desc": self._current_desc,
+                "points": self._range_points,
+                "duration": elapsed,
+            })
 
 
 class SMUController(HardwareController):
@@ -137,8 +209,8 @@ class SMUController(HardwareController):
         """
         try:
             self._get_smu()
-            print("Note: Channel calibration is managed by the calibration workflow.")
-            print("Use 'Run Calibration' on the Calibration page to write to EEPROM.")
+            print("Note: Channel calibration is managed by the calibration workflow.\n"
+                  "Use 'Run Calibration' on the Calibration page to write to EEPROM.")
             return OperationResult(
                 ok=True, message="Use calibration workflow for EEPROM writes."
             )
@@ -150,16 +222,52 @@ class SMUController(HardwareController):
         """Load channel configuration from EEPROM.
 
         Returns:
-            OperationResult with channel data.
+            OperationResult with channel list in data["channels"].
+            Each channel dict has: id, ch_type, type, gain, range, bandwidth.
         """
         try:
+            import numpy as np
+            from dpi.unit import DPIEpromEntry
+
             smu = self._get_smu()
-            print("Reading SMU EEPROM content...")
+            print("-- Reading EEPROM --")
             try:
                 smu.printEpromContent()
             except AttributeError:
-                print("EEPROM content display not available for this device.")
-            return OperationResult(ok=True, data={})
+                pass
+
+            channels = []
+            try:
+                eprom = smu.get_eeprom_interface().entries
+                for name, entry in eprom.items():
+                    ch_type_str = "INPUT" if entry.ch_type == DPIEpromEntry.ChannelType.INPUT else "AMPLIFIER"
+                    amp_type = getattr(entry.type, "name", str(entry.type))
+                    gain = getattr(entry, "gain", 0)
+                    bw = getattr(entry, "bandwidth", None)
+
+                    if ch_type_str == "INPUT":
+                        iv_range = round(-np.log10(np.abs(gain)), 1) if gain != 0 else 0
+                        ch_info = {
+                            "id": name, "ch_type": ch_type_str,
+                            "type": amp_type, "gain": gain,
+                            "range": iv_range, "bandwidth": bw,
+                        }
+                    else:
+                        pa_range = round(np.log10(np.abs(gain))) if gain != 0 else 0
+                        ch_info = {
+                            "id": name, "ch_type": ch_type_str,
+                            "type": amp_type, "gain": gain,
+                            "range": pa_range, "bandwidth": bw,
+                        }
+
+                    channels.append(ch_info)
+                    tag = "IV" if ch_type_str == "INPUT" else "PA"
+                    print(f"  [{tag}] {name:<8} {amp_type:<6} gain={gain:.2e}  range={ch_info['range']}")
+                print(f"  {len(channels)} channels loaded")
+            except Exception as e:
+                print(f"  EEPROM enumeration failed: {e}")
+
+            return OperationResult(ok=True, data={"channels": channels})
         except Exception as e:
             logger.error("SMU EEPROM load failed: %s", e)
             return OperationResult(ok=False, message=str(e))
@@ -402,6 +510,13 @@ class SMUController(HardwareController):
     # Calibration Operations
     # =========================================================================
 
+    # Speed preset definitions: (decades, delta_log, delta_lin)
+    SPEED_PRESETS = {
+        "fast": (2.0, 1 / 2, 1.0),
+        "normal": (5, 1 / 3, 1 / 4),
+        "precise": (8, 1 / 10, 1 / 5),
+    }
+
     def calibration_measure(
         self,
         keithley_ip: str,
@@ -412,11 +527,17 @@ class SMUController(HardwareController):
         folder_path: str,
         vsmu_mode: bool | None = None,
         verify_calibration: bool = False,
+        pa_channels: list[str] | None = None,
+        speed_preset: str = "normal",
+        single_range: tuple[str, str] | None = None,
+        on_point_measured: Callable[[dict], None] | None = None,
+        on_range_started: Callable[[dict], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> OperationResult:
         """Run the full calibration measurement workflow.
 
-        Creates an SMUCalibrationMeasure instance with the given connection
-        parameters, measures all ranges, and saves results to HDF5.
+        Creates an SMUCalibrationMeasure instance, measures all or single
+        ranges, emits live progress via callbacks, and saves results to HDF5.
 
         Args:
             keithley_ip: Keithley instrument IP address.
@@ -427,6 +548,11 @@ class SMUController(HardwareController):
             folder_path: Output folder for calibration data.
             vsmu_mode: True for VSMU mode, False for normal, None for both.
             verify_calibration: If True, also run verification measurements.
+            pa_channels: PA channels to measure (default: pach0, pach2, pach3).
+            speed_preset: "fast", "normal", or "precise".
+            single_range: If set, (pa_channel, iv_channel) for single range.
+            on_point_measured: Callback for each measured point.
+            on_range_started: Callback for range start/done events.
 
         Returns:
             OperationResult with folder path in data.
@@ -435,9 +561,21 @@ class SMUController(HardwareController):
             from dpi.utilities import DPILogger
             from dpisourcemeasureunit.calibration import SMUCalibrationMeasure
 
-            print(f"Starting SMU calibration measurement...")
-            print(f"  Keithley: {keithley_ip}")
-            print(f"  Output folder: {folder_path}")
+            if pa_channels is None:
+                pa_channels = ["pach0", "pach2", "pach3"]
+
+            # Ensure absolute path
+            folder_path = str(Path(folder_path).resolve())
+
+            vsmu_label = {None: "Both", True: "VSMU only", False: "Normal only"}.get(
+                vsmu_mode, str(vsmu_mode)
+            )
+            print("-- SMU Calibration Measurement --")
+            print(f"  Keithley  : {keithley_ip}")
+            print(f"  Folder    : {folder_path}")
+            print(f"  Channels  : {', '.join(pa_channels)}")
+            print(f"  VSMU      : {vsmu_label}")
+            print(f"  Speed     : {speed_preset}")
 
             scm = SMUCalibrationMeasure(
                 keithley_ip,
@@ -448,29 +586,136 @@ class SMUController(HardwareController):
                 DPILogger.VERBOSE,
             )
 
+            # Prepare current values based on speed preset
+            current_values = None
+            if speed_preset in self.SPEED_PRESETS:
+                decades, delta_log, delta_lin = self.SPEED_PRESETS[speed_preset]
+                current_values = scm.prepare_measurement_values(
+                    max_value=6.5, decades=decades,
+                    delta_log=delta_log, delta_lin=delta_lin,
+                )
+
             verify_list = [False, True] if verify_calibration else [False]
+            completed_ranges = 0
+            total_ranges = 0
+            cancelled = False
+
             for verify in verify_list:
-                phase = "verification" if verify else "calibration"
-                print(f"Measuring all ranges ({phase})...")
+                phase = "Verification" if verify else "Calibration"
+                print(f"\n>> Measuring ({phase})...")
                 scm.data = []
-                scm.measure_all_ranges(
-                    vsmu_mode=vsmu_mode,
-                    verify_calibration=verify,
-                    current_values=None,
-                )
+
                 filename = "raw_data_verify.h5" if verify else "raw_data.h5"
-                scm.save_measurement(
-                    folder_path=folder_path,
-                    file_name=filename,
-                    append_data=True,
-                )
-                print(f"Saved {filename}")
+                # save_measurement appends device_serial to folder_path,
+                # so strip it to avoid double-appending
+                save_base = folder_path
+                device_serial = str(scm.device_serial)
+                if device_serial and save_base.endswith(device_serial):
+                    save_base = save_base[: -len(device_serial)]
+
+                if single_range:
+                    pa_ch, iv_ch = single_range
+                    print(f"  Range: PA={pa_ch}, IV={iv_ch}")
+                    adapter = _ProgressAdapter(
+                        0, scm, on_point_measured, on_range_started,
+                    )
+                    scm.measure_single_range(
+                        pa_ch, iv_ch,
+                        vsmu_mode=vsmu_mode if vsmu_mode is not None else False,
+                        verify_calibration=verify,
+                        current_values=current_values,
+                        progress_bar=adapter,
+                    )
+                    completed_ranges += 1
+                    scm.save_measurement(
+                        folder_path=save_base,
+                        file_name=filename,
+                        append_data=True,
+                    )
+                else:
+                    # Explicit per-range loop for cancel support
+                    vsmu_modes = [False, True] if vsmu_mode is None else [vsmu_mode]
+                    range_combos = [
+                        (pa, iv, vsmu_val)
+                        for vsmu_val in vsmu_modes
+                        for pa in pa_channels
+                        for iv in scm.ivchannels
+                    ]
+                    total_ranges += len(range_combos)
+
+                    total = scm._calculate_total_measurements(
+                        pa_channels, scm.ivchannels, vsmu_mode,
+                        verify, current_values=current_values,
+                    )
+                    adapter = _ProgressAdapter(
+                        total, scm, on_point_measured, on_range_started,
+                    )
+
+                    for pa, iv, vsmu_val in range_combos:
+                        if cancel_event and cancel_event.is_set():
+                            cancelled = True
+                            break
+                        adapter.set_description(f"PA: {pa}, IV: {iv}, VSMU: {vsmu_val}")
+                        scm.measure_single_range(
+                            pa, iv,
+                            vsmu_mode=vsmu_val,
+                            verify_calibration=verify,
+                            current_values=current_values,
+                            progress_bar=adapter,
+                        )
+                        completed_ranges += 1
+                        scm.save_measurement(
+                            folder_path=save_base,
+                            file_name=filename,
+                            append_data=True,
+                        )
+                    adapter.close()
+
+                print(f"  Saved {filename}")
+                if cancelled:
+                    break
 
             scm.cleanup()
-            print("SMU calibration measurement complete.")
+            # Release USB connections so subsequent runs can reconnect
+            try:
+                scm.smu.disconnect()
+            except Exception:
+                pass
+            try:
+                scm.su.disconnect()
+            except Exception:
+                pass
+
+            if cancelled:
+                print(f"-- Cancelled: {completed_ranges}/{total_ranges} ranges measured and saved --")
+                logger.info("SMU calibration cancelled after %d ranges", completed_ranges)
+                return OperationResult(
+                    ok=True,
+                    data={
+                        "folder": folder_path,
+                        "cancelled": True,
+                        "completed_ranges": completed_ranges,
+                        "total_ranges": total_ranges,
+                    },
+                )
+
+            print("-- Measurement complete --")
             logger.info("SMU calibration measure complete: %s", folder_path)
             return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
+            # Attempt to release USB even on failure
+            try:
+                scm.cleanup()
+            except Exception:
+                pass
+            try:
+                scm.smu.disconnect()
+            except Exception:
+                pass
+            try:
+                scm.su.disconnect()
+            except Exception:
+                pass
             logger.error("SMU calibration measure failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -478,67 +723,188 @@ class SMUController(HardwareController):
         self,
         folder_path: str,
         draw_plot: bool = True,
-        auto_calibrate: bool = True,
+        auto_calibrate: bool = False,
         model_type: str = "linear",
+        verify_calibration: bool = True,
     ) -> OperationResult:
         """Run calibration fit and optionally write to EEPROM.
 
-        Loads raw measurement data, trains linear and GP models, analyzes
-        ranges, and optionally writes calibration to the device EEPROM.
+        Loads raw measurement data, trains models, analyzes ranges,
+        and optionally writes calibration to the device EEPROM.
+        Returns paths to generated analysis PNGs.
 
         Args:
             folder_path: Folder containing calibration measurements.
-            draw_plot: If True, generate calibration plots.
+            draw_plot: If True, generate overview plots.
             auto_calibrate: If True, write calibration to EEPROM.
             model_type: Model to save ("linear" or "gp").
+            verify_calibration: If True, load verification data too.
 
         Returns:
-            OperationResult with success status and folder path.
+            OperationResult with folder path and analysis_plots list.
         """
         try:
             from dpi.utilities import DPILogger
             from dpisourcemeasureunit.calibration import SMUCalibrationFit
 
-            print(f"Starting SMU calibration fit...")
-            print(f"  Folder: {folder_path}")
-            print(f"  Model: {model_type}")
+            # Ensure absolute path
+            folder_path = str(Path(folder_path).resolve())
+
+            # Auto-detect verify data availability
+            verify_file = Path(folder_path) / "raw_data_verify.h5"
+            if verify_calibration and not verify_file.exists():
+                print("  No verification data found, skipping verify.")
+                verify_calibration = False
+
+            print("-- SMU Calibration Fit --")
+            print(f"  Folder  : {folder_path}")
+            print(f"  Model   : {model_type}")
+            print(f"  Verify  : {verify_calibration}")
 
             smf = SMUCalibrationFit(
                 calibration_folder=folder_path,
                 load_raw=True,
-                verify_calibration=True,
+                verify_calibration=verify_calibration,
                 log_level=DPILogger.DEBUG,
             )
 
             if draw_plot:
-                print("Plotting measurement overview...")
+                print(">> Plotting measurement overview...")
                 smf.plot_measurement_overview()
-                smf.plot_aggregated_overview()
+                try:
+                    smf.plot_aggregated_overview()
+                except (KeyError, Exception) as e:
+                    print(f"  Aggregated overview skipped ({e})")
 
-            print("Training linear model...")
+            print(">> Training linear model...")
             smf.train_linear_model()
-            print("Training GP model...")
-            smf.train_gp_model()
-            smf.save_model(script_dir=Path(folder_path), model_type=model_type)
-            print("Analyzing ranges...")
-            smf.analyze_ranges()
+
+            if model_type == "gp":
+                print(">> Training GP model...")
+                smf.train_gp_model()
+
+            # save_model does script_dir / calibration_folder internally.
+            # Since calibration_folder is absolute, Path("/") works as a no-op root.
+            smf.save_model(script_dir=Path("/"), model_type=model_type)
+            print(">> Analyzing ranges...")
+            smf.analyze_ranges(save_plot=True)
 
             if draw_plot:
-                print("Plotting calibrated overview...")
-                smf.plot_calibrated_overview()
+                print(">> Plotting calibrated overview...")
+                try:
+                    smf.plot_calibrated_overview(model_type=model_type)
+                except (KeyError, Exception) as e:
+                    print(f"  Calibrated overview skipped ({e})")
+
+            # Collect analysis plot paths
+            analysis_plots = self._collect_analysis_plots(folder_path)
+            calibrated_ranges = self._parse_calibrated_ranges(analysis_plots)
+            print(f"  Generated {len(analysis_plots)} analysis plots")
 
             if auto_calibrate:
-                print("Writing calibration to EEPROM...")
+                print(">> Writing calibration to EEPROM...")
                 smu = self._get_smu()
                 smu.calibrate_eeprom(folder_path=Path(folder_path))
-                print("Calibration written to EEPROM.")
+                print("  EEPROM written successfully")
 
-            print("SMU calibration fit complete.")
+            print("-- Fit complete --")
             logger.info("SMU calibration fit complete: %s", folder_path)
-            return OperationResult(ok=True, data={"folder": folder_path})
+            return OperationResult(
+                ok=True,
+                data={
+                    "folder": folder_path,
+                    "analysis_plots": analysis_plots,
+                    "calibrated_ranges": calibrated_ranges,
+                },
+            )
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Fit failed: {e}")
             logger.error("SMU calibration fit failed: %s", e)
             return OperationResult(ok=False, message=str(e))
+
+    def _collect_analysis_plots(self, folder_path: str) -> list[str]:
+        """Collect generated analysis PNG paths from the figures directory."""
+        ranges_dir = Path(folder_path) / "figures" / "ranges"
+        if not ranges_dir.exists():
+            return []
+        return sorted(str(p) for p in ranges_dir.glob("*_analyze.png"))
+
+    def get_calibration_status(self, folder_path: str) -> list[dict]:
+        """Scan calibration folder and return per-range status.
+
+        Checks raw_data.h5 for measured keys and figures/ranges/ for
+        analysis plots to determine which ranges are measured/calibrated.
+
+        Returns:
+            List of dicts with keys: vsmu, pa, iv, measured, calibrated.
+        """
+        import re
+
+        folder = Path(folder_path)
+        measured_keys: set[tuple[bool, str, str]] = set()
+        calibrated_keys: set[tuple[bool, str, str]] = set()
+
+        # Check raw_data.h5 for measured ranges
+        raw_file = folder / "raw_data.h5"
+        if raw_file.exists():
+            try:
+                import h5py
+
+                with h5py.File(str(raw_file), "r") as f:
+                    for key in f.keys():
+                        # Keys are tuples stored as strings: "(False, 'pach0', 'ivch1')"
+                        m = re.match(
+                            r"\(?(True|False),\s*'?(\w+)'?,\s*'?(\w+)'?\)?", key,
+                        )
+                        if m:
+                            vsmu = m.group(1) == "True"
+                            measured_keys.add((vsmu, m.group(2), m.group(3)))
+            except Exception as e:
+                print(f"  Warning: could not read raw_data.h5: {e}")
+
+        # Check analysis plots for calibrated ranges
+        analysis_plots = self._collect_analysis_plots(folder_path)
+        for info in self._parse_calibrated_ranges(analysis_plots):
+            calibrated_keys.add(
+                (info.get("vsmu", False), info.get("pa", ""), info.get("iv", ""))
+            )
+
+        # Merge into unified list — calibrated implies measured
+        all_keys = measured_keys | calibrated_keys
+        ranges = []
+        for vsmu, pa, iv in sorted(all_keys):
+            ranges.append({
+                "vsmu": vsmu,
+                "pa": pa,
+                "iv": iv,
+                "measured": (vsmu, pa, iv) in measured_keys,
+                "calibrated": (vsmu, pa, iv) in calibrated_keys,
+            })
+        return ranges
+
+    @staticmethod
+    def _parse_calibrated_ranges(plot_paths: list[str]) -> list[dict]:
+        """Parse analysis plot filenames to extract calibrated range info.
+
+        Filenames follow: vsmu_{bool}_pa_{pach}_iv_{ivch}_analyze.png
+        """
+        ranges = []
+        for p in plot_paths:
+            stem = Path(p).stem.replace("_analyze", "")
+            parts = stem.split("_")
+            info: dict = {}
+            for i, token in enumerate(parts):
+                if token == "vsmu" and i + 1 < len(parts):
+                    info["vsmu"] = parts[i + 1] == "True"
+                elif token == "pa" and i + 1 < len(parts):
+                    info["pa"] = parts[i + 1]
+                elif token == "iv" and i + 1 < len(parts):
+                    info["iv"] = parts[i + 1]
+            if "pa" in info and "iv" in info:
+                ranges.append(info)
+        return ranges
 
     # =========================================================================
     # Private helpers

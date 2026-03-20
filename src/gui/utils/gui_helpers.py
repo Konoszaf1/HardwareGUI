@@ -17,6 +17,12 @@ _ANSI_RE = re.compile(r"\033\[[0-9;]*[A-Za-z]")
 # Box-drawing characters used by rich tables
 _BOX_CHARS = frozenset("│─┼┤├┬┴┐┘┌└╴╵╶╷")
 
+# Regex to strip DPI library log prefixes like:
+#   "2026-03-20 14:38:41 - DPI(dpiio.py:128): INFO - "
+_DPI_LOG_PREFIX_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+\S+:\s+\w+\s+-\s+"
+)
+
 # ANSI escape code to HTML span mapping
 # Maps common terminal color codes to styled HTML spans
 _ANSI_TO_HTML = {
@@ -29,6 +35,8 @@ _ANSI_TO_HTML = {
     "\033[1m": '<span style="font-weight: bold; color: #ffffff;">',  # Bold
     "\033[0m": "</span>",  # Reset
 }
+
+_STDERR_PREFIX = "[stderr] "
 
 
 def _convert_ansi_to_html(text: str) -> str:
@@ -50,11 +58,22 @@ def append_log(console: QPlainTextEdit, text: str) -> None:
 
     Lines containing box-drawing characters (from rich tables) get
     whitespace preserved via ``&nbsp;`` so column alignment is maintained.
+    Stderr lines (from library logging) are shown in muted style with
+    the ``[stderr]`` prefix and DPI log preamble stripped.
     """
     if not console:
         return
 
     line = text.rstrip("\n")
+
+    # Detect and strip [stderr] prefix — style as muted text
+    is_stderr = line.startswith(_STDERR_PREFIX)
+    if is_stderr:
+        line = line[len(_STDERR_PREFIX):]
+        if not line.strip():
+            return  # skip blank stderr lines
+        # Strip verbose DPI library log prefix (timestamp + source)
+        line = _DPI_LOG_PREFIX_RE.sub("", line)
 
     # Detect table-formatted lines (box-drawing chars from rich)
     is_table = any(c in _BOX_CHARS for c in line)
@@ -69,6 +88,9 @@ def append_log(console: QPlainTextEdit, text: str) -> None:
         # Strip any remaining ANSI codes not in our mapping
         line = _ANSI_RE.sub("", line)
         line = line.replace("\n", "<br>")
+
+    if is_stderr:
+        line = f'<span style="color: #6272a4;">{line}</span>'
 
     console.appendHtml(line)
 

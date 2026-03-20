@@ -17,37 +17,14 @@ from src.gui.scripts.base_page import BaseHardwarePage
 from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logic.services.smu_service import SourceMeasureUnitService
 
-# Channel configuration presets
+# Channel configuration presets (fallback when no device is connected)
 CHANNEL_PRESETS = {
     "SMU_DEFAULT": [
-        {
-            "id": "CH1",
-            "type": "IV",
-            "range": 10.0,
-            "gain": 1.0,
-            "offset": 0.0,
-        },
-        {
-            "id": "CH2",
-            "type": "IV",
-            "range": 10.0,
-            "gain": 1.0,
-            "offset": 0.0,
-        },
-        {
-            "id": "CH3",
-            "type": "PA",
-            "range": 1.0,
-            "gain": 1.0,
-            "offset": 0.0,
-        },
-        {
-            "id": "CH4",
-            "type": "PA",
-            "range": 1.0,
-            "gain": 1.0,
-            "offset": 0.0,
-        },
+        {"id": f"ivch{i}", "ch_type": "INPUT", "type": "TIA", "gain": 10 ** -(7 + (i - 1) % 4), "range": -(7 + (i - 1) % 4)}
+        for i in range(1, 10)
+    ] + [
+        {"id": f"pach{i}", "ch_type": "AMPLIFIER", "type": "AMP", "gain": 10.0 ** i, "range": i}
+        for i in range(4)
     ],
 }
 
@@ -121,7 +98,7 @@ class SMUSetupPage(BaseHardwarePage):
         self.channel_table = QTableWidget()
         self.channel_table.setColumnCount(5)
         self.channel_table.setHorizontalHeaderLabels(
-            ["Channel ID", "Type", "Range", "Gain", "Offset"]
+            ["Channel", "Category", "Type", "Gain", "Range"]
         )
         self.channel_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.channel_table.setMinimumHeight(180)
@@ -157,23 +134,22 @@ class SMUSetupPage(BaseHardwarePage):
         # Load initial preset
         self._on_preset_changed(self.cb_preset.currentText())
 
-        self._log("Setup page ready.")
-
     def _populate_table(self, channels: list[dict]) -> None:
         """Populate channel table with data."""
         self.channel_table.setRowCount(len(channels))
         for row, ch in enumerate(channels):
             self.channel_table.setItem(row, 0, QTableWidgetItem(ch.get("id", "")))
-            self.channel_table.setItem(row, 1, QTableWidgetItem(ch.get("type", "")))
-            self.channel_table.setItem(row, 2, QTableWidgetItem(str(ch.get("range", ""))))
-            self.channel_table.setItem(row, 3, QTableWidgetItem(str(ch.get("gain", ""))))
-            self.channel_table.setItem(row, 4, QTableWidgetItem(str(ch.get("offset", ""))))
+            self.channel_table.setItem(row, 1, QTableWidgetItem(ch.get("ch_type", "")))
+            self.channel_table.setItem(row, 2, QTableWidgetItem(str(ch.get("type", ""))))
+            gain = ch.get("gain", "")
+            gain_str = f"{gain:.2e}" if isinstance(gain, float) else str(gain)
+            self.channel_table.setItem(row, 3, QTableWidgetItem(gain_str))
+            self.channel_table.setItem(row, 4, QTableWidgetItem(str(ch.get("range", ""))))
 
     def _on_preset_changed(self, preset_name: str) -> None:
         """Load preset values into the table."""
         if preset_name in CHANNEL_PRESETS:
             self._populate_table(CHANNEL_PRESETS[preset_name])
-            self._log(f"Loaded preset: {preset_name}")
 
     def _on_save(self) -> None:
         """Initialize device with serial and processor type from the form."""
@@ -190,5 +166,17 @@ class SMUSetupPage(BaseHardwarePage):
         if not self.service:
             self._log("Service not available.")
             return
+
+        def on_complete(result):
+            data = getattr(result, "data", None) or {}
+            channels = data.get("channels") or data.get("data", {}).get("channels")
+            if channels:
+                self._populate_table(channels)
+                self._log(f"Loaded {len(channels)} channels from EEPROM.")
+            else:
+                self._log("No EEPROM channel data returned.")
+
         self._log("Loading configuration from device...")
-        self._start_task(self.service.run_load_config())
+        task = self.service.run_load_config()
+        task.signals.finished.connect(on_complete)
+        self._start_task(task)

@@ -108,8 +108,6 @@ class VUSetupPage(BaseHardwarePage):
         if self.service:
             self.service.coeffsChanged.connect(self._on_coeffs_changed)
 
-        self._log("Setup page ready.")
-
     def _populate_coeffs(self, coeffs: dict[str, list[float]]) -> None:
         """Populate coefficient table with data.
 

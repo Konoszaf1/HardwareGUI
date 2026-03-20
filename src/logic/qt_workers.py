@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import io
+import os
+import threading
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+
+# Tell rich/shutil.get_terminal_size() to use a wide width so library-printed
+# tables (e.g. DPI's rich tables) are not truncated with '…'.
+os.environ.setdefault("COLUMNS", "200")
+
 from typing import Any
 from collections.abc import Callable
 
@@ -42,6 +49,7 @@ class TaskSignals(QObject):
     data_chunk = Signal(object)
     finished = Signal(object)
     error = Signal(str)
+    cancelled = Signal()
 
 
 class _EmittingStream(io.TextIOBase):
@@ -97,6 +105,16 @@ class FunctionTask(QRunnable):
         self.name = name
         self.fn = fn
         self.signals = TaskSignals()
+        self.cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        """Request cooperative cancellation of this task."""
+        self.cancel_event.set()
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Whether cancellation has been requested."""
+        return self.cancel_event.is_set()
 
     def run(self) -> None:
         # Log if matplotlib was not available at import time
@@ -111,6 +129,9 @@ class FunctionTask(QRunnable):
             self.signals.started.emit()
             with redirect_stdout(out_stream), redirect_stderr(err_stream):
                 result = self.fn()
+            if self.cancel_event.is_set():
+                logger.debug("Task %s was cancelled, emitting cancelled signal", self.name)
+                self.signals.cancelled.emit()
             logger.debug("Task %s finished execution, emitting signal", self.name)
             self.signals.finished.emit(TaskResult(self.name, True, result))
         except Exception as e:

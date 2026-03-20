@@ -124,6 +124,22 @@ class SamplingUnitService(BaseHardwareService):
         logger.info("SU connected: serial=%s", self._get_serial())
         self.connectedChanged.emit(True)
 
+    def _disconnect(self) -> None:
+        """Tear down SU hardware connections."""
+        if self._su:
+            try:
+                self._su.disconnect()
+            except Exception:
+                pass
+            self._su = None
+        if self._mcu:
+            try:
+                self._mcu.disconnect()
+            except Exception:
+                pass
+            self._mcu = None
+        self._controller = None
+
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
         return f"calibration/su_calibration_sn{self._get_serial()}"

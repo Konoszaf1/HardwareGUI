@@ -382,13 +382,16 @@ class SharedPanelsWidget(QWidget):
         return self._input_field
 
     def log(self, msg: str) -> None:
-        """Append message to console, auto-scroll if expanded.
+        """Append message to console, auto-expand if collapsed and auto-scroll.
 
         Args:
             msg (str): Message to log.
         """
         append_log(self._console, msg)
-        if self._console_visible:
+        if not self._console_visible:
+            self.show_console(True)
+            self.console_toggled.emit(True)
+        else:
             self._scroll_console_to_end()
 
     def clear(self) -> None:

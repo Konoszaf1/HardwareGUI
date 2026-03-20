@@ -88,6 +88,10 @@ class BaseHardwarePage(QWidget):
         # Buttons to enable/disable during task execution
         self._action_buttons: list[QPushButton] = []
 
+        # Cancel button — hidden by default, subclasses place in their layouts
+        self._btn_cancel = QPushButton("Cancel")
+        self._btn_cancel.hide()
+
     # ---- Shared panel accessors ----
 
     @property
@@ -132,14 +136,18 @@ class BaseHardwarePage(QWidget):
         """Enable or disable action buttons based on busy state.
 
         When busy, all registered action buttons are disabled to prevent
-        concurrent task execution.
+        concurrent task execution.  When clearing busy, delegates to
+        ``_update_action_buttons_state`` so connection state is respected.
 
         Args:
             busy (bool): True to enter busy state, False to enable buttons.
         """
         self._busy = busy
-        for btn in self._action_buttons:
-            btn.setEnabled(not busy)
+        if busy:
+            for btn in self._action_buttons:
+                btn.setEnabled(False)
+        else:
+            self._update_action_buttons_state()
 
     # ---- Task lifecycle ----
 
@@ -177,6 +185,13 @@ class BaseHardwarePage(QWidget):
         signals = task.signals
         self._set_busy(True)
 
+        # Show cancel button only if it's been placed in a layout
+        if self._btn_cancel.parent() is not None:
+            self._btn_cancel.setText("Cancel")
+            self._btn_cancel.setEnabled(True)
+            self._btn_cancel.show()
+            self._btn_cancel.clicked.connect(self._on_cancel_task)
+
         signals.started.connect(lambda: self._log(f"Started: {task.name}"))
         signals.started.connect(
             lambda: _get_status_bar() and _get_status_bar().set_busy(f"Running: {task.name}")
@@ -193,6 +208,14 @@ class BaseHardwarePage(QWidget):
         signals.finished.connect(lambda result: self._on_task_finished(result))
         run_in_thread(task)
 
+    def _on_cancel_task(self) -> None:
+        """Request cancellation of the active task."""
+        if self._active_task:
+            self._active_task.cancel()
+            self._btn_cancel.setEnabled(False)
+            self._btn_cancel.setText("Cancelling...")
+            self._log("Cancellation requested...")
+
     def _on_task_finished(self, result) -> None:
         """Handle task completion.
 
@@ -200,6 +223,12 @@ class BaseHardwarePage(QWidget):
             result: The result of the task.
         """
         task_name = self._active_task.name if self._active_task else "task"
+        if self._btn_cancel.parent() is not None:
+            self._btn_cancel.hide()
+            try:
+                self._btn_cancel.clicked.disconnect(self._on_cancel_task)
+            except RuntimeError:
+                pass
         self._set_busy(False)
         self._active_task = None
         self._ensure_artifact_watcher()
@@ -246,11 +275,6 @@ class BaseHardwarePage(QWidget):
         enabled = self.service.connected
         for btn in self._action_buttons:
             btn.setEnabled(enabled)
-
-        if enabled:
-            self._log("Actions enabled: Hardware connected.")
-        else:
-            self._log("Actions disabled: Hardware not connected.")
 
     def _on_instrument_verified(self, verified: bool) -> None:
         """Handle instrument verification state changes.

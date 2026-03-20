@@ -18,10 +18,7 @@ from src.logic.services.vu_service import VoltageUnitService
 class VUCalibrationPage(BaseHardwarePage):
     """Calibration page for voltage unit.
 
-    Provides controls for:
-    - Python-based autocalibration (iterative)
-    - Onboard autocalibration (firmware-based)
-
+    Provides controls for Python-based autocalibration (iterative).
     Calibration results are logged to the shared console panel and
     generated plots appear in the shared artifacts panel.
     """
@@ -66,11 +63,8 @@ class VUCalibrationPage(BaseHardwarePage):
 
         self.btn_run_autocal_python = QPushButton("Run Autocalibration (Python)")
         self._configure_input(self.btn_run_autocal_python)
-        self.btn_run_autocal_onboard = QPushButton("Run Autocalibration (Onboard)")
-        self._configure_input(self.btn_run_autocal_onboard)
 
         controls_layout.addWidget(self.btn_run_autocal_python)
-        controls_layout.addWidget(self.btn_run_autocal_onboard)
         controls_layout.addStretch()
 
         # Info box (compact)
@@ -112,17 +106,13 @@ class VUCalibrationPage(BaseHardwarePage):
         # Register action buttons for busy state management
         self._action_buttons = [
             self.btn_run_autocal_python,
-            self.btn_run_autocal_onboard,
         ]
 
         # Wire backend actions
         self.btn_run_autocal_python.clicked.connect(self._on_autocal_python)
-        self.btn_run_autocal_onboard.clicked.connect(self._on_autocal_onboard)
 
         # Connect service signals (from base class)
         self._connect_service_signals()
-
-        self._log("Calibration page ready.")
 
     # ---- Handlers ----
     def _on_autocal_python(self) -> None:
@@ -136,25 +126,26 @@ class VUCalibrationPage(BaseHardwarePage):
         task.signals.data_chunk.connect(self._on_cal_chunk)
         self._start_task(task)
 
-    def _on_autocal_onboard(self) -> None:
-        """Run onboard (firmware) autocalibration."""
-        if not self.service:
-            self._log("Service not available.")
-            return
-        self._start_task(self.service.autocal_onboard())
-
     # ---- Live data from autocalibration ----
     def _on_cal_chunk(self, data) -> None:
         """Handle live data chunks during autocalibration."""
         if not isinstance(data, dict):
             return
         if "iteration" in data:
-            # New iteration — clear plot for incoming output test data
+            # Phase marker — clear plot and set labels for incoming data
             it = data["iteration"]
             self.plot_widget.clear()
-            if it == "final":
+            if it == "final_transient":
                 self.plot_widget.set_labels(
-                    "Final Verification — Output Error", "Voltage / V", "Error / mV"
+                    "Final — Transient Response", "Time / s", "Signal / V"
+                )
+            elif it == "final_outputs":
+                self.plot_widget.set_labels(
+                    "Final — Output Error", "Voltage / V", "Error / mV"
+                )
+            elif it == "final_ramp":
+                self.plot_widget.set_labels(
+                    "Final — Ramp Signal", "Time / s", "Signal / V"
                 )
             else:
                 self.plot_widget.set_labels(

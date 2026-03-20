@@ -129,6 +129,10 @@ class SimulatedServiceBase(BaseHardwareService):
         """No-op — simulation doesn't use real hardware."""
         pass
 
+    def _disconnect(self) -> None:
+        """No-op — simulation doesn't use real hardware."""
+        pass
+
     def _artifact_dir(self) -> str:
         """Return a default artifact directory for simulation."""
         return "calibration/simulation"
@@ -375,14 +379,6 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
         task = make_task("autocal_python", job)
         return task
 
-    def autocal_onboard(self) -> FunctionTask:
-        def body():
-            print("Running onboard auto-calibration...")
-            artifacts = _artifact_gen.generate_artifacts("vu", ["output.png"])
-            return {"ok": True, "coeffs": self._coeffs, "artifacts": artifacts}
-
-        return self._sim_task("autocal_onboard", 2.0, body=body)
-
     def connect_only(self) -> FunctionTask:
         def body():
             self._connected = True
@@ -403,6 +399,10 @@ class SimulatedSMUService(SimulatedServiceBase):
     Mirrors the ``SourceMeasureUnitService`` public API with simulated
     delays, console output, and fake calibration artifacts.
     """
+
+    # Simulated channel configuration
+    _IV_CHANNELS = [f"ivch{i}" for i in range(1, 10)]
+    _PA_CHANNELS = ["pach0", "pach1", "pach2", "pach3"]
 
     def __init__(self) -> None:
         super().__init__()
@@ -430,8 +430,6 @@ class SimulatedSMUService(SimulatedServiceBase):
     def run_hw_setup(
         self, serial: int, processor_type: str = "746", connector_type: str = "BNC"
     ) -> FunctionTask:
-        """Simulate SMU device initialization."""
-
         def body():
             print(f"Initializing SMU with serial={serial}")
             return {"serial": serial, "ok": True}
@@ -442,33 +440,78 @@ class SimulatedSMUService(SimulatedServiceBase):
         return self._sim_task("verify", 0.5)
 
     def run_calibration_measure(
-        self, vsmu_mode: bool | None = None, verify_calibration: bool = False
+        self,
+        vsmu_mode: bool | None = None,
+        verify_calibration: bool = False,
+        pa_channels: list[str] | None = None,
+        speed_preset: str = "normal",
+        single_range: tuple[str, str] | None = None,
     ) -> FunctionTask:
+        if pa_channels is None:
+            pa_channels = ["pach0", "pach2", "pach3"]
+
         def job():
-            self._simulate_work("calibration_measure", 0.3)
+            self._simulate_work("calibration_measure", 0.2)
             label = "verify" if verify_calibration else "measure"
             print(f"Measuring SMU calibration data ({label})...")
+            print(f"  Speed: {speed_preset}, VSMU: {vsmu_mode}")
+            print(f"  PA channels: {pa_channels}")
 
-            # Simulate 4 IV-converter channels with current sweeps
-            channels = ["IV1", "IV2", "PA1", "PA2"]
-            for ch in channels:
-                currents = np.linspace(-1e-3, 1e-3, 12)
-                print(f"  Channel {ch}: {len(currents)} points")
-                for i_set in currents:
-                    i_ref = float(i_set)
-                    i_meas = float(i_ref * 1.001 + 2e-6 + np.random.normal(0, 5e-6))
-                    task.signals.data_chunk.emit(
-                        {
-                            "series": ch,
-                            "x": i_ref,
-                            "y": i_meas,
-                            "i_set": float(i_set),
-                        }
-                    )
-                    time.sleep(0.03)
+            if single_range:
+                pa_list = [single_range[0]]
+                iv_list = [single_range[1]]
+            else:
+                pa_list = list(pa_channels)
+                iv_list = ["ivch1", "ivch3", "ivch5", "ivch7"]
+
+            vsmu_modes = [False, True] if vsmu_mode is None else [vsmu_mode]
+            n_points = {"fast": 8, "normal": 14, "precise": 20}.get(speed_preset, 14)
+            total = len(vsmu_modes) * len(pa_list) * len(iv_list) * n_points
+            point_idx = 0
+
+            for vsmu in vsmu_modes:
+                for pa in pa_list:
+                    for iv in iv_list:
+                        task.signals.data_chunk.emit({
+                            "type": "cal_range",
+                            "pa": pa, "iv": iv, "vsmu": vsmu,
+                            "status": "running",
+                        })
+                        print(f"  Range: VSMU={vsmu} PA={pa} IV={iv}")
+
+                        t0 = time.time()
+                        currents = np.linspace(-1e-3, 1e-3, n_points)
+                        for i_set in currents:
+                            i_ref = float(i_set)
+                            i_meas = float(
+                                i_ref * 1.001 + 2e-6 + np.random.normal(0, 5e-6)
+                            )
+                            point_idx += 1
+                            task.signals.data_chunk.emit({
+                                "type": "cal_point",
+                                "vsmu": vsmu, "pa": pa, "iv": iv,
+                                "x": i_ref, "y": i_meas,
+                                "i_set": float(i_set),
+                                "point_index": point_idx,
+                                "total_points": total,
+                            })
+                            time.sleep(0.02)
+
+                        elapsed = time.time() - t0
+                        task.signals.data_chunk.emit({
+                            "type": "cal_range",
+                            "pa": pa, "iv": iv, "vsmu": vsmu,
+                            "status": "done",
+                            "points": n_points,
+                            "duration": elapsed,
+                        })
 
             artifacts = _artifact_gen.generate_artifacts("smu", ["calibration.png"])
-            return {"ok": True, "folder": "calibration/smu_1", "artifacts": artifacts}
+            return {
+                "ok": True,
+                "folder": "calibration/smu_calibration_sn1",
+                "artifacts": artifacts,
+            }
 
         task = make_task("calibration_measure", job)
         return task
@@ -476,21 +519,32 @@ class SimulatedSMUService(SimulatedServiceBase):
     def run_calibration_fit(
         self,
         draw_plot: bool = True,
-        auto_calibrate: bool = True,
+        auto_calibrate: bool = False,
         model_type: str = "linear",
+        verify_calibration: bool = True,
     ) -> FunctionTask:
         def body():
             print(f"Fitting calibration model ({model_type})...")
+            print(f"  Auto-calibrate EEPROM: {auto_calibrate}")
+            if draw_plot:
+                print("  Generating overview plots...")
+            print("  Training linear model... done")
+            if model_type == "gp":
+                print("  Training GP model... done")
+            print("  Analyzing ranges... done")
             artifacts = _artifact_gen.generate_artifacts("smu", ["fit_results.png"])
-            return {"ok": True, "artifacts": artifacts}
+            return {
+                "ok": True,
+                "artifacts": artifacts,
+                "analysis_plots": [],
+            }
 
         return self._sim_task("calibration_fit", 1.5, body=body)
 
-    def run_measure(self, channel: str = "CH1") -> FunctionTask:
-        return self.run_calibration_measure()
-
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
+        return self.run_calibration_fit(
+            draw_plot=True, auto_calibrate=False, model_type=model,
+        )
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         return self.run_calibration_measure(verify_calibration=True)
@@ -502,9 +556,33 @@ class SimulatedSMUService(SimulatedServiceBase):
 
         return self._sim_task("program_relais", 0.5, body=body)
 
-    def run_temperature_read(self) -> FunctionTask:
-        """Simulate SMU temperature reading."""
+    def run_set_pa_clip(self, channel: int, enabled: bool) -> FunctionTask:
+        def body():
+            print(f"  PA clip ch{channel}: {'ON' if enabled else 'OFF'}")
+            return {"ok": True}
 
+        return self._sim_task("set_pa_clip", 0.2, body=body)
+
+    def run_get_saturation_state(self) -> FunctionTask:
+        def body():
+            import random
+
+            iv_sat = random.random() < 0.1
+            pa_sat = random.random() < 0.1
+            print(f"  IV saturated: {iv_sat}")
+            print(f"  PA saturated: {pa_sat}")
+            return {"iv_saturated": iv_sat, "pa_saturated": pa_sat}
+
+        return self._sim_task("read_saturation", 0.2, body=body)
+
+    def run_clear_saturation(self) -> FunctionTask:
+        def body():
+            print("  Saturation flags cleared.")
+            return {"ok": True}
+
+        return self._sim_task("clear_saturation", 0.2, body=body)
+
+    def run_temperature_read(self) -> FunctionTask:
         def body():
             import random
 
@@ -516,29 +594,37 @@ class SimulatedSMUService(SimulatedServiceBase):
         return self._sim_task("temperature", 0.3, body=body)
 
     def run_save_config(self) -> FunctionTask:
-        """Simulate saving channel configuration to EEPROM."""
-
         def body():
             print("  Writing channel configuration to EEPROM...")
-            print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
-            print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
-            print("  CH3: PA, range=1.0, gain=1.0, offset=0.0")
-            print("  CH4: PA, range=1.0, gain=1.0, offset=0.0")
+            for i in range(1, 10):
+                print(f"  ivch{i}: IV, TIA, range=-{7 + (i-1) % 4}")
+            for i in range(4):
+                print(f"  pach{i}: PA, range={i}")
             print("  EEPROM write complete.")
             return {"ok": True}
 
         return self._sim_task("save_config", 0.5, body=body)
 
     def run_load_config(self) -> FunctionTask:
-        """Simulate loading channel configuration from EEPROM."""
-
         def body():
+            channels = []
             print("  Reading channel configuration from EEPROM...")
-            print("  CH1: IV, range=10.0, gain=1.0, offset=0.0")
-            print("  CH2: IV, range=10.0, gain=1.0, offset=0.0")
-            print("  CH3: PA, range=1.0, gain=1.0, offset=0.0")
-            print("  CH4: PA, range=1.0, gain=1.0, offset=0.0")
-            return {"ok": True, "data": {}}
+            for i in range(1, 10):
+                ch = {
+                    "id": f"ivch{i}", "ch_type": "INPUT",
+                    "type": "TIA", "gain": 10 ** -(7 + (i - 1) % 4),
+                    "range": -(7 + (i - 1) % 4),
+                }
+                channels.append(ch)
+                print(f"  {ch['id']}: {ch['type']}, range={ch['range']}")
+            for i in range(4):
+                ch = {
+                    "id": f"pach{i}", "ch_type": "AMPLIFIER",
+                    "type": "AMP", "gain": 10.0 ** i, "range": i,
+                }
+                channels.append(ch)
+                print(f"  {ch['id']}: {ch['type']}, range={ch['range']}")
+            return {"ok": True, "data": {"channels": channels}}
 
         return self._sim_task("load_config", 0.4, body=body)
 

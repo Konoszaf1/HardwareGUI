@@ -225,8 +225,6 @@ class SUTestPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
-        self._log("Test page ready.")
-
     def _on_single_shot(self) -> None:
         """Run single-shot voltage measurement."""
         if not self.service:

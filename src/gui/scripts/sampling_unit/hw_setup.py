@@ -173,8 +173,6 @@ class SUSetupPage(BaseHardwarePage):
         # Load initial preset
         self._on_preset_changed(self.cb_preset.currentText())
 
-        self._log("Setup page ready.")
-
     def _populate_table(self, channels: list[dict]) -> None:
         """Populate channel table with data."""
         self.channel_table.setRowCount(len(channels))
@@ -192,7 +190,6 @@ class SUSetupPage(BaseHardwarePage):
         """Load preset values into the table."""
         if preset_name in CHANNEL_PRESETS:
             self._populate_table(CHANNEL_PRESETS[preset_name])
-            self._log(f"Loaded preset: {preset_name}")
 
     def _on_save(self) -> None:
         """Initialize device with serial, processor and connector from the form."""

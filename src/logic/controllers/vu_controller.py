@@ -84,56 +84,53 @@ class VUController(HardwareController):
     # =========================================================================
 
     def _scope_setup_and_acquire(self, scope: "vxi11.Instrument") -> None:
-        """Send SING and wait for acquisition, with diagnostics.
+        """Send SING and wait for AUTO-mode acquisition to complete.
 
-        Works for AUTO trigger mode (after *RST with no TRIG:A:MODE NORM).
-        Uses a short per-attempt timeout so we can log progress.
+        Mirrors setup_cal.py: ``scope.ask("SING;*OPC?")`` with default
+        timeout — no custom timeout overrides.
         """
-        saved = scope.timeout
-        try:
-            scope.timeout = 15
-            scope.ask("SING;*OPC?")
-        finally:
-            scope.timeout = saved
+        scope.ask("SING;*OPC?")
 
-    def _scope_wait_trigger(
-        self, scope: "vxi11.Instrument", timeout: float = 20
-    ) -> bool:
+    def _scope_wait_trigger(self, scope: "vxi11.Instrument") -> bool:
         """Wait for a NORM-mode triggered acquisition to complete.
 
-        Returns True if the scope triggered normally, False if it timed out.
-        When False, the scope has no valid data — the caller must NOT
-        attempt to read waveform data.
+        Mirrors setup_cal.py: ``scope.ask("*OPC?")`` with default timeout.
+        Returns True if the scope triggered, False on timeout.
         """
-        saved = scope.timeout
         try:
-            scope.timeout = timeout
-            try:
-                scope.ask("*OPC?")
-                return True
-            except Exception:
-                print(f"  ⚠ Scope did not trigger within {timeout}s — check probe connections")
-                logger.warning("Scope NORM trigger timed out after %ss", timeout)
-
-            # The timed-out *OPC? leaves a stale response in the
-            # per-link output buffer.  Close the link to discard it.
-            # The next scope.write() will lazily reopen a fresh link,
-            # and *RST at the start of the next test cancels the stuck
-            # acquisition.
-            try:
-                scope.timeout = 2
-                scope.close()
-            except Exception:
-                try:
-                    if scope.client is not None:
-                        scope.client.close()
-                except Exception:
-                    pass
-                scope.link = None
-                scope.client = None
+            scope.ask("*OPC?")
+            return True
+        except Exception:
+            print("  ⚠ Scope did not trigger — check probe connections")
+            logger.warning("Scope NORM trigger timed out")
+            self._scope_discard_link(scope)
             return False
-        finally:
-            scope.timeout = saved
+
+    def _scope_discard_link(self, scope: "vxi11.Instrument") -> None:
+        """Close the VXI-11 link and reopen a clean one.
+
+        After a timed-out *OPC?, the scope's VXI11 link may hold stale
+        state.  We close it, wait briefly for the scope to clean up, then
+        open a fresh link with *RST + *CLS so the next test starts clean.
+        """
+        try:
+            scope.close()
+        except Exception:
+            try:
+                if scope.client is not None:
+                    scope.client.close()
+            except Exception:
+                pass
+        scope.link = None
+        scope.client = None
+        # Give the scope time to release the old link, then open a
+        # fresh one and clear any pending error / acquisition state.
+        time.sleep(0.5)
+        try:
+            scope.write("*RST;*CLS")
+            scope.ask("*OPC?")
+        except Exception:
+            logger.warning("Scope recovery after discard failed")
 
     # =========================================================================
     # Setup Operations
@@ -579,7 +576,7 @@ class VUController(HardwareController):
             scope.write("TRIG:A:SOUR CH1")
             scope.write("TRIG:A:TYPE EDGE")
             scope.write("TRIG:A:EDGE:SLOPE NEG")
-            trig_level = -1.5 * scale[0] + offsets[0]
+            trig_level = -0.5 * abs(slopes[0]) * 0.200
             scope.write(f"TRIG:A:LEVEL1:VAL {trig_level}")
             print(f"  Trigger level: {trig_level:+.2f} V  (NEG edge, CH1)")
             scope.write("FORM REAL")
@@ -629,7 +626,7 @@ class VUController(HardwareController):
 
             # Wait for trigger
             time.sleep(1)
-            triggered = self._scope_wait_trigger(scope, timeout=15)
+            triggered = self._scope_wait_trigger(scope)
 
             if not triggered:
                 print("  ⚠ No valid data — trigger did not fire")
@@ -830,29 +827,6 @@ class VUController(HardwareController):
 
             scope = self._scope
 
-            # Quick offset measurement (outputs disabled) so we can
-            # offset-correct the NORM trigger level and channel offsets.
-            # Use 5V/div so probes with up to ±25V DC offset don't clip.
-            scope.write("*RST")
-            scope.write("CHAN:TYPE HRES")
-            scope.write("ACQ:POIN 5000")
-            scope.write("TIM:SCAL 1e-2")
-            scope.write("CHAN1:SCAL 5")
-            scope.write("CHAN2:SCAL 5")
-            scope.write("CHAN3:SCAL 5")
-            scope.write("CHAN1:STAT ON")
-            scope.write("CHAN2:STAT ON")
-            scope.write("CHAN3:STAT ON")
-            scope.write("FORM REAL")
-            scope.write("FORM:BORD LSBF")
-            scope.write("CHAN:DATA:POIN DMAX")
-            self._vu.setOutputsEnabled(0)
-            self._scope_setup_and_acquire(scope)
-            offsets = [0.0, 0.0, 0.0]
-            for ch in (1, 2, 3):
-                offsets[ch - 1] = float(np.mean(self._scope_get_data(ch)[0]))
-                print(f"  CH{ch} DC offset: {offsets[ch - 1] * 1000:+.1f} mV")
-
             if dac_bits == 20:
                 timestep = 20e-6
 
@@ -866,17 +840,12 @@ class VUController(HardwareController):
             scope.write(f"CHAN1:SCAL {v_scale}")
             scope.write(f"CHAN2:SCAL {v_scale}")
             scope.write(f"CHAN3:SCAL {v_scale}")
-            # Compensate probe DC offset so the step response is on-screen
-            scope.write(f"CHAN1:OFFS {-offsets[0]}")
-            scope.write(f"CHAN2:OFFS {-offsets[1]}")
-            scope.write(f"CHAN3:OFFS {-offsets[2]}")
             scope.write("TRIG:A:MODE NORM")
             scope.write("TRIG:A:SOUR CH1")
             scope.write("TRIG:A:TYPE EDGE")
             scope.write("TRIG:A:EDGE:SLOPE POS")
-            trig_level = offsets[0]
-            scope.write(f"TRIG:A:LEVEL1:VAL {trig_level}")
-            print(f"  Trigger level: {trig_level:+.3f} V  (POS edge, CH1)")
+            scope.write("TRIG:A:LEVEL1:VAL 0.0")
+            print(f"  Trigger level: 0.000 V  (POS edge, CH1)")
             scope.write("FORM REAL")
             scope.write("FORM:BORD LSBF")
             scope.write("CHAN:DATA:POIN DMAX")
@@ -916,7 +885,7 @@ class VUController(HardwareController):
             time.sleep(0.3)
             self._vu.setOutputsEnabled(0)
 
-            triggered = self._scope_wait_trigger(scope, timeout=15)
+            triggered = self._scope_wait_trigger(scope)
 
             if not triggered:
                 print("  ⚠ No valid data — trigger did not fire")
@@ -1109,11 +1078,19 @@ class VUController(HardwareController):
 
             print("\n── Final Verification ──")
             if on_iteration is not None:
-                on_iteration({"iteration": "final", "converged": True, "coeffs": {
+                on_iteration({"iteration": "final_transient", "converged": True, "coeffs": {
                     k: list(v) for k, v in self._coeffs.items()
                 }})
             self.test_transient(on_waveform=on_waveform)
+            if on_iteration is not None:
+                on_iteration({"iteration": "final_outputs", "converged": True, "coeffs": {
+                    k: list(v) for k, v in self._coeffs.items()
+                }})
             final_outputs = self.test_outputs(on_point_measured=on_point_measured)
+            if on_iteration is not None:
+                on_iteration({"iteration": "final_ramp", "converged": True, "coeffs": {
+                    k: list(v) for k, v in self._coeffs.items()
+                }})
             final_ramp = self.test_ramp(on_waveform=on_waveform)
 
             plots = []

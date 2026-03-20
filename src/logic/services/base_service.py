@@ -193,11 +193,33 @@ class BaseHardwareService(QObject):
 
         return make_task("connect", job)
 
+    def disconnect_hardware(self) -> FunctionTask:
+        """Disconnect from hardware in a worker thread.
+
+        Returns:
+            FunctionTask that tears down the hardware connection.
+        """
+
+        def job():
+            with self._hw_lock:
+                self._disconnect()
+                self._connected = False
+            self.connectedChanged.emit(False)
+            logger.info("Disconnected successfully")
+            return {"ok": True}
+
+        return make_task("disconnect", job)
+
     # ---- Abstract ----
 
     @abstractmethod
     def _ensure_connected(self) -> None:
         """Establish hardware connections.  Called under ``_hw_lock``."""
+        ...
+
+    @abstractmethod
+    def _disconnect(self) -> None:
+        """Tear down hardware connections.  Called under ``_hw_lock``."""
         ...
 
     @abstractmethod

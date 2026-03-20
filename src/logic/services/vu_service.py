@@ -114,31 +114,24 @@ class VoltageUnitService(BaseHardwareService):
     def _reconnect_scope(self) -> None:
         """Recreate the scope connection and update the controller reference.
 
-        Creates the new connection FIRST, then cleans up the old one with a
-        short timeout so a broken old socket never blocks the worker thread.
+        Mirrors setup_cal.py: create instrument + query *IDN? to open link.
+        No custom timeout — use vxi11 default, same as the reference script.
         """
         old = self._scope
-        # Create new scope before touching the old one
         self._scope = vxi11.Instrument(self._target_instrument_ip)
-        self._scope.timeout = 30
+        self._scope.ask("*IDN?")
         if self._controller:
             self._controller._scope = self._scope
-        # Clean up old scope with short timeout to avoid blocking
         if old:
             try:
-                old.timeout = 2
                 old.close()
             except Exception:
-                # close() may fail partway through (destroy_link blocks).
-                # Ensure the TCP socket is closed so we don't leak
-                # connections to the scope.
                 try:
                     if old.client is not None:
                         old.client.close()
                 except Exception:
                     pass
             finally:
-                # Prevent __del__ from retrying a broken close()
                 old.link = None
                 old.client = None
 
@@ -170,7 +163,10 @@ class VoltageUnitService(BaseHardwareService):
         self._vu = DPIVoltageUnit(serial=vu_serial, interface=vu_if, busaddress=vu_if)
         self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
         self._scope = vxi11.Instrument(self._target_instrument_ip)
-        self._scope.timeout = 30
+        # Immediately query *IDN? to open the VXI11 link and verify the
+        # scope is responsive — mirrors setup_cal.py connection sequence.
+        idn = self._scope.ask("*IDN?")
+        print(f"Scope: {idn}")
 
         # Initialize DAC hardware (required after power glitch or firmware reset)
         self._vu.dacInit()
@@ -188,6 +184,57 @@ class VoltageUnitService(BaseHardwareService):
         logger.info("VU connected: serial=%s", vu_serial)
         self.connectedChanged.emit(True)
         self._emit_coeffs()
+
+        # Print connection summary
+        self._print_connection_summary(vu_serial, vu_if, mcu_serial, mcu_if)
+
+    def _print_connection_summary(
+        self, vu_serial: int, vu_if: int, mcu_serial: int, mcu_if: int
+    ) -> None:
+        """Print a readable connection summary to stdout (captured by worker)."""
+        lines = [
+            "",
+            "\033[1m── Connection Summary ──\033[0m",
+            f"  VU   s{vu_serial} i{vu_if}    MCU  s{mcu_serial} i{mcu_if}",
+            f"  Scope  {self._target_instrument_ip}",
+        ]
+        # Channel info
+        for ch in ("CH1", "CH2", "CH3"):
+            try:
+                amp = self._vu.get_Vout_Amplification(ch)
+                coeffs = list(self._vu.get_correctionvalues(ch))
+                k, d = coeffs[0], coeffs[1]
+                lines.append(f"  {ch}  amp={amp:+.1f}  k={k:.6f}  d={d:.6f}")
+            except Exception:
+                lines.append(f"  {ch}  (could not read)")
+        lines.append("")
+        print("\n".join(lines))
+
+    def _disconnect(self) -> None:
+        """Tear down VU hardware connections."""
+        if self._scope:
+            try:
+                self._scope.close()
+            except Exception:
+                try:
+                    if self._scope.client is not None:
+                        self._scope.client.close()
+                except Exception:
+                    pass
+            self._scope = None
+        if self._vu:
+            try:
+                self._vu.disconnect()
+            except Exception:
+                pass
+            self._vu = None
+        if self._mcu:
+            try:
+                self._mcu.disconnect()
+            except Exception:
+                pass
+            self._mcu = None
+        self._controller = None
 
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
@@ -385,15 +432,3 @@ class VoltageUnitService(BaseHardwareService):
         task.fn = job
         return task
 
-    @BaseHardwareService.require_instrument_ip
-    def autocal_onboard(self) -> FunctionTask:
-        def job():
-            result = self._controller.perform_autocalibration()
-            self._emit_coeffs()
-            return {
-                "ok": result.ok,
-                "coeffs": self.coeffs,
-                "artifacts": self._safe_collect_artifacts(),
-            }
-
-        return make_task("Autocalibration (Onboard)", job)

@@ -146,8 +146,6 @@ class SUCalibrationPage(BaseHardwarePage):
         # Connect service signals (from base class)
         self._connect_service_signals()
 
-        self._log("Calibration page ready.")
-
     def _on_measure(self) -> None:
         """Run calibration measurement (all ranges)."""
         if not self.service:

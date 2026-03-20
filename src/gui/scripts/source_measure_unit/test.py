@@ -2,6 +2,7 @@
 
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -23,9 +24,23 @@ class SMUTestPage(BaseHardwarePage):
     Provides controls for:
     - Temperature measurement
     - Relais configuration (IV-Channel, PA-Channel, High-Pass, Input DUT, VGUARD)
+    - PA Clip control per channel
+    - Saturation detection (read/clear)
     - Program Relais action
     - Measure Idle text field for additional instructions
     """
+
+    # Channel text to integer mapping for relay programming
+    _IV_CHANNEL_MAP = {
+        "Off": 0,
+        "ivch1": 1, "ivch2": 2, "ivch3": 3,
+        "ivch4": 4, "ivch5": 5, "ivch6": 6,
+        "ivch7": 7, "ivch8": 8, "ivch9": 9,
+    }
+    _PA_CHANNEL_MAP = {
+        "Off": 0,
+        "pach0": 1, "pach1": 2, "pach2": 3, "pach3": 4,
+    }
 
     def __init__(
         self,
@@ -75,7 +90,10 @@ class SMUTestPage(BaseHardwarePage):
         iv_form = self._create_form_layout(iv_box)
 
         self.cb_iv_channel = QComboBox()
-        self.cb_iv_channel.addItems(["CH1", "CH2", "CH3", "CH4"])
+        self.cb_iv_channel.addItems(
+            ["ivch1", "ivch2", "ivch3", "ivch4", "ivch5",
+             "ivch6", "ivch7", "ivch8", "ivch9", "Off"]
+        )
         self._configure_input(self.cb_iv_channel)
         iv_form.addRow("Channel:", self.cb_iv_channel)
 
@@ -100,7 +118,7 @@ class SMUTestPage(BaseHardwarePage):
         pa_form = self._create_form_layout(pa_box)
 
         self.cb_pa_channel = QComboBox()
-        self.cb_pa_channel.addItems(["PA1", "PA2", "PA3", "PA4"])
+        self.cb_pa_channel.addItems(["pach0", "pach1", "pach2", "pach3", "Off"])
         self._configure_input(self.cb_pa_channel)
         pa_form.addRow("Channel:", self.cb_pa_channel)
 
@@ -117,6 +135,17 @@ class SMUTestPage(BaseHardwarePage):
         pa_ref_layout.addWidget(self.rb_pa_vsmu)
         pa_ref_layout.addStretch()
         pa_form.addRow("Reference:", pa_ref_layout)
+
+        # PA Clip checkboxes
+        clip_layout = QHBoxLayout()
+        self.chk_pa_clip = {}
+        for pa_name in ["pach0", "pach1", "pach2", "pach3"]:
+            chk = QCheckBox(pa_name)
+            self._configure_input(chk)
+            clip_layout.addWidget(chk)
+            self.chk_pa_clip[pa_name] = chk
+        clip_layout.addStretch()
+        pa_form.addRow("PA Clip:", clip_layout)
 
         relais_layout.addWidget(pa_box)
 
@@ -192,6 +221,28 @@ class SMUTestPage(BaseHardwarePage):
         self._configure_input(self.btn_program_relais, min_height=40)
         main_layout.addWidget(self.btn_program_relais)
 
+        # ==== Saturation Detection Section ====
+        sat_box = self._create_group_box("Saturation Detection")
+        sat_layout = QHBoxLayout(sat_box)
+        sat_layout.setContentsMargins(*self._group_padding)
+
+        self.lbl_sat_iv = QLabel("IV: --")
+        self.lbl_sat_iv.setMinimumWidth(120)
+        self.lbl_sat_pa = QLabel("PA: --")
+        self.lbl_sat_pa.setMinimumWidth(120)
+        sat_layout.addWidget(self.lbl_sat_iv)
+        sat_layout.addWidget(self.lbl_sat_pa)
+        sat_layout.addStretch()
+
+        self.btn_read_sat = QPushButton("Read")
+        self._configure_input(self.btn_read_sat, min_width=80)
+        self.btn_clear_sat = QPushButton("Clear")
+        self._configure_input(self.btn_clear_sat, min_width=80)
+        sat_layout.addWidget(self.btn_read_sat)
+        sat_layout.addWidget(self.btn_clear_sat)
+
+        main_layout.addWidget(sat_box)
+
         # ==== Measure Idle Section ====
         idle_box = self._create_group_box("Measure Idle", expanding=True)
         idle_layout = QVBoxLayout(idle_box)
@@ -210,16 +261,24 @@ class SMUTestPage(BaseHardwarePage):
         main_layout.addWidget(idle_box)
 
         # Register action buttons
-        self._action_buttons = [self.btn_temp_measure, self.btn_program_relais]
+        self._action_buttons = [
+            self.btn_temp_measure, self.btn_program_relais,
+            self.btn_read_sat, self.btn_clear_sat,
+        ]
 
         # ==== Signals ====
         self.btn_temp_measure.clicked.connect(self._on_measure_temp)
         self.btn_program_relais.clicked.connect(self._on_program_relais)
+        self.btn_read_sat.clicked.connect(self._on_read_saturation)
+        self.btn_clear_sat.clicked.connect(self._on_clear_saturation)
+
+        # PA clip checkboxes
+        for pa_name, chk in self.chk_pa_clip.items():
+            pa_ch = self._PA_CHANNEL_MAP[pa_name]
+            chk.toggled.connect(lambda checked, ch=pa_ch: self._on_pa_clip_toggled(ch, checked))
 
         # Connect service signals (from base class)
         self._connect_service_signals()
-
-        self._log("Test page ready.")
 
     def _on_measure_temp(self) -> None:
         """Measure temperature."""
@@ -242,10 +301,6 @@ class SMUTestPage(BaseHardwarePage):
         task.signals.finished.connect(on_complete)
         self._start_task(task)
 
-    # Channel text to integer mapping for relay programming
-    _IV_CHANNEL_MAP = {"CH1": 1, "CH2": 2, "CH3": 3, "CH4": 4}
-    _PA_CHANNEL_MAP = {"PA1": 1, "PA2": 2, "PA3": 3, "PA4": 4}
-
     @property
     def _dut_routing_map(self) -> dict[QRadioButton, str]:
         """Map DUT radio buttons to their routing target strings."""
@@ -259,11 +314,6 @@ class SMUTestPage(BaseHardwarePage):
         }
 
     def _get_selected_dut(self) -> str:
-        """Return the currently selected DUT routing target.
-
-        Returns:
-            The routing target string (e.g. ``"GND"``, ``"VSMU"``).
-        """
         for rb, target in self._dut_routing_map.items():
             if rb.isChecked():
                 return target
@@ -276,11 +326,11 @@ class SMUTestPage(BaseHardwarePage):
             return
 
         iv_channel_text = self.cb_iv_channel.currentText()
-        iv_channel = self._IV_CHANNEL_MAP.get(iv_channel_text, 1)
+        iv_channel = self._IV_CHANNEL_MAP.get(iv_channel_text, 0)
         iv_ref = "GND" if self.rb_iv_gnd.isChecked() else "VSMU"
 
         pa_channel_text = self.cb_pa_channel.currentText()
-        pa_channel = self._PA_CHANNEL_MAP.get(pa_channel_text, 1)
+        pa_channel = self._PA_CHANNEL_MAP.get(pa_channel_text, 0)
 
         high_pass = self.rb_hp_enable.isChecked()
         vguard = "GND" if self.rb_vguard_gnd.isChecked() else "VSMU"
@@ -300,3 +350,57 @@ class SMUTestPage(BaseHardwarePage):
             vguard=vguard,
         )
         self._start_task(task)
+
+    def _on_pa_clip_toggled(self, channel: int, enabled: bool) -> None:
+        """Toggle PA clip for a channel."""
+        if not self.service:
+            return
+        self._log(f"Setting PA clip ch{channel}: {'ON' if enabled else 'OFF'}")
+        task = self.service.run_set_pa_clip(channel=channel, enabled=enabled)
+        if task:
+            self._start_task(task)
+
+    def _on_read_saturation(self) -> None:
+        """Read saturation detection state."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+
+        def on_complete(result):
+            if result and result.data:
+                iv_sat = result.data.get("iv_saturated", False)
+                pa_sat = result.data.get("pa_saturated", False)
+                self.lbl_sat_iv.setText(f"IV: {'SATURATED' if iv_sat else 'OK'}")
+                self.lbl_sat_pa.setText(f"PA: {'SATURATED' if pa_sat else 'OK'}")
+                self.lbl_sat_iv.setStyleSheet(
+                    "color: #d62728; font-weight: bold;" if iv_sat else ""
+                )
+                self.lbl_sat_pa.setStyleSheet(
+                    "color: #d62728; font-weight: bold;" if pa_sat else ""
+                )
+            else:
+                self._log("Failed to read saturation state.")
+
+        self._log("Reading saturation state...")
+        task = self.service.run_get_saturation_state()
+        if task:
+            task.signals.finished.connect(on_complete)
+            self._start_task(task)
+
+    def _on_clear_saturation(self) -> None:
+        """Clear saturation detection flags."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+
+        def on_complete(result):
+            self.lbl_sat_iv.setText("IV: --")
+            self.lbl_sat_pa.setText("PA: --")
+            self.lbl_sat_iv.setStyleSheet("")
+            self.lbl_sat_pa.setStyleSheet("")
+
+        self._log("Clearing saturation flags...")
+        task = self.service.run_clear_saturation()
+        if task:
+            task.signals.finished.connect(on_complete)
+            self._start_task(task)
