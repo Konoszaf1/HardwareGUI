@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -73,6 +74,9 @@ class VUConnectionPage(BaseHardwarePage):
         self.le_scope_ip.setValidator(QRegularExpressionValidator(ip_re, self))
         self.le_scope_ip.setPlaceholderText("e.g. 192.168.0.10")
         ip_layout.addWidget(self.le_scope_ip)
+        self.btn_search_scope = QPushButton("Search")
+        self._configure_input(self.btn_search_scope, min_width=80)
+        ip_layout.addWidget(self.btn_search_scope)
         self.btn_ping = QPushButton("Ping")
         self._configure_input(self.btn_ping, min_width=80)
         ip_layout.addWidget(self.btn_ping)
@@ -175,11 +179,12 @@ class VUConnectionPage(BaseHardwarePage):
         main_layout.addStretch()
 
         # Register action buttons (disconnect NOT included — managed separately)
-        self._action_buttons = [self.btn_connect, self.btn_ping]
+        self._action_buttons = [self.btn_connect, self.btn_ping, self.btn_search_scope]
 
         # ==== Signals ====
         self.rb_vu_manual.toggled.connect(self._on_vu_mode_changed)
         self.rb_mcu_manual.toggled.connect(self._on_mcu_mode_changed)
+        self.btn_search_scope.clicked.connect(self._on_search_scope)
         self.btn_ping.clicked.connect(self._on_ping)
         self.btn_connect.clicked.connect(self._on_connect)
         self.btn_disconnect.clicked.connect(self._on_disconnect)
@@ -197,6 +202,42 @@ class VUConnectionPage(BaseHardwarePage):
         """Enable/disable MCU manual inputs based on mode."""
         self.sp_mcu_serial.setEnabled(is_manual)
         self.sp_mcu_interface.setEnabled(is_manual)
+
+    def _on_search_scope(self) -> None:
+        """Search network for oscilloscopes (async)."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+
+        self._log("Searching for oscilloscopes on local network...")
+        task = self.service.search_instruments("scope")
+        task.signals.finished.connect(self._on_search_finished)
+        self._start_task(task)
+
+    def _on_search_finished(self, result) -> None:
+        """Handle search results — populate IP field or show menu."""
+        if not result.ok or not result.data:
+            return
+        instruments = result.data.get("instruments", [])
+        if not instruments:
+            self._log("No oscilloscopes found on the network.")
+            return
+
+        if len(instruments) == 1:
+            # Single result — auto-fill
+            self.le_scope_ip.setText(instruments[0]["ip"])
+            self._log(f"Found: {instruments[0]['display']}")
+        else:
+            # Multiple results — show popup menu
+            menu = QMenu(self)
+            for instr in instruments:
+                action = menu.addAction(instr["display"])
+                action.setData(instr["ip"])
+            action = menu.exec(self.btn_search_scope.mapToGlobal(
+                self.btn_search_scope.rect().bottomLeft()
+            ))
+            if action:
+                self.le_scope_ip.setText(action.data())
 
     def _on_ping(self) -> None:
         """Ping scope to verify connectivity (async)."""

@@ -395,6 +395,13 @@ class SourceMeasureUnitService(BaseHardwareService):
                 on_range_started=lambda d: task.signals.data_chunk.emit(d),
                 cancel_event=task.cancel_event,
             )
+            # Reconnect so buttons stay enabled after measurement
+            try:
+                with self._hw_lock:
+                    self._ensure_connected()
+            except Exception as e:
+                logger.warning("Failed to reconnect after calibration: %s", e)
+
             data = result.data or {}
             return {
                 "ok": result.ok,

@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
+from src.logic.network_discovery import DiscoveredInstrument, discover_instruments
 from src.logic.qt_workers import FunctionTask, make_task
 
 logger = get_logger(__name__)
@@ -83,6 +84,35 @@ class BaseHardwareService(QObject):
         if self._instrument_verified_state != verified:
             self._instrument_verified_state = verified
             self.instrumentVerified.emit(verified)
+
+    def search_instruments(self, instrument_type: str = "scpi") -> FunctionTask:
+        """Scan the local network for instruments in a worker thread.
+
+        Args:
+            instrument_type: ``"keithley"``, ``"scope"``, or ``"scpi"``.
+
+        Returns:
+            FunctionTask whose result contains ``{"instruments": [...]}``.
+        """
+
+        def job():
+            print(f"Searching for {instrument_type} instruments on local network...")
+            found = discover_instruments(
+                instrument_type=instrument_type,
+                progress_callback=lambda msg: print(msg),
+            )
+            for instr in found:
+                print(f"  Found: {instr.display_name}")
+            if not found:
+                print("No instruments found.")
+            return {
+                "instruments": [
+                    {"ip": i.ip, "identity": i.identity, "display": i.display_name}
+                    for i in found
+                ]
+            }
+
+        return make_task("search_instruments", job)
 
     def ping_instrument(self) -> FunctionTask:
         """Ping the instrument IP in a worker thread.

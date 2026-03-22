@@ -59,42 +59,52 @@ class _ProgressAdapter:
                 "total_points": self.total,
             })
 
+    @staticmethod
+    def _parse_desc(desc: str) -> dict:
+        """Extract pa/iv/vsmu fields from a range description string."""
+        m = re.match(r"PA: (\w+), IV: (\w+), VSMU: (\w+)", desc)
+        if m:
+            return {"pa": m.group(1), "iv": m.group(2), "vsmu": m.group(3) == "True"}
+        return {}
+
     def set_description(self, desc):
         if desc != self._current_desc:
             # Mark previous range as done
             if self._current_desc and self._on_range:
                 elapsed = time.time() - self._range_start
-                self._on_range({
+                done_data = {
                     "type": "cal_range",
                     "status": "done",
                     "desc": self._current_desc,
                     "points": self._range_points,
                     "duration": elapsed,
-                })
+                }
+                done_data.update(self._parse_desc(self._current_desc))
+                self._on_range(done_data)
             self._current_desc = desc
             self._range_points = 0
             self._range_start = time.time()
             if self._on_range:
-                m = re.match(r"PA: (\w+), IV: (\w+), VSMU: (\w+)", desc)
-                if m:
-                    self._on_range({
-                        "type": "cal_range",
-                        "pa": m.group(1),
-                        "iv": m.group(2),
-                        "vsmu": m.group(3) == "True",
-                        "status": "running",
-                    })
+                running_data = {
+                    "type": "cal_range",
+                    "status": "running",
+                }
+                running_data.update(self._parse_desc(desc))
+                if "pa" in running_data:
+                    self._on_range(running_data)
 
     def close(self):
         if self._current_desc and self._on_range:
             elapsed = time.time() - self._range_start
-            self._on_range({
+            done_data = {
                 "type": "cal_range",
                 "status": "done",
                 "desc": self._current_desc,
                 "points": self._range_points,
                 "duration": elapsed,
-            })
+            }
+            done_data.update(self._parse_desc(self._current_desc))
+            self._on_range(done_data)
 
 
 class SMUController(HardwareController):
@@ -834,35 +844,41 @@ class SMUController(HardwareController):
     def get_calibration_status(self, folder_path: str) -> list[dict]:
         """Scan calibration folder and return per-range status.
 
-        Checks raw_data.h5 for measured keys and figures/ranges/ for
-        analysis plots to determine which ranges are measured/calibrated.
+        Checks raw_data.h5 for measured keys, raw_data_verify.h5 for
+        verified keys, and figures/ranges/ for analysis plots to determine
+        which ranges are measured/verified/calibrated.
 
         Returns:
-            List of dicts with keys: vsmu, pa, iv, measured, calibrated.
+            List of dicts with keys: vsmu, pa, iv, measured, verified, calibrated.
         """
         import re
 
         folder = Path(folder_path)
         measured_keys: set[tuple[bool, str, str]] = set()
+        verified_keys: set[tuple[bool, str, str]] = set()
         calibrated_keys: set[tuple[bool, str, str]] = set()
 
-        # Check raw_data.h5 for measured ranges
-        raw_file = folder / "raw_data.h5"
-        if raw_file.exists():
+        def _scan_h5(filepath: Path) -> set[tuple[bool, str, str]]:
+            keys: set[tuple[bool, str, str]] = set()
+            if not filepath.exists():
+                return keys
             try:
                 import h5py
 
-                with h5py.File(str(raw_file), "r") as f:
+                with h5py.File(str(filepath), "r") as f:
                     for key in f.keys():
-                        # Keys are tuples stored as strings: "(False, 'pach0', 'ivch1')"
                         m = re.match(
                             r"\(?(True|False),\s*'?(\w+)'?,\s*'?(\w+)'?\)?", key,
                         )
                         if m:
                             vsmu = m.group(1) == "True"
-                            measured_keys.add((vsmu, m.group(2), m.group(3)))
+                            keys.add((vsmu, m.group(2), m.group(3)))
             except Exception as e:
-                print(f"  Warning: could not read raw_data.h5: {e}")
+                print(f"  Warning: could not read {filepath.name}: {e}")
+            return keys
+
+        measured_keys = _scan_h5(folder / "raw_data.h5")
+        verified_keys = _scan_h5(folder / "raw_data_verify.h5")
 
         # Check analysis plots for calibrated ranges
         analysis_plots = self._collect_analysis_plots(folder_path)
@@ -871,8 +887,8 @@ class SMUController(HardwareController):
                 (info.get("vsmu", False), info.get("pa", ""), info.get("iv", ""))
             )
 
-        # Merge into unified list — calibrated implies measured
-        all_keys = measured_keys | calibrated_keys
+        # Merge into unified list
+        all_keys = measured_keys | verified_keys | calibrated_keys
         ranges = []
         for vsmu, pa, iv in sorted(all_keys):
             ranges.append({
@@ -880,6 +896,7 @@ class SMUController(HardwareController):
                 "pa": pa,
                 "iv": iv,
                 "measured": (vsmu, pa, iv) in measured_keys,
+                "verified": (vsmu, pa, iv) in verified_keys,
                 "calibrated": (vsmu, pa, iv) in calibrated_keys,
             })
         return ranges

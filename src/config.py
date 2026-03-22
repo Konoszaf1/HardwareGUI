@@ -49,8 +49,8 @@ class UIConfig:
     # Shared Panels
     panel_toggle_size: int = 24
     artifacts_expanded_width: int = 250
-    terminal_expanded_height: int = 200
-    terminal_min_height: int = 100
+    terminal_expanded_height: int = 250
+    terminal_min_height: int = 120
     panel_animation_duration_ms: int = 150
     panel_animation_easing: str = "OutCubic"
     max_widget_size: int = 16777215

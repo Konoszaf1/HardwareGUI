@@ -1,10 +1,13 @@
 """Calibration page for Source Measure Unit calibration."""
 
+import time
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -28,16 +31,33 @@ _VSMU_MAP = {"Both": None, "Normal Only": False, "VSMU Only": True}
 # Speed preset mapping
 _SPEED_MAP = {"Fast": "fast", "Normal": "normal", "Precise": "precise"}
 
+# Unified table column indices
+_COL_VSMU = 0
+_COL_PA = 1
+_COL_IV = 2
+_COL_MEASURED = 3
+_COL_VERIFIED = 4
+_COL_FITTED = 5
+_COL_STATUS = 6
+
+
+def _status_item(text: str, color: Qt.GlobalColor) -> QTableWidgetItem:
+    item = QTableWidgetItem(text)
+    item.setForeground(color)
+    return item
+
 
 class SMUCalibrationPage(BaseHardwarePage):
     """Calibration page for Source Measure Unit.
 
-    Provides controls for:
-    - Measurement config: speed, VSMU mode, PA channels, scope (all/single)
-    - Fitting config: model type, auto-calibrate EEPROM
-    - Live progress table showing per-range status
-    - Live scatter plot (I_ref vs I_meas) updated via data_chunk
-    - Analysis plot display after fitting completes
+    Layout (top to bottom):
+    - Sticky progress bar (always visible): progress label + elapsed timer
+    - Scrollable content:
+      - Measurement config (speed, VSMU, PA channels, scope, buttons)
+      - Fitting config (model, auto-EEPROM, Run Fit)
+      - Unified calibration ranges table (measured/verified/fitted + live status)
+      - Live scatter plot
+      - Analysis plots
     """
 
     def __init__(
@@ -48,10 +68,31 @@ class SMUCalibrationPage(BaseHardwarePage):
     ):
         super().__init__(parent, service, shared_panels)
 
-        # ==== Main Layout with Scroll Area ====
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
+        # ==== Sticky progress bar (outside scroll) ====
+        self._progress_bar = QFrame()
+        self._progress_bar.setStyleSheet(
+            "QFrame { background: #2a2a2a; border-bottom: 1px solid #444; }"
+        )
+        bar_layout = QHBoxLayout(self._progress_bar)
+        bar_layout.setContentsMargins(12, 6, 12, 6)
+
+        self._progress_label = QLabel("Idle")
+        self._progress_label.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        bar_layout.addWidget(self._progress_label)
+        bar_layout.addStretch()
+        self._timer_label = QLabel("")
+        self._timer_label.setStyleSheet(
+            "color: #aaaaaa; font-size: 9pt; font-family: monospace;"
+        )
+        bar_layout.addWidget(self._timer_label)
+
+        outer_layout.addWidget(self._progress_bar)
+
+        # ==== Scrollable content ====
         scroll, content, main_layout = self._create_scroll_area(min_width=600)
         outer_layout.addWidget(scroll)
 
@@ -64,20 +105,17 @@ class SMUCalibrationPage(BaseHardwarePage):
         meas_box = self._create_group_box("Measurement Configuration")
         meas_form = self._create_form_layout(meas_box)
 
-        # Speed preset
         self.cb_speed = QComboBox()
         self.cb_speed.addItems(list(_SPEED_MAP.keys()))
         self.cb_speed.setCurrentText("Normal")
         self._configure_input(self.cb_speed)
         meas_form.addRow("Speed:", self.cb_speed)
 
-        # VSMU mode
         self.cb_vsmu = QComboBox()
         self.cb_vsmu.addItems(list(_VSMU_MAP.keys()))
         self._configure_input(self.cb_vsmu)
         meas_form.addRow("VSMU Mode:", self.cb_vsmu)
 
-        # PA Channels checkboxes
         pa_layout = QHBoxLayout()
         self.chk_pa = {}
         for pa in ["pach0", "pach1", "pach2", "pach3"]:
@@ -89,7 +127,6 @@ class SMUCalibrationPage(BaseHardwarePage):
         pa_layout.addStretch()
         meas_form.addRow("PA Channels:", pa_layout)
 
-        # Scope: All ranges vs Single range
         self.cb_scope = QComboBox()
         self.cb_scope.addItems(["All Ranges", "Single Range"])
         self._configure_input(self.cb_scope)
@@ -107,24 +144,23 @@ class SMUCalibrationPage(BaseHardwarePage):
         sr_layout.addWidget(self.cb_single_pa)
         sr_layout.addWidget(QLabel("IV:"))
         self.cb_single_iv = QComboBox()
-        self.cb_single_iv.addItems(
-            [f"ivch{i}" for i in range(1, 10)]
-        )
+        self.cb_single_iv.addItems([f"ivch{i}" for i in range(1, 10)])
         self._configure_input(self.cb_single_iv)
         sr_layout.addWidget(self.cb_single_iv)
         sr_layout.addStretch()
         meas_form.addRow("", self._single_range_widget)
         self._single_range_widget.hide()
 
-        # Measure / Verify / Cancel buttons
         btn_layout = QHBoxLayout()
-        self.btn_measure = QPushButton("Measure")
-        self._configure_input(self.btn_measure, min_width=100)
-        self.btn_verify = QPushButton("Verify")
-        self._configure_input(self.btn_verify, min_width=100)
+        # Primary action: full workflow (measure + verify), matching original script
+        self.btn_verify = QPushButton("Measure + Verify")
+        self._configure_input(self.btn_verify, min_width=140)
+        # Secondary action: measurement only, skip verification pass
+        self.btn_measure = QPushButton("Measure Only")
+        self._configure_input(self.btn_measure, min_width=110)
         self._configure_input(self._btn_cancel, min_width=100)
-        btn_layout.addWidget(self.btn_measure)
         btn_layout.addWidget(self.btn_verify)
+        btn_layout.addWidget(self.btn_measure)
         btn_layout.addWidget(self._btn_cancel)
         btn_layout.addStretch()
         meas_form.addRow("", btn_layout)
@@ -163,29 +199,40 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         main_layout.addWidget(fit_box)
 
-        # ==== Progress Table ====
-        progress_box = self._create_group_box("Measurement Progress", min_height=180)
-        progress_layout = QVBoxLayout(progress_box)
-        progress_layout.setContentsMargins(12, 18, 12, 12)
+        # ==== Unified Calibration Ranges Table ====
+        ranges_box = self._create_group_box("Calibration Ranges", min_height=220)
+        ranges_layout = QVBoxLayout(ranges_box)
+        ranges_layout.setContentsMargins(12, 18, 12, 12)
 
-        self._progress_label = QLabel("No measurement running")
-        self._progress_label.setStyleSheet("color: #cccccc; font-size: 9pt;")
-        progress_layout.addWidget(self._progress_label)
+        self._overview_summary = QLabel("No calibration data found")
+        self._overview_summary.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        ranges_layout.addWidget(self._overview_summary)
 
-        self.progress_table = QTableWidget()
-        self.progress_table.setColumnCount(5)
-        self.progress_table.setHorizontalHeaderLabels(
-            ["VSMU", "PA Channel", "IV Channel", "Status", "Points"]
+        self.ranges_table = QTableWidget()
+        self.ranges_table.setColumnCount(7)
+        self.ranges_table.setHorizontalHeaderLabels(
+            ["VSMU", "PA Channel", "IV Channel",
+             "Measured", "Verified", "Fitted", "Status"]
         )
-        self.progress_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self.progress_table.setMinimumHeight(120)
-        self.progress_table.verticalHeader().setDefaultSectionSize(24)
-        self.progress_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        progress_layout.addWidget(self.progress_table)
+        header = self.ranges_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.ranges_table.setMinimumHeight(150)
+        self.ranges_table.verticalHeader().setDefaultSectionSize(24)
+        self.ranges_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.ranges_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.ranges_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.ranges_table.cellClicked.connect(self._on_range_row_clicked)
+        ranges_layout.addWidget(self.ranges_table)
 
-        main_layout.addWidget(progress_box)
+        ranges_btn_layout = QHBoxLayout()
+        self.btn_refresh = QPushButton("Refresh")
+        self._configure_input(self.btn_refresh, min_width=100)
+        self.btn_refresh.clicked.connect(self._load_calibration_status)
+        ranges_btn_layout.addWidget(self.btn_refresh)
+        ranges_btn_layout.addStretch()
+        ranges_layout.addLayout(ranges_btn_layout)
+
+        main_layout.addWidget(ranges_box)
 
         # ==== Live Scatter Plot ====
         plot_box = self._create_group_box("Live Plot", min_height=250, expanding=True)
@@ -213,7 +260,9 @@ class SMUCalibrationPage(BaseHardwarePage):
         main_layout.addWidget(analysis_box)
 
         # Register action buttons
-        self._action_buttons = [self.btn_measure, self.btn_verify, self.btn_run_fit]
+        self._action_buttons = [
+            self.btn_measure, self.btn_verify, self.btn_run_fit, self.btn_refresh,
+        ]
 
         # ==== Signals ====
         self.btn_measure.clicked.connect(self._on_measure)
@@ -222,9 +271,17 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         self._connect_service_signals()
 
-        # Progress tracking state
-        self._range_rows: dict[str, int] = {}
+        # State
+        self._row_keys: dict[str, int] = {}   # "vsmu|pa|iv" -> row index
+        self._range_points: dict[str, int] = {}  # live point counts per range
         self._loading_status = False
+        self._measuring = False
+
+        # Elapsed timer
+        self._measure_start: float = 0.0
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed)
 
         # Auto-load calibration status on init
         QTimer.singleShot(500, self._load_calibration_status)
@@ -247,6 +304,50 @@ class SMUCalibrationPage(BaseHardwarePage):
 
     def _on_scope_changed(self, text: str) -> None:
         self._single_range_widget.setVisible(text == "Single Range")
+
+    # ---- Row-click → populate single-range selector ----
+
+    def _on_range_row_clicked(self, row: int, _col: int) -> None:
+        pa_item = self.ranges_table.item(row, _COL_PA)
+        iv_item = self.ranges_table.item(row, _COL_IV)
+        if not pa_item or not iv_item:
+            return
+        pa = pa_item.text()
+        iv = iv_item.text()
+        # Switch to Single Range mode and populate selectors
+        self.cb_scope.setCurrentText("Single Range")
+        idx_pa = self.cb_single_pa.findText(pa)
+        if idx_pa >= 0:
+            self.cb_single_pa.setCurrentIndex(idx_pa)
+        idx_iv = self.cb_single_iv.findText(iv)
+        if idx_iv >= 0:
+            self.cb_single_iv.setCurrentIndex(idx_iv)
+
+    # ---- Elapsed timer ----
+
+    @staticmethod
+    def _format_elapsed(seconds: float) -> str:
+        s = int(seconds)
+        h, s = divmod(s, 3600)
+        m, s = divmod(s, 60)
+        if h:
+            return f"{h:d}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    def _start_elapsed_timer(self) -> None:
+        self._measure_start = time.monotonic()
+        self._timer_label.setText("00:00")
+        self._elapsed_timer.start()
+
+    def _stop_elapsed_timer(self) -> None:
+        self._elapsed_timer.stop()
+        if self._measure_start:
+            elapsed = time.monotonic() - self._measure_start
+            self._timer_label.setText(f"Total: {self._format_elapsed(elapsed)}")
+
+    def _update_elapsed(self) -> None:
+        elapsed = time.monotonic() - self._measure_start
+        self._timer_label.setText(self._format_elapsed(elapsed))
 
     # ---- Actions ----
 
@@ -273,7 +374,12 @@ class SMUCalibrationPage(BaseHardwarePage):
             f"Calibration {'Verify' if verify else 'Measure'}",
             "I_ref / A", "I_meas / A",
         )
-        self._reset_progress_table()
+        # Clear live status column but keep overview data
+        self._clear_status_column()
+        self._range_points.clear()
+        self._measuring = True
+        self._start_elapsed_timer()
+        self._progress_label.setText("Measurement starting...")
 
         task = self.service.run_calibration_measure(
             vsmu_mode=self._get_vsmu_mode(),
@@ -283,6 +389,8 @@ class SMUCalibrationPage(BaseHardwarePage):
             single_range=self._get_single_range(),
         )
         if not task:
+            self._stop_elapsed_timer()
+            self._measuring = False
             self._log("Keithley IP not configured. Set it on the Connection page first.")
             return
         task.signals.data_chunk.connect(self._on_cal_chunk)
@@ -297,6 +405,8 @@ class SMUCalibrationPage(BaseHardwarePage):
         auto_cal = self.chk_auto_eeprom.isChecked()
         self._log(f"Running {model} fit (auto-EEPROM: {auto_cal})...")
         self.analysis_widget.clear()
+        self._start_elapsed_timer()
+        self._progress_label.setText("Fitting...")
 
         task = self.service.run_calibration_fit(
             draw_plot=True,
@@ -304,6 +414,36 @@ class SMUCalibrationPage(BaseHardwarePage):
             model_type=model,
         )
         self._start_task(task)
+
+    # ---- Unified table helpers ----
+
+    @staticmethod
+    def _range_key(vsmu, pa: str, iv: str) -> str:
+        return f"{vsmu}|{pa}|{iv}"
+
+    def _find_or_insert_row(self, vsmu, pa: str, iv: str) -> int:
+        """Find existing row for this range or insert a new one."""
+        key = self._range_key(vsmu, pa, iv)
+        if key in self._row_keys:
+            return self._row_keys[key]
+        row = self.ranges_table.rowCount()
+        self.ranges_table.insertRow(row)
+        self.ranges_table.setItem(row, _COL_VSMU, QTableWidgetItem(str(vsmu)))
+        self.ranges_table.setItem(row, _COL_PA, QTableWidgetItem(pa))
+        self.ranges_table.setItem(row, _COL_IV, QTableWidgetItem(iv))
+        # Persistent columns default to "--"
+        for col in (_COL_MEASURED, _COL_VERIFIED, _COL_FITTED):
+            self.ranges_table.setItem(
+                row, col, _status_item("--", Qt.GlobalColor.darkGray),
+            )
+        self.ranges_table.setItem(row, _COL_STATUS, QTableWidgetItem(""))
+        self._row_keys[key] = row
+        return row
+
+    def _clear_status_column(self) -> None:
+        """Clear the live Status column for all rows."""
+        for row in range(self.ranges_table.rowCount()):
+            self.ranges_table.setItem(row, _COL_STATUS, QTableWidgetItem(""))
 
     # ---- Live data handling ----
 
@@ -314,14 +454,13 @@ class SMUCalibrationPage(BaseHardwarePage):
         chunk_type = data.get("type")
 
         if chunk_type == "cal_point":
-            # Update scatter plot
             vsmu = data.get("vsmu", False)
             pa = data.get("pa", "?")
             iv = data.get("iv", "?")
             series = f"{'V' if vsmu else 'G'} {pa} {iv}"
             self.plot_widget.append_point(series, data["x"], data["y"])
 
-            # Update progress label
+            # Update sticky progress label
             idx = data.get("point_index", 0)
             total = data.get("total_points", 0)
             if total > 0:
@@ -330,71 +469,51 @@ class SMUCalibrationPage(BaseHardwarePage):
                     f"Progress: {idx}/{total} points ({pct}%)"
                 )
 
-            # Update points column in table
-            key = f"{vsmu}|{pa}|{iv}"
-            if key in self._range_rows:
-                row = self._range_rows[key]
-                pts_item = self.progress_table.item(row, 4)
-                if pts_item:
-                    current = int(pts_item.text() or "0")
-                    pts_item.setText(str(current + 1))
+            # Update Status column with point count
+            key = self._range_key(vsmu, pa, iv)
+            if key in self._row_keys:
+                pts = self._range_points.get(key, 0) + 1
+                self._range_points[key] = pts
+                row = self._row_keys[key]
+                status_item = self.ranges_table.item(row, _COL_STATUS)
+                if status_item:
+                    status_item.setText(f"Running ({pts} pts)")
 
         elif chunk_type == "cal_range":
             status = data.get("status", "")
             pa = data.get("pa", "")
             iv = data.get("iv", "")
             vsmu = data.get("vsmu", False)
-            key = f"{vsmu}|{pa}|{iv}"
+            key = self._range_key(vsmu, pa, iv)
 
             if status == "running":
-                self._add_progress_row(key, vsmu, pa, iv)
-            elif status == "done":
-                self._update_progress_row(
-                    key, "Done",
-                    points=data.get("points", 0),
-                    duration=data.get("duration"),
+                row = self._find_or_insert_row(vsmu, pa, iv)
+                item = _status_item("Running", Qt.GlobalColor.yellow)
+                self.ranges_table.setItem(row, _COL_STATUS, item)
+                self._range_points[key] = 0
+                self.ranges_table.scrollToItem(
+                    self.ranges_table.item(row, _COL_STATUS),
                 )
 
-    # ---- Progress table management ----
+            elif status == "done":
+                if key in self._row_keys:
+                    row = self._row_keys[key]
+                    pts = data.get("points", 0)
+                    duration = data.get("duration")
+                    text = "Done"
+                    if pts:
+                        text += f" ({pts} pts"
+                        if duration is not None:
+                            text += f", {duration:.1f}s"
+                        text += ")"
+                    elif duration is not None:
+                        text += f" ({duration:.1f}s)"
+                    item = _status_item(text, Qt.GlobalColor.green)
+                    self.ranges_table.setItem(row, _COL_STATUS, item)
 
-    def _reset_progress_table(self) -> None:
-        self.progress_table.setRowCount(0)
-        self._range_rows.clear()
-        self._progress_label.setText("Measurement starting...")
-
-    def _add_progress_row(self, key: str, vsmu, pa: str, iv: str) -> None:
-        row = self.progress_table.rowCount()
-        self.progress_table.insertRow(row)
-        self.progress_table.setItem(row, 0, QTableWidgetItem(str(vsmu)))
-        self.progress_table.setItem(row, 1, QTableWidgetItem(pa))
-        self.progress_table.setItem(row, 2, QTableWidgetItem(iv))
-        running_item = QTableWidgetItem("Running")
-        running_item.setForeground(Qt.GlobalColor.yellow)
-        self.progress_table.setItem(row, 3, running_item)
-        self.progress_table.setItem(row, 4, QTableWidgetItem("0"))
-        self._range_rows[key] = row
-        self.progress_table.scrollToBottom()
-
-    def _update_progress_row(
-        self, key: str, status: str,
-        points: int = 0, duration: float | None = None,
-    ) -> None:
-        if key not in self._range_rows:
-            return
-        row = self._range_rows[key]
-        status_text = status
-        if duration is not None:
-            status_text += f" ({duration:.1f}s)"
-        done_item = QTableWidgetItem(status_text)
-        done_item.setForeground(Qt.GlobalColor.green)
-        self.progress_table.setItem(row, 3, done_item)
-        if points > 0:
-            self.progress_table.setItem(row, 4, QTableWidgetItem(str(points)))
-
-    # ---- Calibration status ----
+    # ---- Calibration status (disk) ----
 
     def _load_calibration_status(self) -> None:
-        """Load calibration status from disk and populate the progress table."""
         if not self.service or self._loading_status:
             return
         task = self.service.run_load_calibration_status()
@@ -405,60 +524,69 @@ class SMUCalibrationPage(BaseHardwarePage):
         self._start_task(task)
 
     def _on_status_loaded(self, result) -> None:
-        """Handle calibration status load result."""
         self._loading_status = False
         data = getattr(result, "data", None)
         if not isinstance(data, dict):
             return
         status_list = data.get("calibration_status", [])
-        if status_list:
-            self._show_calibration_status(status_list)
+        self._populate_ranges_table(status_list)
 
-    def _show_calibration_status(self, ranges: list[dict]) -> None:
-        """Populate the progress table with per-range measured/calibrated status."""
-        self.progress_table.setRowCount(0)
-        self._range_rows.clear()
-        n_calibrated = 0
+    def _populate_ranges_table(self, ranges: list[dict]) -> None:
+        """Rebuild the unified table from disk-loaded calibration status."""
+        self.ranges_table.setRowCount(0)
+        self._row_keys.clear()
         n_measured = 0
+        n_verified = 0
+        n_fitted = 0
+
         for info in ranges:
-            row = self.progress_table.rowCount()
-            self.progress_table.insertRow(row)
             vsmu = info.get("vsmu", False)
             pa = info.get("pa", "")
             iv = info.get("iv", "")
-            calibrated = info.get("calibrated", False)
             measured = info.get("measured", False)
+            verified = info.get("verified", False)
+            calibrated = info.get("calibrated", False)
 
-            self.progress_table.setItem(row, 0, QTableWidgetItem(str(vsmu)))
-            self.progress_table.setItem(row, 1, QTableWidgetItem(pa))
-            self.progress_table.setItem(row, 2, QTableWidgetItem(iv))
+            row = self._find_or_insert_row(vsmu, pa, iv)
 
-            if calibrated:
-                status_item = QTableWidgetItem("Calibrated")
-                status_item.setForeground(Qt.GlobalColor.cyan)
-                n_calibrated += 1
-            elif measured:
-                status_item = QTableWidgetItem("Measured")
-                status_item.setForeground(Qt.GlobalColor.yellow)
+            if measured:
+                self.ranges_table.setItem(
+                    row, _COL_MEASURED, _status_item("Yes", Qt.GlobalColor.green),
+                )
                 n_measured += 1
-            else:
-                status_item = QTableWidgetItem("")
-
-            self.progress_table.setItem(row, 3, status_item)
-            self.progress_table.setItem(row, 4, QTableWidgetItem(""))
+            if verified:
+                self.ranges_table.setItem(
+                    row, _COL_VERIFIED, _status_item("Yes", Qt.GlobalColor.green),
+                )
+                n_verified += 1
+            if calibrated:
+                self.ranges_table.setItem(
+                    row, _COL_FITTED, _status_item("Yes", Qt.GlobalColor.cyan),
+                )
+                n_fitted += 1
 
         total = len(ranges)
-        self._progress_label.setText(
-            f"{n_calibrated}/{total} ranges calibrated"
-            + (f", {n_measured} measured" if n_measured else "")
-        )
+        if total == 0:
+            self._overview_summary.setText("No calibration data found")
+            return
+
+        parts = [f"{total} ranges"]
+        if n_measured:
+            parts.append(f"{n_measured} measured")
+        if n_verified:
+            parts.append(f"{n_verified} verified")
+        if n_fitted:
+            parts.append(f"{n_fitted} fitted")
+        self._overview_summary.setText(" | ".join(parts))
 
     # ---- Task finished ----
 
     def _on_task_finished(self, result) -> None:
+        self._stop_elapsed_timer()
+        self._measuring = False
+
         data = getattr(result, "data", None)
         if isinstance(data, dict):
-            # Handle cancellation
             if data.get("cancelled"):
                 completed = data.get("completed_ranges", 0)
                 total = data.get("total_ranges", "?")
@@ -469,42 +597,15 @@ class SMUCalibrationPage(BaseHardwarePage):
                 super()._on_task_finished(result)
                 return
 
-            # Show analysis plots if available
             plots = data.get("analysis_plots", [])
             if plots:
                 self._log(f"Loading {len(plots)} analysis plots...")
                 self.analysis_widget.set_images(plots)
 
-            # Show calibrated ranges in progress table
-            cal_ranges = data.get("calibrated_ranges", [])
-            if cal_ranges:
-                self._show_calibrated_ranges(cal_ranges)
-
         self._progress_label.setText("Idle")
         super()._on_task_finished(result)
 
-        # Refresh calibration status after measurement or fit (not after status load itself)
+        # Refresh table from disk after measurement or fit
         task_name = getattr(result, "name", "")
         if task_name != "Load Cal Status":
             self._load_calibration_status()
-
-    def _show_calibrated_ranges(self, ranges: list[dict]) -> None:
-        """Populate the progress table with calibrated range status (from fit results)."""
-        self.progress_table.setRowCount(0)
-        self._range_rows.clear()
-        for info in ranges:
-            row = self.progress_table.rowCount()
-            self.progress_table.insertRow(row)
-            vsmu = info.get("vsmu", False)
-            pa = info.get("pa", "")
-            iv = info.get("iv", "")
-            self.progress_table.setItem(row, 0, QTableWidgetItem(str(vsmu)))
-            self.progress_table.setItem(row, 1, QTableWidgetItem(pa))
-            self.progress_table.setItem(row, 2, QTableWidgetItem(iv))
-            status_item = QTableWidgetItem("Calibrated")
-            status_item.setForeground(Qt.GlobalColor.cyan)
-            self.progress_table.setItem(row, 3, status_item)
-            self.progress_table.setItem(row, 4, QTableWidgetItem(""))
-        self._progress_label.setText(
-            f"{len(ranges)} ranges calibrated"
-        )
