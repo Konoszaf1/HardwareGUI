@@ -5,7 +5,10 @@ saving, and analysis. Uses correct SU data format: voltage-based columns with
 amp_channel keys.
 """
 
+from __future__ import annotations
+
 import os
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -58,35 +61,35 @@ class SUCalibrationFit(CalibrationFitBase):
         self._logger.verbose(f"AMP Channels: {self.amp_channels}")
 
     def _init_channel_attributes(self):
-        self.amp_channels = []
+        self.amp_channels: Any = []
 
     def _populate_channel_attributes(self):
-        self.amp_channels = self.data.keys()
+        self.amp_channels = self.data.keys()  # type: ignore[reportAttributeAccessIssue]
 
-    def _extract_key_from_dataframe(self, df):
-        return df.attrs["amp_channel"]
+    def _extract_key_from_dataframe(self, df: pd.DataFrame) -> str:
+        return str(df.attrs["amp_channel"])
 
-    def _create_calibration_gp_model(self, key, data):
+    def _create_calibration_gp_model(self, key: str, data: pd.DataFrame) -> SUCalibrationGPModel:
         return SUCalibrationGPModel(
-            key, data.attrs["amp_range"],
+            key, data.attrs["amp_range"],  # type: ignore[reportArgumentType]
             min_score=1e-11, grad_thresh=50e-6,
             log_level=DPILogger.NOTICE,
         )
 
-    def _create_calibration_linear_model(self, key, data):
+    def _create_calibration_linear_model(self, key: str, data: pd.DataFrame) -> SUCalibrationLinearModel:
         return SUCalibrationLinearModel(
-            key, data.attrs["amp_range"],
+            key, data.attrs["amp_range"],  # type: ignore[reportArgumentType]
             log_level=DPILogger.NOTICE,
         )
 
     def _get_key_description(self, key):
         return f"AMP Channel: {key}"
 
-    def _get_lin_thresh(self, key):
-        return 10.0 ** self.data[key].attrs["amp_range"] * 1e-6
+    def _get_lin_thresh(self, key: str) -> float:
+        return float(10.0 ** self.data[key].attrs["amp_range"] * 1e-6)  # type: ignore[reportOperatorIssue]
 
-    def _get_suptitle(self, key):
-        return f"AMP Channel: {key}, Range: {self.data[key].attrs['amp_range']}"
+    def _get_suptitle(self, key: str) -> str:
+        return f"AMP Channel: {key}, Range: {self.data[key].attrs['amp_range']}"  # type: ignore[reportIndexIssue]
 
     def _get_file_name(self, key):
         return f"amp_{key}"
@@ -99,32 +102,32 @@ class SUCalibrationFit(CalibrationFitBase):
 
     # -- Aggregation --
 
-    def aggregate_measurement(self, raw_data):
-        data = {}
-        attrs = {}
+    def aggregate_measurement(self, raw_data: list[pd.DataFrame]) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        attrs: dict[str, dict[str, Any]] = {}
 
         cols = ["set", "ref", "meas", "std", "max", "min", "error"]
 
         for df in raw_data:
             df_attrs = df.attrs
 
-            key = df_attrs["amp_channel"]
+            key: str = df_attrs["amp_channel"]  # type: ignore[reportAssignmentType]
             df_attrs["name"] = (
                 f"ampch={df_attrs['amp_channel']}, amp={df_attrs['amp_range']}"
             )
             measurement = [
                 df.attrs["v_set"],
                 df.attrs["v_ref"],
-                df["voltage"].mean(),
-                df["voltage"].std(),
-                df["voltage"].max(),
-                df["voltage"].min(),
-                df.attrs["v_ref"] - df["voltage"].mean(),
+                df["voltage"].mean(),  # type: ignore[reportCallIssue]
+                df["voltage"].std(),  # type: ignore[reportCallIssue]
+                df["voltage"].max(),  # type: ignore[reportCallIssue]
+                df["voltage"].min(),  # type: ignore[reportCallIssue]
+                df.attrs["v_ref"] - df["voltage"].mean(),  # type: ignore[reportCallIssue]
             ]
 
             if key not in data:
                 data[key] = []
-                attrs[key] = df_attrs
+                attrs[key] = df_attrs  # type: ignore[reportArgumentType]
 
             data[key].append(measurement)
 
@@ -150,24 +153,24 @@ class SUCalibrationFit(CalibrationFitBase):
             rows=2, cols=1, subplot_titles=["Time Series", "Fourier Transform"]
         )
 
-        trace_list = []
+        trace_list: list[tuple[str, Any, int, int]] = []
 
-        for df in data:
-            n = len(df.voltage)
-            voltage = df.voltage.to_numpy()
-            dt = np.mean(np.diff(df.time))
+        for df in data:  # type: ignore[reportGeneralIssue]
+            n = len(df.voltage)  # type: ignore[reportAttributeAccessIssue]
+            voltage = df.voltage.to_numpy()  # type: ignore[reportAttributeAccessIssue]
+            dt = np.mean(np.diff(df.time))  # type: ignore[reportAttributeAccessIssue]
 
-            freq, psd = scipy.signal.welch(voltage, fs=1 / dt, nperseg=min(256, n))
+            freq, psd = scipy.signal.welch(voltage, fs=1 / dt, nperseg=min(256, n))  # type: ignore[reportCallIssue]
 
             name = (
-                f"AMP {df.attrs['amp_channel']}, "
+                f"AMP {df.attrs['amp_channel']}, "  # type: ignore[reportAttributeAccessIssue]
                 f"Vset {df.attrs['v_set']:.2e}, Vref {df.attrs['v_ref']:.2e}"
             )
             name_fft = name + " FFT"
 
             trace_list.append((
                 name,
-                go.Scatter(x=df.time, y=df.voltage, mode="lines", name=name, visible="legendonly"),
+                go.Scatter(x=df.time, y=df.voltage, mode="lines", name=name, visible="legendonly"),  # type: ignore[reportAttributeAccessIssue]
                 1, 1,
             ))
             trace_list.append((
@@ -195,7 +198,7 @@ class SUCalibrationFit(CalibrationFitBase):
         fig.write_html(save_path / "overview_measure.html")
 
     def plot_aggregated_overview(self):
-        amplifiers = sorted(self.data.keys())
+        amplifiers = sorted(self.data.keys())  # type: ignore[reportAttributeAccessIssue]
         n_cols = 1
 
         fig, axes = plt.subplots(1, n_cols, figsize=(4 * n_cols, 5), sharex="col")
@@ -203,20 +206,20 @@ class SUCalibrationFit(CalibrationFitBase):
         if n_cols == 1:
             axes = np.array([axes])
 
-        legend_handles = []
-        legend_labels = []
-        amp_legend = set()
+        legend_handles: list[Any] = []
+        legend_labels: list[str] = []
+        amp_legend: set[Any] = set()
 
         col = 0
-        axes[col].plot((-1e-2, 1e-2), (-1e-2, 1e-2), "--", color="k")
-        axes[col].grid(True, color="grey", alpha=0.5)
+        axes[col].plot((-1e-2, 1e-2), (-1e-2, 1e-2), "--", color="k")  # type: ignore[reportIndexIssue]
+        axes[col].grid(True, color="grey", alpha=0.5)  # type: ignore[reportIndexIssue]
 
         for amp in amplifiers:
             key = amp
-            amp_label = self.data[key].attrs["amp_range"]
+            amp_label = self.data[key].attrs["amp_range"]  # type: ignore[reportIndexIssue]
 
-            (line,) = axes[col].plot(
-                self.data[key].ref, self.data[key].meas,
+            (line,) = axes[col].plot(  # type: ignore[reportIndexIssue]
+                self.data[key].ref, self.data[key].meas,  # type: ignore[reportIndexIssue, reportAttributeAccessIssue]
                 marker="x", label=f"AMP {amp_label:.2f}",
             )
             if amp_label not in amp_legend:
@@ -224,22 +227,22 @@ class SUCalibrationFit(CalibrationFitBase):
                 legend_labels.append(f"AMP {amp_label:.2f}")
                 amp_legend.add(amp_label)
 
-        axes[col].set_title("Amplifier")
-        axes[col].set_xscale("symlog", linthresh=1e-13)
-        axes[col].set_yscale("symlog", linthresh=1e-13)
-        axes[col].set_xlabel("Reference Voltage (symlog)")
+        axes[col].set_title("Amplifier")  # type: ignore[reportIndexIssue]
+        axes[col].set_xscale("symlog", linthresh=1e-13)  # type: ignore[reportIndexIssue]
+        axes[col].set_yscale("symlog", linthresh=1e-13)  # type: ignore[reportIndexIssue]
+        axes[col].set_xlabel("Reference Voltage (symlog)")  # type: ignore[reportIndexIssue]
 
         try:
-            axes[col].set_box_aspect(1)
+            axes[col].set_box_aspect(1)  # type: ignore[reportIndexIssue]
         except AttributeError:
-            axes[col].set_aspect("equal", adjustable="box")
+            axes[col].set_aspect("equal", adjustable="box")  # type: ignore[reportIndexIssue]
 
-        axes[col].set_ylabel("Measured Voltage (symlog)")
+        axes[col].set_ylabel("Measured Voltage (symlog)")  # type: ignore[reportIndexIssue]
 
-        for label in axes[col].get_xticklabels():
-            label.set_rotation(90)
+        for label in axes[col].get_xticklabels():  # type: ignore[reportIndexIssue]
+            label.set_rotation(90)  # type: ignore[reportAttributeAccessIssue]
 
-        axes[col].legend(legend_handles, legend_labels, loc="lower right", frameon=True)
+        axes[col].legend(legend_handles, legend_labels, loc="lower right", frameon=True)  # type: ignore[reportIndexIssue]
         plt.tight_layout()
 
         save_path = self.calibration_folder / "figures"
@@ -249,7 +252,7 @@ class SUCalibrationFit(CalibrationFitBase):
         plt.close(fig)
 
     def plot_calibrated_overview(self, model_type="linear"):
-        amplifiers = sorted(self.data.keys())
+        amplifiers = sorted(self.data.keys())  # type: ignore[reportAttributeAccessIssue]
         n_cols = 1
         n_rows = 2
 
@@ -258,25 +261,25 @@ class SUCalibrationFit(CalibrationFitBase):
         )
 
         if n_cols == 1:
-            axes = axes.reshape(n_rows, 1)
+            axes = axes.reshape(n_rows, 1)  # type: ignore[reportAttributeAccessIssue]
 
-        legend_handles = []
-        legend_labels = []
-        amp_legend = set()
+        legend_handles: list[Any] = []
+        legend_labels: list[str] = []
+        amp_legend: set[Any] = set()
 
         col = 0
 
         # --- Row 1: Uncalibrated ---
-        ax = axes[0, col]
+        ax = axes[0, col]  # type: ignore[reportIndexIssue]
         ax.plot((-1e-2, 1e-2), (-1e-2, 1e-2), "--", color="k")
         ax.grid(True, color="grey", alpha=0.5)
 
         for amp in amplifiers:
             key = amp
-            amp_label = self.data[key].attrs["amp_range"]
+            amp_label = self.data[key].attrs["amp_range"]  # type: ignore[reportIndexIssue]
 
             (line,) = ax.plot(
-                self.data[key].ref, self.data[key].meas,
+                self.data[key].ref, self.data[key].meas,  # type: ignore[reportIndexIssue, reportAttributeAccessIssue]
                 marker="x", label=f"AMP {amp_label:.2f}",
             )
             if amp_label not in amp_legend:
@@ -297,18 +300,18 @@ class SUCalibrationFit(CalibrationFitBase):
         ax.set_ylabel("Measured Voltage (symlog)")
 
         for label in ax.get_xticklabels():
-            label.set_rotation(90)
+            label.set_rotation(90)  # type: ignore[reportAttributeAccessIssue]
 
         # --- Row 2: Calibrated ---
-        ax2 = axes[1, col]
+        ax2 = axes[1, col]  # type: ignore[reportIndexIssue]
         ax2.plot((-1e-2, 1e-2), (-1e-2, 1e-2), "--", color="k")
         ax2.grid(True, color="grey", alpha=0.5)
 
         for amp in amplifiers:
             key = amp
-            model = self.model[key][model_type]
-            y_cal = model.predict(self.data[key].meas)
-            ax2.plot(self.data[key].ref, y_cal, marker="x", label=f"AMP {amp}")
+            model = self.model[key][model_type]  # type: ignore[reportIndexIssue]
+            y_cal = model.predict(self.data[key].meas)  # type: ignore[reportIndexIssue, reportAttributeAccessIssue]
+            ax2.plot(self.data[key].ref, y_cal, marker="x", label=f"AMP {amp}")  # type: ignore[reportIndexIssue, reportAttributeAccessIssue]
 
         ax2.set_title("Amplifier Calibrated")
         ax2.set_xscale("symlog", linthresh=1e-13)
@@ -323,7 +326,7 @@ class SUCalibrationFit(CalibrationFitBase):
         ax2.set_ylabel("Measured Voltage (symlog)")
 
         for label in ax2.get_xticklabels():
-            label.set_rotation(90)
+            label.set_rotation(90)  # type: ignore[reportAttributeAccessIssue]
 
         ax.legend(legend_handles, legend_labels, loc="lower right", frameon=True)
         plt.tight_layout()

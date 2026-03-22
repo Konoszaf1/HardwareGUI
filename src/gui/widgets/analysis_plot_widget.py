@@ -13,7 +13,7 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.image import imread
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -52,7 +52,7 @@ class AnalysisPlotWidget(QWidget):
         selector_layout.addStretch()
         layout.addLayout(selector_layout)
 
-        # Matplotlib canvas — no inner scroll area; parent page scrolls
+        # Matplotlib canvas - no inner scroll area; parent page scrolls
         self._figure = Figure(facecolor="#2a2a2a")
         self._canvas = FigureCanvasQTAgg(self._figure)
         layout.addWidget(self._canvas)
@@ -108,9 +108,14 @@ class AnalysisPlotWidget(QWidget):
         ax = self._figure.add_axes([0, 0, 1, 1])
         ax.set_facecolor("#2a2a2a")
         ax.text(
-            0.5, 0.5, "No analysis data\nRun a fit to generate plots",
-            ha="center", va="center", fontsize=11,
-            color="#666666", transform=ax.transAxes,
+            0.5,
+            0.5,
+            "No analysis data\nRun a fit to generate plots",
+            ha="center",
+            va="center",
+            fontsize=11,
+            color="#666666",
+            transform=ax.transAxes,
         )
         ax.set_axis_off()
         self._canvas.setMinimumSize(1, 1)

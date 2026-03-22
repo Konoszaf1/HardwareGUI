@@ -11,8 +11,11 @@ Tests:
     4. Full VU service pipeline tracing (what TaskResult.data contains)
 """
 
+from __future__ import annotations
+
 import sys
 import traceback
+from typing import Any
 
 import numpy as np
 
@@ -92,9 +95,11 @@ def test_synthetic_plot(app):
 
     series_info = widget._series
     for name, s in series_info.items():
-        print(f"  Series '{name}': {len(s['x'])} points, "
-              f"x=[{min(s['x']):.3f}..{max(s['x']):.3f}], "
-              f"y=[{min(s['y']):.6f}..{max(s['y']):.6f}]")
+        print(
+            f"  Series '{name}': {len(s['x'])} points, "
+            f"x=[{min(s['x']):.3f}..{max(s['x']):.3f}], "
+            f"y=[{min(s['y']):.6f}..{max(s['y']):.6f}]"
+        )
 
     widget.show()
     print("  Widget shown. Close to continue...")
@@ -146,7 +151,7 @@ def test_pipeline_trace():
     ]
 
     # Stage 1: Controller OperationResult.data
-    controller_data = {
+    controller_data: dict[str, Any] = {
         "artifacts": ["calibration_vu1/output.png"],
         "plot": {
             "type": "outputs",
@@ -154,11 +159,14 @@ def test_pipeline_trace():
             "errors": errors,
         },
     }
+    plot_d: dict[str, Any] = controller_data["plot"]
     print(f"  Controller data keys: {list(controller_data.keys())}")
-    print(f"  Controller plot type: {controller_data['plot']['type']}")
-    print(f"  Controller voltages:  {controller_data['plot']['voltages']}")
-    print(f"  Controller errors shape: {len(controller_data['plot']['errors'])} channels x "
-          f"{len(controller_data['plot']['errors'][0])} points")
+    print(f"  Controller plot type: {plot_d['type']}")
+    print(f"  Controller voltages:  {plot_d['voltages']}")
+    print(
+        f"  Controller errors shape: {len(plot_d['errors'])} channels x "
+        f"{len(plot_d['errors'][0])} points"
+    )
 
     # Stage 2: Service job return dict
     service_result = {
@@ -195,7 +203,7 @@ def test_pipeline_trace():
 
     # Now trace test_ramp
     print("\n  --- Ramp pipeline ---")
-    ramp_data = {
+    ramp_data: dict[str, Any] = {
         "plot": {
             "type": "ramp",
             "waveforms": [
@@ -212,16 +220,19 @@ def test_pipeline_trace():
 
     # Now trace test_all (the broken 'plots' path)
     print("\n  --- test_all pipeline (plots plural) ---")
-    all_data = {
+    all_data: dict[str, Any] = {
         "plots": [
             {"type": "outputs", "voltages": list(voltages), "errors": errors},
             {"type": "ramp", "waveforms": [{"series": "CH1", "x": [0], "y": [0]}]},
             {"type": "transient", "waveforms": [{"series": "CH1", "x": [0], "y": [0]}]},
         ],
     }
-    plots = all_data.get("plots")
+    plots: list[dict[str, Any]] = all_data.get("plots", [])
     print(f"  plots count: {len(plots)}")
-    print(f"  'for p in reversed(plots): ... break' renders: {plots[-1]['type']} (only 1 of {len(plots)})")
+    print(
+        f"  'for p in reversed(plots): ... break' renders: "
+        f"{plots[-1]['type']} (only 1 of {len(plots)})"
+    )
 
 
 # =========================================================================
@@ -245,7 +256,7 @@ if __name__ == "__main__":
     test_synthetic_plot(app)
 
     if t is not None:
-        app2 = QApplication.instance() or QApplication(sys.argv)
+        app2: Any = QApplication.instance() or QApplication(sys.argv)
         test_scope_plot(app2, t, data)
 
     print("\n=== ALL TESTS COMPLETE ===")

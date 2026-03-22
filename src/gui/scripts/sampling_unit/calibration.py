@@ -232,16 +232,12 @@ class SUCalibrationPage(BaseHardwarePage):
 
         try:
             if plot_type == "calibration_overview":
-                self.plot_widget.set_labels(
-                    "Calibration Overview", "V_ref / V", "V_meas / V"
-                )
+                self.plot_widget.set_labels("Calibration Overview", "V_ref / V", "V_meas / V")
                 for wf in plot.get("waveforms", []):
                     self.plot_widget.plot_batch(wf["x"], wf["y"], wf["series"])
 
             elif plot_type == "calibration_error":
-                self.plot_widget.set_labels(
-                    "Calibration Error", "V_ref / V", "Error / V"
-                )
+                self.plot_widget.set_labels("Calibration Error", "V_ref / V", "Error / V")
                 for wf in plot.get("waveforms", []):
                     self.plot_widget.plot_batch(wf["x"], wf["y"], wf["series"])
         except Exception as e:

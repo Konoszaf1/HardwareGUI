@@ -6,6 +6,7 @@ by delegating to VUController for actual device interactions.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import subprocess
 from dataclasses import dataclass
@@ -112,7 +113,7 @@ class VoltageUnitService(BaseHardwareService):
         """Recreate the scope connection and update the controller reference.
 
         Mirrors setup_cal.py: create instrument + query *IDN? to open link.
-        No custom timeout — use vxi11 default, same as the reference script.
+        No custom timeout - use vxi11 default, same as the reference script.
         """
         old = self._scope
         self._scope = vxi11.Instrument(self._target_instrument_ip)
@@ -135,7 +136,7 @@ class VoltageUnitService(BaseHardwareService):
     def _ensure_connected(self) -> None:
         """Ensure VU hardware is connected and controller is initialized."""
         if self._connected and self._vu and self._mcu and self._scope and self._controller:
-            # Reuse existing connection — just like setup_cal.py does.
+            # Reuse existing connection - just like setup_cal.py does.
             # Each test sends *RST which resets the scope to a clean state.
             return
 
@@ -156,13 +157,13 @@ class VoltageUnitService(BaseHardwareService):
             vu_serial, vu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", vu)[0])
             mcu_serial, mcu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", mu)[0])
 
-        # Create device objects — wrap so partial failures clean up handles
+        # Create device objects - wrap so partial failures clean up handles
         try:
             self._vu = DPIVoltageUnit(serial=vu_serial, interface=vu_if, busaddress=vu_if)
             self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
             self._scope = vxi11.Instrument(self._target_instrument_ip)
             # Immediately query *IDN? to open the VXI11 link and verify the
-            # scope is responsive — mirrors setup_cal.py connection sequence.
+            # scope is responsive - mirrors setup_cal.py connection sequence.
             idn = self._scope.ask("*IDN?")
             print(f"Scope: {idn}")
 
@@ -194,6 +195,7 @@ class VoltageUnitService(BaseHardwareService):
         self, vu_serial: int, vu_if: int, mcu_serial: int, mcu_if: int
     ) -> None:
         """Print a readable connection summary to stdout (captured by worker)."""
+        assert self._vu is not None
         lines = [
             "",
             "\033[1m── Connection Summary ──\033[0m",
@@ -225,16 +227,12 @@ class VoltageUnitService(BaseHardwareService):
                     pass
             self._scope = None
         if self._vu:
-            try:
+            with contextlib.suppress(Exception):
                 self._vu.disconnect()
-            except Exception:
-                pass
             self._vu = None
         if self._mcu:
-            try:
+            with contextlib.suppress(Exception):
                 self._mcu.disconnect()
-            except Exception:
-                pass
             self._mcu = None
         self._controller = None
 
@@ -265,6 +263,7 @@ class VoltageUnitService(BaseHardwareService):
     def connect_and_read(self) -> FunctionTask:
         def job():
             # _ensure_connected() already called by @require_instrument_ip
+            assert self._scope is not None
             try:
                 idn = self._scope.ask("*IDN?")
                 print(f"Scope: {idn}")
@@ -281,6 +280,7 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def read_coefficients(self) -> FunctionTask:
         def job():
+            assert self._controller is not None
             result = self._controller.read_coefficients()
             self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
@@ -290,6 +290,7 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def reset_coefficients_ram(self) -> FunctionTask:
         def job():
+            assert self._controller is not None
             result = self._controller.reset_coefficients()
             self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
@@ -299,6 +300,7 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def write_coefficients_eeprom(self) -> FunctionTask:
         def job():
+            assert self._controller is not None
             result = self._controller.write_coefficients()
             self._emit_coeffs()
             return {"coeffs": result.data.get("coeffs", {}), "ok": result.ok}
@@ -309,6 +311,7 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def set_guard_signal(self) -> FunctionTask:
         def job():
+            assert self._controller is not None
             result = self._controller.set_guard_signal()
             return {"guard": "signal", "ok": result.ok}
 
@@ -317,6 +320,7 @@ class VoltageUnitService(BaseHardwareService):
     @BaseHardwareService.require_instrument_ip
     def set_guard_ground(self) -> FunctionTask:
         def job():
+            assert self._controller is not None
             result = self._controller.set_guard_ground()
             return {"guard": "ground", "ok": result.ok}
 
@@ -339,6 +343,7 @@ class VoltageUnitService(BaseHardwareService):
             task.signals.data_chunk.emit(data)
 
         def job():
+            assert self._controller is not None
             result = self._controller.test_outputs(on_point_measured=emit_chunk)
             self._emit_coeffs()
             return {
@@ -358,6 +363,7 @@ class VoltageUnitService(BaseHardwareService):
             task.signals.data_chunk.emit(data)
 
         def job():
+            assert self._controller is not None
             result = self._controller.test_ramp(on_waveform=emit_chunk)
             self._emit_coeffs()
             return {
@@ -377,6 +383,7 @@ class VoltageUnitService(BaseHardwareService):
             task.signals.data_chunk.emit(data)
 
         def job():
+            assert self._controller is not None
             result = self._controller.test_transient(on_waveform=emit_chunk)
             return {
                 "ok": result.ok,
@@ -395,6 +402,7 @@ class VoltageUnitService(BaseHardwareService):
             task.signals.data_chunk.emit(data)
 
         def job():
+            assert self._controller is not None
             result = self._controller.test_all(
                 on_point_measured=emit_chunk,
                 on_waveform=emit_chunk,
@@ -417,6 +425,7 @@ class VoltageUnitService(BaseHardwareService):
             task.signals.data_chunk.emit(data)
 
         def job():
+            assert self._controller is not None
             result = self._controller.auto_calibrate(
                 max_iterations=max_iterations,
                 on_iteration=emit_chunk,
@@ -433,4 +442,3 @@ class VoltageUnitService(BaseHardwareService):
 
         task.fn = job
         return task
-

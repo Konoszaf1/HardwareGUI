@@ -3,8 +3,6 @@
 Uses shared mock infrastructure from conftest_hardware.py.
 """
 
-import pytest
-
 from src.logic.services.su_service import SamplingUnitService
 from tests.conftest_hardware import mock_su_hardware  # noqa: F401
 
@@ -56,7 +54,7 @@ class TestSUServiceTasks:
     - Results contain expected data
     """
 
-    def test_run_hw_setup_executes_successfully(self, mock_su_hardware, qtbot):
+    def test_run_hw_setup_executes_successfully(self, mock_su_hardware, qtbot):  # noqa: F811
         """run_hw_setup should execute successfully and return results."""
         service = SamplingUnitService()
         service._su = mock_su_hardware["su"]
@@ -71,7 +69,7 @@ class TestSUServiceTasks:
         assert len(results) == 1
         assert results[0].ok is True
 
-    def test_run_verify_executes_successfully(self, mock_su_hardware, qtbot):
+    def test_run_verify_executes_successfully(self, mock_su_hardware, qtbot):  # noqa: F811
         """run_verify should execute successfully and return results."""
         service = SamplingUnitService()
         service._su = mock_su_hardware["su"]
@@ -84,7 +82,7 @@ class TestSUServiceTasks:
         assert len(results) == 1
         assert results[0].ok is True
 
-    def test_connect_only_executes_successfully(self, mock_su_hardware, qtbot):
+    def test_connect_only_executes_successfully(self, mock_su_hardware, qtbot):  # noqa: F811
         """connect_only should execute successfully."""
         service = SamplingUnitService()
         service._su = mock_su_hardware["su"]
@@ -96,5 +94,3 @@ class TestSUServiceTasks:
 
         assert len(results) == 1
         assert results[0].ok is True
-
-

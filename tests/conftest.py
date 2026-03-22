@@ -34,7 +34,7 @@ for mod_name, mock_obj in _hardware_mocks.items():
     if mod_name not in sys.modules:
         sys.modules[mod_name] = mock_obj
 
-import pytest
+import pytest  # noqa: E402
 
 # Ensure src is in path for imports
 src_path = Path(__file__).parent.parent / "src"

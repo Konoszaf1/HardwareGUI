@@ -105,9 +105,7 @@ def ping_fails(vu_context, mocker, qtbot):
     """Run ping with simulated failure."""
     import subprocess
 
-    mocker.patch(
-        "subprocess.check_call", side_effect=subprocess.CalledProcessError(1, "ping")
-    )
+    mocker.patch("subprocess.check_call", side_effect=subprocess.CalledProcessError(1, "ping"))
     service = vu_context["service"]
     task = service.ping_instrument()
 

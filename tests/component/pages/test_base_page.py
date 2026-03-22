@@ -4,7 +4,7 @@ Tests task lifecycle, busy state management, layout factories,
 and service signal handling.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtWidgets import (
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.gui.scripts.base_page import BaseHardwarePage
-from src.logic.qt_workers import FunctionTask, TaskResult
+from src.logic.qt_workers import TaskResult
 
 # Use component-level mock services
 pytestmark = pytest.mark.component
@@ -121,7 +121,7 @@ class TestBasePagePanelAccessors:
         assert page.console is mock_shared_panels.console
 
     def test_list_widget_returns_panel_artifacts(self, page, mock_shared_panels):
-        """listWidget property delegates to shared_panels.artifacts."""
+        """ListWidget property delegates to shared_panels.artifacts."""
         assert page.listWidget is mock_shared_panels.artifacts
 
     def test_console_returns_none_without_panels(self, page_no_panels):
@@ -129,7 +129,7 @@ class TestBasePagePanelAccessors:
         assert page_no_panels.console is None
 
     def test_list_widget_returns_none_without_panels(self, page_no_panels):
-        """listWidget returns None when no shared panels."""
+        """ListWidget returns None when no shared panels."""
         assert page_no_panels.listWidget is None
 
 
@@ -317,7 +317,7 @@ class TestBasePageOnTaskFinished:
         page._on_task_finished(result)
 
         # Verify logging occurred (the panels.log method was called)
-        text = mock_shared_panels.console.toPlainText()
+        _text = mock_shared_panels.console.toPlainText()
         # The _log method appends to the console — at minimum finished was logged
         assert page._active_task is None  # Confirms handler ran
 
@@ -375,7 +375,7 @@ class TestBasePageServiceSignals:
     """Tests for _connect_service_signals and signal handlers."""
 
     def test_connect_service_signals_wires_verified(self, page, mock_vu_service, qtbot):
-        """instrumentVerified signal is wired to handler."""
+        """InstrumentVerified signal is wired to handler."""
         page._connect_service_signals()
 
         # Emit signal and check it was handled (logs to console)
@@ -383,7 +383,7 @@ class TestBasePageServiceSignals:
         # No crash = signal connected
 
     def test_connect_service_signals_wires_connected(self, page, mock_vu_service, qtbot):
-        """connectedChanged signal is wired to handler."""
+        """ConnectedChanged signal is wired to handler."""
         page._connect_service_signals()
 
         mock_vu_service._connected = True

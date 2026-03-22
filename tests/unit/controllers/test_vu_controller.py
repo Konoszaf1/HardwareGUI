@@ -36,7 +36,7 @@ def _make_scope_binary(data_array: np.ndarray) -> bytes:
     """Build IEEE 488.2 definite-length binary block from a numpy array."""
     data_bytes = data_array.astype(np.single).tobytes()
     len_str = str(len(data_bytes))
-    header = f"#{len(len_str)}{len_str}".encode("utf-8")
+    header = f"#{len(len_str)}{len_str}".encode()
     return header + data_bytes
 
 
@@ -486,7 +486,7 @@ class TestVUControllerTestRamp:
 
     def test_test_ramp_updates_coefficients(self, vu_controller, ramp_scope, mock_vu):
         """Verify ramp test adjusts slope coefficients based on measured slope."""
-        original_coeffs = {ch: list(v) for ch, v in vu_controller._coeffs.items()}
+        _original_coeffs = {ch: list(v) for ch, v in vu_controller._coeffs.items()}
         vu_controller.test_ramp()
         # Coefficients should have been adjusted (slope ratio applied)
         # With perfect mock data the change may be small but the code path runs
@@ -545,10 +545,18 @@ class TestVUControllerTestTransient:
                 "ch2": {"msm": {"dc": {"vstress": 0.0, "vrecovery": 0.0, "vremain": 0.0}}},
                 "ch3": {"msm": {"dc": {"vstress": 0.0, "vrecovery": 0.0, "vremain": 0.0}}},
             },
-            "smu.bus_1": {"msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}},
-            "smu.bus_2": {"msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}},
-            "smu.bus_3": {"msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}},
-            "smu.bus_4": {"msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}},
+            "smu.bus_1": {
+                "msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}
+            },
+            "smu.bus_2": {
+                "msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}
+            },
+            "smu.bus_3": {
+                "msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}
+            },
+            "smu.bus_4": {
+                "msm": {"dc": {"__stresscurrentrange_index": 0, "__recoverycurrentrange_index": 0}}
+            },
             "smu.all": {"msm": {"signal_to_record": "recovery"}},
         }
         mock_config_instance = MagicMock()
@@ -570,9 +578,7 @@ class TestVUControllerTestTransient:
         artifacts = result.data["artifacts"]
         assert any("transient" in a for a in artifacts)
 
-    def test_test_transient_trigger_not_fired(
-        self, vu_controller, mock_scope, patched_dpi_config
-    ):
+    def test_test_transient_trigger_not_fired(self, vu_controller, mock_scope, patched_dpi_config):
         """Verify trigger timeout returns ok=False with descriptive message."""
         call_count = [0]
 
@@ -639,15 +645,18 @@ class TestVUControllerTestAll:
     def test_test_all_delegates_to_subtests(self, vu_controller, mocker):
         """Verify test_all calls test_outputs, test_ramp, and test_transient."""
         mock_outputs = mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mock_ramp = mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mock_transient = mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         callback_point = MagicMock()
@@ -660,15 +669,18 @@ class TestVUControllerTestAll:
     def test_test_all_all_pass(self, vu_controller, mocker):
         """Verify all-ok subtests produce ok=True combined result."""
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         result = vu_controller.test_all()
@@ -679,15 +691,18 @@ class TestVUControllerTestAll:
     def test_test_all_partial_failure(self, vu_controller, mocker):
         """Verify one failed subtest makes combined result ok=False."""
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=False, message="ramp failed"),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         result = vu_controller.test_all()
@@ -699,15 +714,18 @@ class TestVUControllerTestAll:
         os.makedirs(vu_controller._artifact_dir, exist_ok=True)
         (tmp_path / "output_20260322_120000.png").write_bytes(b"PNG")
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         result = vu_controller.test_all()
@@ -716,15 +734,18 @@ class TestVUControllerTestAll:
     def test_test_all_all_fail(self, vu_controller, mocker):
         """Verify all-failed subtests produce ok=False combined result."""
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=False, message="fail1"),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=False, message="fail2"),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=False, message="fail3"),
         )
         result = vu_controller.test_all()
@@ -743,23 +764,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_converges(self, vu_controller, mocker):
         """Verify auto_calibrate returns ok=True when subtests converge."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         result = vu_controller.auto_calibrate(max_iterations=5)
@@ -769,23 +795,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_calls_iteration_callback(self, vu_controller, mocker):
         """Verify on_iteration callback is invoked each iteration and at final."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         callback = MagicMock()
@@ -803,33 +834,39 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_respects_max_iterations(self, vu_controller, mocker):
         """Verify auto_calibrate stops after max_iterations when not converging."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=False, message="not converged"),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
-        result = vu_controller.auto_calibrate(max_iterations=3)
+        _result = vu_controller.auto_calibrate(max_iterations=3)
         # test_ramp called: 3 loop iterations + 1 final verification = 4 times
         assert vu_controller.test_ramp.call_count == 4
 
     def test_auto_calibrate_failure(self, vu_controller, mocker):
         """Verify exception during calibration loop returns ok=False."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             side_effect=Exception("hw error"),
         )
         result = vu_controller.auto_calibrate()
@@ -839,23 +876,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_writes_coefficients_each_iteration(self, vu_controller, mocker):
         """Verify write_coefficients is called after test_ramp and test_outputs."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mock_write = mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         vu_controller.auto_calibrate(max_iterations=1)
@@ -865,23 +907,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_starts_with_reset(self, vu_controller, mocker):
         """Verify auto_calibrate resets coefficients before iterating."""
         mock_reset = mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         vu_controller.auto_calibrate(max_iterations=2)
@@ -890,23 +937,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_runs_final_verification(self, vu_controller, mocker):
         """Verify final verification runs test_transient, test_outputs, and test_ramp."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mock_ramp = mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mock_outputs = mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mock_transient = mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         vu_controller.auto_calibrate(max_iterations=1)
@@ -919,23 +971,28 @@ class TestVUControllerAutoCalibrate:
     def test_auto_calibrate_with_point_and_waveform_callbacks(self, vu_controller, mocker):
         """Verify both point and waveform callbacks are forwarded to subtests."""
         mocker.patch.object(
-            vu_controller, "reset_coefficients",
+            vu_controller,
+            "reset_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mock_ramp = mocker.patch.object(
-            vu_controller, "test_ramp",
+            vu_controller,
+            "test_ramp",
             return_value=OperationResult(ok=True, data={"plot": {"type": "ramp"}}),
         )
         mocker.patch.object(
-            vu_controller, "write_coefficients",
+            vu_controller,
+            "write_coefficients",
             return_value=OperationResult(ok=True, data={"coeffs": vu_controller._coeffs}),
         )
         mock_outputs = mocker.patch.object(
-            vu_controller, "test_outputs",
+            vu_controller,
+            "test_outputs",
             return_value=OperationResult(ok=True, data={"plot": {"type": "outputs"}}),
         )
         mock_transient = mocker.patch.object(
-            vu_controller, "test_transient",
+            vu_controller,
+            "test_transient",
             return_value=OperationResult(ok=True, data={"plot": {"type": "transient"}}),
         )
         cb_point = MagicMock()
@@ -1041,7 +1098,9 @@ class TestVUControllerArtifactHelpers:
     def test_list_artifacts_nonexistent_dir(self, mock_vu, mock_mcu, mock_scope):
         """Verify _list_artifacts returns empty list when dir does not exist."""
         ctrl = VUController(
-            vu=mock_vu, mcu=mock_mcu, scope=mock_scope,
+            vu=mock_vu,
+            mcu=mock_mcu,
+            scope=mock_scope,
             artifact_dir="/nonexistent/path/artifacts",
         )
         assert ctrl._list_artifacts() == []
@@ -1083,12 +1142,14 @@ class TestVUControllerEdgeCases:
         assert result.serial == serial
         assert result.message == message
 
-    def test_test_outputs_reset_failure_does_not_lose_plot(self, vu_controller, mock_vu, mock_scope):
+    def test_test_outputs_reset_failure_does_not_lose_plot(
+        self, vu_controller, mock_vu, mock_scope
+    ):
         """Verify plot data is preserved even if output reset fails."""
         mock_vu.setOutputVoltage.side_effect = [None] * 100  # succeed during test
         # But fail on the final reset call
         call_count = [0]
-        original_side_effect = mock_vu.setOutputVoltage.side_effect
+        _original_side_effect = mock_vu.setOutputVoltage.side_effect
 
         def reset_fails(*args, **kwargs):
             call_count[0] += 1

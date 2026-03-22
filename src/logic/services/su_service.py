@@ -6,6 +6,7 @@ by delegating to SUController for actual device interactions.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 
 from dpi import DPIMainControlUnit, DPISamplingUnit
@@ -84,6 +85,7 @@ class SamplingUnitService(BaseHardwareService):
         """Return the SUController instance, creating if needed."""
         if self._controller is None:
             self._ensure_connected()
+        assert self._controller is not None
         return self._controller
 
     def _get_serial(self) -> int:
@@ -124,16 +126,12 @@ class SamplingUnitService(BaseHardwareService):
     def _disconnect(self) -> None:
         """Tear down SU hardware connections."""
         if self._su:
-            try:
+            with contextlib.suppress(Exception):
                 self._su.disconnect()
-            except Exception:
-                pass
             self._su = None
         if self._mcu:
-            try:
+            with contextlib.suppress(Exception):
                 self._mcu.disconnect()
-            except Exception:
-                pass
             self._mcu = None
         self._controller = None
 
@@ -188,6 +186,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.perform_autocalibration()
                 return {"ok": result.ok, "serial": result.serial, "message": result.message}
 
@@ -203,6 +202,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.read_temperature()
                 return {"ok": result.ok, "temperature": result.data.get("temperature")}
 
@@ -226,6 +226,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.single_shot_measure(
                     dac_voltage=dac_voltage,
                     source=source,
@@ -254,6 +255,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.transient_measure(
                     measurement_time=measurement_time,
                     sampling_rate=sampling_rate,
@@ -285,6 +287,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.pulse_measure(
                     num_samples=num_samples,
                     sampling_rate=sampling_rate,
@@ -304,7 +307,7 @@ class SamplingUnitService(BaseHardwareService):
         """Run calibration measurement with Keithley.
 
         Delegates to SUController.calibration_measure for the actual workflow.
-        Does NOT pre-connect to SU — SUCalibrationMeasure creates its own
+        Does NOT pre-connect to SU - SUCalibrationMeasure creates its own
         connections to SMU, SU, and Keithley internally.
 
         Args:
@@ -330,15 +333,11 @@ class SamplingUnitService(BaseHardwareService):
             with self._hw_lock:
                 controller = self._controller or SUController()
                 if self._su is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._su.disconnect()
-                    except Exception:
-                        pass
                 if self._mcu is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._mcu.disconnect()
-                    except Exception:
-                        pass
                 controller._su = None
                 controller._mcu = None
                 self._su = None
@@ -388,6 +387,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
 
                 serial = self._get_serial()
                 folder_path = self._calibration_folder or f"calibration/su_calibration_sn{serial}"
@@ -438,6 +438,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.save_channel_config()
                 return {"ok": result.ok, "message": result.message}
 
@@ -453,6 +454,7 @@ class SamplingUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.load_channel_config()
                 return {"ok": result.ok, "data": result.data, "message": result.message}
 

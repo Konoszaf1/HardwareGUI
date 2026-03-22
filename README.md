@@ -9,9 +9,11 @@
 [![pytest](https://img.shields.io/badge/pytest-315%20tests-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](tests/)
 [![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9?style=flat-square&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![Ruff](https://img.shields.io/badge/ruff-linter-261230?style=flat-square&logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
+[![Black](https://img.shields.io/badge/code%20style-black-000000?style=flat-square)](https://github.com/psf/black)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?style=flat-square&logo=pre-commit)](https://pre-commit.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-Built for the **Institute of Microelectronics, TU Wien** &mdash; Bachelor thesis project
+Built for the **Institute of Microelectronics, TU Wien** - Bachelor thesis project
 
 [Quick Start](#quick-start) &bull; [Architecture](#architecture) &bull; [Hardware Support](#hardware-support) &bull; [Testing](#testing) &bull; [Development](#development)
 
@@ -21,7 +23,7 @@ Built for the **Institute of Microelectronics, TU Wien** &mdash; Bachelor thesis
 
 ## The Problem
 
-DPI hardware calibration involves dozens of manual steps across three instrument types&mdash;setting voltages, reading coefficients, triggering scope acquisitions, fitting correction curves, and writing EEPROM data. Doing this through bare Python scripts means no feedback during long-running operations, no artifact management, and no way to recover from errors mid-workflow.
+DPI hardware calibration involves dozens of manual steps across three instrument types - setting voltages, reading coefficients, triggering scope acquisitions, fitting correction curves, and writing EEPROM data. Doing this through bare Python scripts means no feedback during long-running operations, no artifact management, and no way to recover from errors mid-workflow.
 
 ## What This Project Does
 
@@ -45,7 +47,7 @@ HardwareGUI wraps the entire calibration and test pipeline in a Qt desktop appli
 - **Python**: 3.12+
 - **Network**: Access to DPI hardware (or use `--simulation`)
 
-> The DPI library (`/measdata/dpi`) is loaded dynamically via `PYTHONPATH` in the launcher&mdash;no manual installation required.
+> The DPI library (`/measdata/dpi`) is loaded dynamically via `PYTHONPATH` in the launcher - no manual installation required.
 
 ### Installation
 
@@ -62,7 +64,7 @@ cd HardwareGUI
 ./run.sh --simulation       # Simulation mode (no hardware needed)
 ```
 
-> Always use `run.sh`&mdash;it configures `PYTHONPATH` and environment variables that direct invocation would miss.
+> Always use `run.sh` - it configures `PYTHONPATH` and environment variables that direct invocation would miss.
 
 ---
 
@@ -111,7 +113,7 @@ graph TD
 
 ### Simulation Mode
 
-`SimulatedVoltageUnitService`, `SimulatedSMUService`, and `SimulatedSUService` extend `BaseHardwareService` directly (no controller needed). They use `_simulate_work()` to generate timestamped output and matplotlib artifacts&mdash;enabling full UI development without physical hardware.
+`SimulatedVoltageUnitService`, `SimulatedSMUService`, and `SimulatedSUService` extend `BaseHardwareService` directly (no controller needed). They use `_simulate_work()` to generate timestamped output and matplotlib artifacts, enabling full UI development without physical hardware.
 
 ---
 
@@ -173,9 +175,10 @@ HardwareGUI/
 │   ├── component/                     #   Qt widget tests (qtbot)
 │   ├── integration/                   #   Service + controller + threading
 │   └── bdd/                           #   Gherkin acceptance tests (pytest-bdd)
-├── .github/workflows/test.yml         # CI pipeline (5 jobs)
+├── .github/workflows/test.yml         # CI pipeline (lint + 5 test jobs)
+├── .pre-commit-config.yaml            # Pre-commit hooks (black, ruff, mypy, pytest)
 ├── setup.sh / run.sh                  # Install & launch scripts
-└── pyproject.toml                     # Dependencies, ruff, pytest config
+└── pyproject.toml                     # Dependencies, ruff, black, mypy, pytest config
 ```
 
 ---
@@ -188,7 +191,7 @@ The test suite follows a **four-layer pyramid** with 315 tests running in ~3 sec
 |:---|---:|:---|:---|
 | **Unit** | 139 | Controllers, config, workers, network discovery | `@pytest.mark.unit` |
 | **Component** | 68 | Qt widgets and pages with `qtbot` | `@pytest.mark.component` |
-| **Integration** | 12 | Full service &rarr; controller &rarr; thread chain | `@pytest.mark.integration` |
+| **Integration** | 12 | Full service -> controller -> thread chain | `@pytest.mark.integration` |
 | **BDD** | 7 | Gherkin scenarios via `pytest-bdd` | `@pytest.mark.bdd` |
 | **Legacy** | 89 | Pre-existing service and helper tests | *(unmarked)* |
 
@@ -208,15 +211,15 @@ uv run pytest --cov=src --cov-report=term-missing
 
 ### CI Pipeline
 
-The GitHub Actions workflow runs a five-stage pipeline:
+The GitHub Actions workflow runs a six-stage pipeline:
 
 ```
-unit-tests ──┬── component-tests ──┬── bdd-tests
-             └── integration-tests ─┘
-                                         coverage-report
+lint ── unit-tests ──┬── component-tests ──┬── bdd-tests
+                     └── integration-tests ─┘
+                                                 coverage-report
 ```
 
-Component, integration, and BDD stages run under `xvfb-run` for headless Qt rendering.
+The **lint** stage runs black, ruff, and mypy. Component, integration, and BDD stages run under `xvfb-run` for headless Qt rendering.
 
 ---
 
@@ -224,10 +227,27 @@ Component, integration, and BDD stages run under `xvfb-run` for headless Qt rend
 
 ### Code Quality
 
+All checks run automatically via [pre-commit](https://pre-commit.com/) hooks on every commit:
+
+| Tool | Purpose | Config |
+|:---|:---|:---|
+| **Black** | Code formatting | `pyproject.toml` `[tool.black]` |
+| **Ruff** | Linting (pycodestyle, pyflakes, bugbear, pydocstyle, etc.) | `pyproject.toml` `[tool.ruff]` |
+| **Mypy** | Static type checking | `pyproject.toml` `[tool.mypy]` |
+| **pytest** | Unit tests (pre-commit runs unit tests only) | `pyproject.toml` `[tool.pytest]` |
+
 ```bash
-uv run ruff format .          # Format (Black-compatible)
-uv run ruff check .           # Lint
-uv run mypy src/              # Static type checking
+# Set up pre-commit hooks (one-time)
+uv run pre-commit install
+
+# Run all checks manually
+uv run black --check src/ tests/
+uv run ruff check src/ tests/
+uv run mypy src/
+
+# Auto-format
+uv run black src/ tests/
+uv run ruff check --fix src/ tests/
 ```
 
 ### Adding New Hardware
@@ -251,4 +271,4 @@ uv run mypy src/              # Static type checking
 
 ## License
 
-This project is licensed under the MIT License &mdash; see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.

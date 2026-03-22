@@ -93,7 +93,7 @@ class SUController(HardwareController):
             OperationResult with success status.
         """
         try:
-            su = self._get_su()
+            self._get_su()
             # Channel configuration typically involves setting amplifier settings
             # The exact API depends on dpi package implementation
             logger.info("SU channel configured: %s", config.channel_id)
@@ -114,9 +114,7 @@ class SUController(HardwareController):
             self._get_su()
             print("Note: Channel calibration is managed by the calibration workflow.")
             print("Use 'Run Calibration' on the Calibration page to write to EEPROM.")
-            return OperationResult(
-                ok=True, message="Use calibration workflow for EEPROM writes."
-            )
+            return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
         except Exception as e:
             logger.error("SU EEPROM save failed: %s", e)
             return OperationResult(ok=False, message=str(e))
@@ -334,7 +332,7 @@ class SUController(HardwareController):
 
             from src.logic.calibration import SUCalibrationMeasure
 
-            print(f"Starting SU calibration measurement...")
+            print("Starting SU calibration measurement...")
             print(f"  Keithley: {keithley_ip}")
             print(f"  Output folder: {folder_path}")
 
@@ -404,7 +402,7 @@ class SUController(HardwareController):
 
             from src.logic.calibration import SUCalibrationFit
 
-            print(f"Starting SU calibration fit...")
+            print("Starting SU calibration fit...")
             print(f"  Folder: {folder_path}")
             print(f"  Model: {model_type}")
 

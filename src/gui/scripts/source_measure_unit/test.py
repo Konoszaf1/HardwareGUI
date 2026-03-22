@@ -33,13 +33,22 @@ class SMUTestPage(BaseHardwarePage):
     # Channel text to integer mapping for relay programming
     _IV_CHANNEL_MAP = {
         "Off": 0,
-        "ivch1": 1, "ivch2": 2, "ivch3": 3,
-        "ivch4": 4, "ivch5": 5, "ivch6": 6,
-        "ivch7": 7, "ivch8": 8, "ivch9": 9,
+        "ivch1": 1,
+        "ivch2": 2,
+        "ivch3": 3,
+        "ivch4": 4,
+        "ivch5": 5,
+        "ivch6": 6,
+        "ivch7": 7,
+        "ivch8": 8,
+        "ivch9": 9,
     }
     _PA_CHANNEL_MAP = {
         "Off": 0,
-        "pach0": 1, "pach1": 2, "pach2": 3, "pach3": 4,
+        "pach0": 1,
+        "pach1": 2,
+        "pach2": 3,
+        "pach3": 4,
     }
 
     def __init__(
@@ -91,8 +100,7 @@ class SMUTestPage(BaseHardwarePage):
 
         self.cb_iv_channel = QComboBox()
         self.cb_iv_channel.addItems(
-            ["ivch1", "ivch2", "ivch3", "ivch4", "ivch5",
-             "ivch6", "ivch7", "ivch8", "ivch9", "Off"]
+            ["ivch1", "ivch2", "ivch3", "ivch4", "ivch5", "ivch6", "ivch7", "ivch8", "ivch9", "Off"]
         )
         self._configure_input(self.cb_iv_channel)
         iv_form.addRow("Channel:", self.cb_iv_channel)
@@ -262,8 +270,10 @@ class SMUTestPage(BaseHardwarePage):
 
         # Register action buttons
         self._action_buttons = [
-            self.btn_temp_measure, self.btn_program_relais,
-            self.btn_read_sat, self.btn_clear_sat,
+            self.btn_temp_measure,
+            self.btn_program_relais,
+            self.btn_read_sat,
+            self.btn_clear_sat,
         ]
 
         # ==== Signals ====
@@ -290,7 +300,7 @@ class SMUTestPage(BaseHardwarePage):
             if result and result.data:
                 temp = result.data.get("temperature", "--")
                 self.lbl_temp_value.setText(
-                    f"{temp:.2f} °C" if isinstance(temp, (int, float)) else f"{temp}"
+                    f"{temp:.2f} °C" if isinstance(temp, int | float) else f"{temp}"
                 )
                 self._log(f"Temperature: {temp} °C")
             else:

@@ -4,6 +4,7 @@ This controller encapsulates all SMU hardware workflows including setup, test,
 relay control, and calibration operations. Uses direct imports from dpi package.
 """
 
+import contextlib
 import re
 import threading
 import time
@@ -47,17 +48,19 @@ class _ProgressAdapter:
         self._range_points += n
         if self._on_point and self._scm.data:
             df = self._scm.data[-1]
-            self._on_point({
-                "type": "cal_point",
-                "vsmu": df.attrs.get("vsmu_mode"),
-                "pa": df.attrs.get("pa_channel"),
-                "iv": df.attrs.get("iv_channel"),
-                "x": float(df.attrs.get("i_ref", 0)),
-                "y": float(df["current"].mean()),
-                "i_set": float(df.attrs.get("i_set", 0)),
-                "point_index": self.n,
-                "total_points": self.total,
-            })
+            self._on_point(
+                {
+                    "type": "cal_point",
+                    "vsmu": df.attrs.get("vsmu_mode"),
+                    "pa": df.attrs.get("pa_channel"),
+                    "iv": df.attrs.get("iv_channel"),
+                    "x": float(df.attrs.get("i_ref", 0)),
+                    "y": float(df["current"].mean()),
+                    "i_set": float(df.attrs.get("i_set", 0)),
+                    "point_index": self.n,
+                    "total_points": self.total,
+                }
+            )
 
     @staticmethod
     def _parse_desc(desc: str) -> dict:
@@ -202,7 +205,7 @@ class SMUController(HardwareController):
             OperationResult with success status.
         """
         try:
-            smu = self._get_smu()
+            self._get_smu()
             logger.info("SMU channel configured: %s", config.channel_id)
             return OperationResult(ok=True, data={"channel_id": config.channel_id})
         except Exception as e:
@@ -219,11 +222,11 @@ class SMUController(HardwareController):
         """
         try:
             self._get_smu()
-            print("Note: Channel calibration is managed by the calibration workflow.\n"
-                  "Use 'Run Calibration' on the Calibration page to write to EEPROM.")
-            return OperationResult(
-                ok=True, message="Use calibration workflow for EEPROM writes."
+            print(
+                "Note: Channel calibration is managed by the calibration workflow.\n"
+                "Use 'Run Calibration' on the Calibration page to write to EEPROM."
             )
+            return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
         except Exception as e:
             logger.error("SMU EEPROM save failed: %s", e)
             return OperationResult(ok=False, message=str(e))
@@ -241,16 +244,16 @@ class SMUController(HardwareController):
 
             smu = self._get_smu()
             print("-- Reading EEPROM --")
-            try:
+            with contextlib.suppress(AttributeError):
                 smu.printEpromContent()
-            except AttributeError:
-                pass
 
             channels = []
             try:
                 eprom = smu.get_eeprom_interface().entries
                 for name, entry in eprom.items():
-                    ch_type_str = "INPUT" if entry.ch_type == DPIEpromEntry.ChannelType.INPUT else "AMPLIFIER"
+                    ch_type_str = (
+                        "INPUT" if entry.ch_type == DPIEpromEntry.ChannelType.INPUT else "AMPLIFIER"
+                    )
                     amp_type = getattr(entry.type, "name", str(entry.type))
                     gain = getattr(entry, "gain", 0)
                     bw = getattr(entry, "bandwidth", None)
@@ -258,21 +261,30 @@ class SMUController(HardwareController):
                     if ch_type_str == "INPUT":
                         iv_range = round(-np.log10(np.abs(gain)), 1) if gain != 0 else 0
                         ch_info = {
-                            "id": name, "ch_type": ch_type_str,
-                            "type": amp_type, "gain": gain,
-                            "range": iv_range, "bandwidth": bw,
+                            "id": name,
+                            "ch_type": ch_type_str,
+                            "type": amp_type,
+                            "gain": gain,
+                            "range": iv_range,
+                            "bandwidth": bw,
                         }
                     else:
                         pa_range = round(np.log10(np.abs(gain))) if gain != 0 else 0
                         ch_info = {
-                            "id": name, "ch_type": ch_type_str,
-                            "type": amp_type, "gain": gain,
-                            "range": pa_range, "bandwidth": bw,
+                            "id": name,
+                            "ch_type": ch_type_str,
+                            "type": amp_type,
+                            "gain": gain,
+                            "range": pa_range,
+                            "bandwidth": bw,
                         }
 
                     channels.append(ch_info)
                     tag = "IV" if ch_type_str == "INPUT" else "PA"
-                    print(f"  [{tag}] {name:<8} {amp_type:<6} gain={gain:.2e}  range={ch_info['range']}")
+                    print(
+                        f"  [{tag}] {name:<8} {amp_type:<6} "
+                        f"gain={gain:.2e}  range={ch_info['range']}"
+                    )
                 print(f"  {len(channels)} channels loaded")
             except Exception as e:
                 print(f"  EEPROM enumeration failed: {e}")
@@ -564,6 +576,8 @@ class SMUController(HardwareController):
             single_range: If set, (pa_channel, iv_channel) for single range.
             on_point_measured: Callback for each measured point.
             on_range_started: Callback for range start/done events.
+            cancel_event: Optional threading event to cancel measurement.
+            verify_only: If True, only run verification measurements.
 
         Returns:
             OperationResult with folder path in data.
@@ -602,8 +616,10 @@ class SMUController(HardwareController):
             if speed_preset in self.SPEED_PRESETS:
                 decades, delta_log, delta_lin = self.SPEED_PRESETS[speed_preset]
                 current_values = scm.prepare_measurement_values(
-                    max_value=6.5, decades=decades,
-                    delta_log=delta_log, delta_lin=delta_lin,
+                    max_value=6.5,
+                    decades=decades,
+                    delta_log=delta_log,
+                    delta_lin=delta_lin,
                 )
 
             if verify_only:
@@ -633,10 +649,14 @@ class SMUController(HardwareController):
                     pa_ch, iv_ch = single_range
                     print(f"  Range: PA={pa_ch}, IV={iv_ch}")
                     adapter = _ProgressAdapter(
-                        0, scm, on_point_measured, on_range_started,
+                        0,
+                        scm,
+                        on_point_measured,
+                        on_range_started,
                     )
                     scm.measure_single_range(
-                        pa_ch, iv_ch,
+                        pa_ch,
+                        iv_ch,
                         vsmu_mode=vsmu_mode if vsmu_mode is not None else False,
                         verify_calibration=verify,
                         current_values=current_values,
@@ -660,11 +680,17 @@ class SMUController(HardwareController):
                     total_ranges += len(range_combos)
 
                     total = scm._calculate_total_measurements(
-                        pa_channels, scm.ivchannels, vsmu_mode,
-                        verify, current_values=current_values,
+                        pa_channels,
+                        scm.ivchannels,
+                        vsmu_mode,
+                        verify,
+                        current_values=current_values,
                     )
                     adapter = _ProgressAdapter(
-                        total, scm, on_point_measured, on_range_started,
+                        total,
+                        scm,
+                        on_point_measured,
+                        on_range_started,
                     )
 
                     for pa, iv, vsmu_val in range_combos:
@@ -673,7 +699,8 @@ class SMUController(HardwareController):
                             break
                         adapter.set_description(f"PA: {pa}, IV: {iv}, VSMU: {vsmu_val}")
                         scm.measure_single_range(
-                            pa, iv,
+                            pa,
+                            iv,
                             vsmu_mode=vsmu_val,
                             verify_calibration=verify,
                             current_values=current_values,
@@ -693,17 +720,15 @@ class SMUController(HardwareController):
 
             scm.cleanup()
             # Release USB connections so subsequent runs can reconnect
-            try:
+            with contextlib.suppress(Exception):
                 scm.smu.disconnect()
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 scm.su.disconnect()
-            except Exception:
-                pass
 
             if cancelled:
-                print(f"-- Cancelled: {completed_ranges}/{total_ranges} ranges measured and saved --")
+                print(
+                    f"-- Cancelled: {completed_ranges}/{total_ranges} ranges measured and saved --"
+                )
                 logger.info("SMU calibration cancelled after %d ranges", completed_ranges)
                 return OperationResult(
                     ok=True,
@@ -720,18 +745,12 @@ class SMUController(HardwareController):
             return OperationResult(ok=True, data={"folder": folder_path})
         except Exception as e:
             # Attempt to release USB even on failure
-            try:
+            with contextlib.suppress(Exception):
                 scm.cleanup()
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 scm.smu.disconnect()
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 scm.su.disconnect()
-            except Exception:
-                pass
             logger.error("SMU calibration measure failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -784,7 +803,10 @@ class SMUController(HardwareController):
             print(f"  Model   : {model_type}")
             print(f"  Verify  : {verify_calibration}")
             if single_range:
-                print(f"  Range   : vsmu={single_range[0]}, pa={single_range[1]}, iv={single_range[2]}")
+                print(
+                    f"  Range   : vsmu={single_range[0]}, "
+                    f"pa={single_range[1]}, iv={single_range[2]}"
+                )
 
             smf = SMUCalibrationFit(
                 calibration_folder=folder_path,
@@ -881,6 +903,7 @@ class SMUController(HardwareController):
             )
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"Fit failed: {e}")
             logger.error("SMU calibration fit failed: %s", e)
@@ -918,9 +941,10 @@ class SMUController(HardwareController):
                 import h5py
 
                 with h5py.File(str(filepath), "r") as f:
-                    for key in f.keys():
+                    for key in f:
                         m = re.match(
-                            r"\(?(True|False),\s*'?(\w+)'?,\s*'?(\w+)'?\)?", key,
+                            r"\(?(True|False),\s*'?(\w+)'?,\s*'?(\w+)'?\)?",
+                            key,
                         )
                         if m:
                             vsmu = m.group(1) == "True"
@@ -935,22 +959,22 @@ class SMUController(HardwareController):
         # Check analysis plots for calibrated ranges
         analysis_plots = self._collect_analysis_plots(folder_path)
         for info in self._parse_calibrated_ranges(analysis_plots):
-            calibrated_keys.add(
-                (info.get("vsmu", False), info.get("pa", ""), info.get("iv", ""))
-            )
+            calibrated_keys.add((info.get("vsmu", False), info.get("pa", ""), info.get("iv", "")))
 
         # Merge into unified list
         all_keys = measured_keys | verified_keys | calibrated_keys
         ranges = []
         for vsmu, pa, iv in sorted(all_keys):
-            ranges.append({
-                "vsmu": vsmu,
-                "pa": pa,
-                "iv": iv,
-                "measured": (vsmu, pa, iv) in measured_keys,
-                "verified": (vsmu, pa, iv) in verified_keys,
-                "calibrated": (vsmu, pa, iv) in calibrated_keys,
-            })
+            ranges.append(
+                {
+                    "vsmu": vsmu,
+                    "pa": pa,
+                    "iv": iv,
+                    "measured": (vsmu, pa, iv) in measured_keys,
+                    "verified": (vsmu, pa, iv) in verified_keys,
+                    "calibrated": (vsmu, pa, iv) in calibrated_keys,
+                }
+            )
         return ranges
 
     @staticmethod

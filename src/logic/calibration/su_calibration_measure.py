@@ -146,6 +146,7 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
             self._logger.error("IV Channel does not exist!")
             return
 
+        channel_val: float = 1.0
         if "su_v5.2" in self.su.getHardwareVersion():
             try:
                 if "AMP1" == amp_channel:
@@ -219,7 +220,7 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
 
         # Close progress bar
         if own_bar:
-            progress_bar.n = progress_bar.total
+            progress_bar.n = progress_bar.total  # type: ignore[reportAttributeAccessIssue]
             progress_bar.close()
 
     def measure_all_ranges(self, voltage_values, progress_bar=None, on_point_measured=None):
@@ -254,7 +255,7 @@ class SUCalibrationMeasure(CalibrationMeasureBase):
 
         # Close progress bar
         if own_bar:
-            progress_bar.n = progress_bar.total
+            progress_bar.n = progress_bar.total  # type: ignore[reportAttributeAccessIssue]
             progress_bar.close()
 
     def cleanup(self):

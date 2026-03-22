@@ -170,7 +170,7 @@ class TestVUServiceSignalOrder:
     """Test that signals are emitted in correct order."""
 
     def test_started_before_finished(self, mock_vu_hardware, qtbot):
-        """started signal is emitted before finished signal."""
+        """Started signal is emitted before finished signal."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
 
@@ -185,7 +185,7 @@ class TestVUServiceSignalOrder:
         assert events == ["started", "finished"]
 
     def test_log_between_started_and_finished(self, mock_vu_hardware, qtbot):
-        """log signals are emitted between started and finished."""
+        """Log signals are emitted between started and finished."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
 

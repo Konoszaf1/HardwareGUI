@@ -132,24 +132,18 @@ class VUCalibrationPage(BaseHardwarePage):
         if not isinstance(data, dict):
             return
         if "iteration" in data:
-            # Phase marker — clear plot and set labels for incoming data
+            # Phase marker - clear plot and set labels for incoming data
             it = data["iteration"]
             self.plot_widget.clear()
             if it == "final_transient":
-                self.plot_widget.set_labels(
-                    "Final — Transient Response", "Time / s", "Signal / V"
-                )
+                self.plot_widget.set_labels("Final - Transient Response", "Time / s", "Signal / V")
             elif it == "final_outputs":
-                self.plot_widget.set_labels(
-                    "Final — Output Error", "Voltage / V", "Error / mV"
-                )
+                self.plot_widget.set_labels("Final - Output Error", "Voltage / V", "Error / mV")
             elif it == "final_ramp":
-                self.plot_widget.set_labels(
-                    "Final — Ramp Signal", "Time / s", "Signal / V"
-                )
+                self.plot_widget.set_labels("Final - Ramp Signal", "Time / s", "Signal / V")
             else:
                 self.plot_widget.set_labels(
-                    f"Iteration {it + 1} — Output Error", "Voltage / V", "Error / mV"
+                    f"Iteration {it + 1} - Output Error", "Voltage / V", "Error / mV"
                 )
         elif "type" in data and data["type"] in ("ramp", "transient"):
             # Waveform data from test_ramp / test_transient
@@ -159,13 +153,15 @@ class VUCalibrationPage(BaseHardwarePage):
                 self.plot_widget.clear()
                 self.plot_widget.set_labels(title, "Time / s", "Signal / V")
             self.plot_widget.plot_batch(
-                data["x"], data["y"], series,
+                data["x"],
+                data["y"],
+                series,
                 linestyle=data.get("linestyle", "-"),
                 alpha=data.get("alpha", 1.0),
                 color=data.get("color"),
             )
         elif "x" in data:
-            # Point measured — update scatter plot (convert V → mV)
+            # Point measured - update scatter plot (convert V → mV)
             self.plot_widget.append_point("CH1", data["x"], 1000 * data["y_ch1"])
             self.plot_widget.append_point("CH2", data["x"], 1000 * data["y_ch2"])
             self.plot_widget.append_point("CH3", data["x"], 1000 * data["y_ch3"])
@@ -194,7 +190,7 @@ class VUCalibrationPage(BaseHardwarePage):
                 voltages = plot["voltages"]
                 errors = plot["errors"]
                 for i, ch in enumerate(("CH1", "CH2", "CH3")):
-                    for x, y in zip(voltages, errors[i]):
+                    for x, y in zip(voltages, errors[i], strict=False):
                         self.plot_widget.append_point(ch, x, 1000 * y)
 
             elif plot_type in ("ramp", "transient"):
@@ -202,7 +198,9 @@ class VUCalibrationPage(BaseHardwarePage):
                 self.plot_widget.set_labels(title, "Time / s", "Signal / V")
                 for wf in plot["waveforms"]:
                     self.plot_widget.plot_batch(
-                        wf["x"], wf["y"], wf["series"],
+                        wf["x"],
+                        wf["y"],
+                        wf["series"],
                         linestyle=wf.get("linestyle", "-"),
                         alpha=wf.get("alpha", 1.0),
                         color=wf.get("color"),

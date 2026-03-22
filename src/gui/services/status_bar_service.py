@@ -160,7 +160,8 @@ class StatusBarService:
         self._update_scope_display()
         logger.debug(
             "Active hardware: %s, scope: %s",
-            hardware_id, self._hardware_scope_states.get(hardware_id),
+            hardware_id,
+            self._hardware_scope_states.get(hardware_id),
         )
 
     def set_instrument_connected(

@@ -20,10 +20,17 @@ from src.logic.services.smu_service import SourceMeasureUnitService
 # Channel configuration presets (fallback when no device is connected)
 CHANNEL_PRESETS = {
     "SMU_DEFAULT": [
-        {"id": f"ivch{i}", "ch_type": "INPUT", "type": "TIA", "gain": 10 ** -(7 + (i - 1) % 4), "range": -(7 + (i - 1) % 4)}
+        {
+            "id": f"ivch{i}",
+            "ch_type": "INPUT",
+            "type": "TIA",
+            "gain": 10 ** -(7 + (i - 1) % 4),
+            "range": -(7 + (i - 1) % 4),
+        }
         for i in range(1, 10)
-    ] + [
-        {"id": f"pach{i}", "ch_type": "AMPLIFIER", "type": "AMP", "gain": 10.0 ** i, "range": i}
+    ]
+    + [
+        {"id": f"pach{i}", "ch_type": "AMPLIFIER", "type": "AMP", "gain": 10.0**i, "range": i}
         for i in range(4)
     ],
 }

@@ -120,8 +120,11 @@ class LivePlotWidget(QWidget):
 
         if series not in self._series:
             self._create_series(
-                series, scatter=False, linestyle=linestyle,
-                alpha=alpha, color=color,
+                series,
+                scatter=False,
+                linestyle=linestyle,
+                alpha=alpha,
+                color=color,
             )
         s = self._series[series]
         s["x"] = x_arr.tolist()
@@ -167,16 +170,31 @@ class LivePlotWidget(QWidget):
             self._color_idx += 1
         if scatter:
             (line,) = self._ax.plot(
-                [], [], marker="o", markersize=4, linestyle=linestyle,
-                linewidth=1.5, color=color, alpha=alpha, label=name,
+                [],
+                [],
+                marker="o",
+                markersize=4,
+                linestyle=linestyle,
+                linewidth=1.5,
+                color=color,
+                alpha=alpha,
+                label=name,
             )
         else:
             (line,) = self._ax.plot(
-                [], [], linestyle=linestyle, linewidth=1.5,
-                color=color, alpha=alpha, label=name,
+                [],
+                [],
+                linestyle=linestyle,
+                linewidth=1.5,
+                color=color,
+                alpha=alpha,
+                label=name,
             )
         self._ax.legend(
-            loc="upper right", fontsize=8, facecolor="#333333",
-            edgecolor="#555555", labelcolor="#cccccc",
+            loc="upper right",
+            fontsize=8,
+            facecolor="#333333",
+            edgecolor="#555555",
+            labelcolor="#cccccc",
         )
         self._series[name] = {"x": [], "y": [], "line": line}

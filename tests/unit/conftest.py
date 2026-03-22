@@ -8,8 +8,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from src.logic.controllers.base_controller import OperationResult
-
 
 # ---------------------------------------------------------------------------
 # Mock device factories
@@ -49,7 +47,7 @@ def mock_scope() -> MagicMock:
     data_bytes = data.tobytes()
     # IEEE 488.2 definite-length block: #<num_digits><byte_count><data>
     len_str = str(len(data_bytes))
-    header = f"#{len(len_str)}{len_str}".encode("utf-8")
+    header = f"#{len(len_str)}{len_str}".encode()
     scope.read_raw.return_value = header + data_bytes
 
     # HEAD response: "t_start,t_end,n_points,values_per_interval"

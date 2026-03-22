@@ -6,6 +6,7 @@ by delegating to SMUController for actual device interactions.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,6 +85,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         """Return the SMUController instance, creating if needed."""
         if self._controller is None:
             self._ensure_connected()
+        assert self._controller is not None
         return self._controller
 
     def _get_serial(self) -> int:
@@ -148,10 +150,8 @@ class SourceMeasureUnitService(BaseHardwareService):
     def _disconnect(self) -> None:
         """Tear down SMU hardware connections."""
         if self._smu:
-            try:
+            with contextlib.suppress(Exception):
                 self._smu.disconnect()
-            except Exception:
-                pass
             self._smu = None
         self._controller = None
 
@@ -206,6 +206,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.calibrate_eeprom()
                 return {"ok": result.ok, "message": result.message}
 
@@ -221,6 +222,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.read_temperature()
                 return {"ok": result.ok, "temperature": result.data.get("temperature")}
 
@@ -245,6 +247,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_iv_channel(channel=channel, reference=reference)
                 return {"ok": result.ok, "channel": result.data.get("channel")}
 
@@ -263,6 +266,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_pa_channel(channel=channel)
                 return {"ok": result.ok, "channel": result.data.get("channel")}
 
@@ -281,6 +285,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_highpass(enabled=enabled)
                 return {"ok": result.ok, "enabled": result.data.get("enabled")}
 
@@ -299,6 +304,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_input_routing(target=target)
                 return {"ok": result.ok, "target": result.data.get("target")}
 
@@ -317,6 +323,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_vguard(target=target)
                 return {"ok": result.ok, "target": result.data.get("target")}
 
@@ -334,7 +341,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         """Run calibration measurement with Keithley.
 
         Delegates to SMUController.calibration_measure for the actual workflow.
-        Does NOT pre-connect to SMU — SMUCalibrationMeasure creates its own
+        Does NOT pre-connect to SMU - SMUCalibrationMeasure creates its own
         connections to SMU, SU, and Keithley internally.
 
         Emits data_chunk signals for live progress:
@@ -361,19 +368,15 @@ class SourceMeasureUnitService(BaseHardwareService):
             smu_serial = self._targets.smu_serial or None
             su_serial = self._targets.su_serial or None
             serial = self._targets.smu_serial or self._get_serial() or "auto"
-            folder_path = str(
-                Path(f"calibration/smu_calibration_sn{serial}").resolve()
-            )
+            folder_path = str(Path(f"calibration/smu_calibration_sn{serial}").resolve())
             self._calibration_folder = folder_path
 
             # Release USB so SMUCalibrationMeasure can claim devices
             with self._hw_lock:
                 controller = self._controller or SMUController()
                 if self._smu is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._smu.disconnect()
-                    except Exception:
-                        pass
                 controller._smu = None
                 self._smu = None
                 self._controller = None
@@ -447,6 +450,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
 
                 folder_path = self._resolve_calibration_folder()
 
@@ -490,7 +494,9 @@ class SourceMeasureUnitService(BaseHardwareService):
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
         """Run calibration fit (called by calibration page Run Calibration button)."""
         return self.run_calibration_fit(
-            draw_plot=True, auto_calibrate=False, model_type=model,
+            draw_plot=True,
+            auto_calibrate=False,
+            model_type=model,
         )
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask | None:
@@ -523,6 +529,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 results = []
                 results.append(
                     self._controller.set_iv_channel(channel=iv_channel, reference=iv_reference)
@@ -550,6 +557,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.set_pa_clip(channel=channel, enabled=enabled)
                 return {"ok": result.ok}
 
@@ -565,6 +573,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.get_saturation_state()
                 return result.data if result.ok else {"ok": False}
 
@@ -580,6 +589,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.clear_saturation()
                 return {"ok": result.ok}
 
@@ -595,6 +605,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.save_channel_config()
                 return {"ok": result.ok, "message": result.message}
 
@@ -610,11 +621,14 @@ class SourceMeasureUnitService(BaseHardwareService):
         def job():
             with self._hw_lock:
                 self._ensure_connected()
+                assert self._controller is not None
                 result = self._controller.load_channel_config()
                 channels = result.data.get("channels", []) if result.data else []
                 return {
-                    "ok": result.ok, "data": result.data,
-                    "channels": channels, "message": result.message,
+                    "ok": result.ok,
+                    "data": result.data,
+                    "channels": channels,
+                    "message": result.message,
                 }
 
         return make_task("Load Config", job)

@@ -85,9 +85,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         bar_layout.addWidget(self._progress_label)
         bar_layout.addStretch()
         self._timer_label = QLabel("")
-        self._timer_label.setStyleSheet(
-            "color: #aaaaaa; font-size: 9pt; font-family: monospace;"
-        )
+        self._timer_label.setStyleSheet("color: #aaaaaa; font-size: 9pt; font-family: monospace;")
         bar_layout.addWidget(self._timer_label)
 
         outer_layout.addWidget(self._progress_bar)
@@ -246,8 +244,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         self.ranges_table = QTableWidget()
         self.ranges_table.setColumnCount(7)
         self.ranges_table.setHorizontalHeaderLabels(
-            ["VSMU", "PA Channel", "IV Channel",
-             "Measured", "Verified", "Fitted", "Status"]
+            ["VSMU", "PA Channel", "IV Channel", "Measured", "Verified", "Fitted", "Status"]
         )
         header = self.ranges_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -283,7 +280,9 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         # ==== Analysis Plot (shown after fit) ====
         analysis_box = self._create_group_box(
-            "Analysis", min_height=300, expanding=True,
+            "Analysis",
+            min_height=300,
+            expanding=True,
         )
         analysis_layout = QVBoxLayout(analysis_box)
         analysis_layout.setContentsMargins(12, 18, 12, 12)
@@ -296,8 +295,11 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         # Register action buttons
         self._action_buttons = [
-            self.btn_measure, self.btn_verify, self.btn_verify_only,
-            self.btn_run_fit, self.btn_refresh,
+            self.btn_measure,
+            self.btn_verify,
+            self.btn_verify_only,
+            self.btn_run_fit,
+            self.btn_refresh,
         ]
 
         # ==== Signals ====
@@ -309,7 +311,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         self._connect_service_signals()
 
         # State
-        self._row_keys: dict[str, int] = {}   # "vsmu|pa|iv" -> row index
+        self._row_keys: dict[str, int] = {}  # "vsmu|pa|iv" -> row index
         self._range_points: dict[str, int] = {}  # live point counts per range
         self._loading_status = False
         self._measuring = False
@@ -421,7 +423,9 @@ class SMUCalibrationPage(BaseHardwarePage):
         self._start_calibration_measure(verify=False, verify_only=True)
 
     def _start_calibration_measure(
-        self, verify: bool, verify_only: bool = False,
+        self,
+        verify: bool,
+        verify_only: bool = False,
     ) -> None:
         if not self.service:
             self._log("Service not available.")
@@ -442,7 +446,8 @@ class SMUCalibrationPage(BaseHardwarePage):
         self.plot_widget.clear()
         self.plot_widget.set_labels(
             f"Calibration {'Verify' if (verify or verify_only) else 'Measure'}",
-            "I_ref / A", "I_meas / A",
+            "I_ref / A",
+            "I_meas / A",
         )
         # Clear live status column but keep overview data
         self._clear_status_column()
@@ -545,7 +550,9 @@ class SMUCalibrationPage(BaseHardwarePage):
         # Persistent columns default to "--"
         for col in (_COL_MEASURED, _COL_VERIFIED, _COL_FITTED):
             self.ranges_table.setItem(
-                row, col, _status_item("--", Qt.GlobalColor.darkGray),
+                row,
+                col,
+                _status_item("--", Qt.GlobalColor.darkGray),
             )
         self.ranges_table.setItem(row, _COL_STATUS, QTableWidgetItem(""))
         self._row_keys[key] = row
@@ -576,9 +583,7 @@ class SMUCalibrationPage(BaseHardwarePage):
             total = data.get("total_points", 0)
             if total > 0:
                 pct = idx * 100 // total
-                self._progress_label.setText(
-                    f"Progress: {idx}/{total} points ({pct}%)"
-                )
+                self._progress_label.setText(f"Progress: {idx}/{total} points ({pct}%)")
 
             # Update Status column with point count
             key = self._range_key(vsmu, pa, iv)
@@ -662,17 +667,23 @@ class SMUCalibrationPage(BaseHardwarePage):
 
             if measured:
                 self.ranges_table.setItem(
-                    row, _COL_MEASURED, _status_item("Yes", Qt.GlobalColor.green),
+                    row,
+                    _COL_MEASURED,
+                    _status_item("Yes", Qt.GlobalColor.green),
                 )
                 n_measured += 1
             if verified:
                 self.ranges_table.setItem(
-                    row, _COL_VERIFIED, _status_item("Yes", Qt.GlobalColor.green),
+                    row,
+                    _COL_VERIFIED,
+                    _status_item("Yes", Qt.GlobalColor.green),
                 )
                 n_verified += 1
             if calibrated:
                 self.ranges_table.setItem(
-                    row, _COL_FITTED, _status_item("Yes", Qt.GlobalColor.cyan),
+                    row,
+                    _COL_FITTED,
+                    _status_item("Yes", Qt.GlobalColor.cyan),
                 )
                 n_fitted += 1
 

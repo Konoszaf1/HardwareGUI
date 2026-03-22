@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import dataclasses
 
 import pytest
-from PySide6.QtCore import QThreadPool
 
 from src.logic.qt_workers import (
     FunctionTask,
@@ -146,7 +144,7 @@ class TestFunctionTask:
         assert "hello from task" in log_lines
 
     def test_run_captures_stderr(self, qtbot):
-        """stderr writes inside the task function are captured with a [stderr] prefix."""
+        """Stderr writes inside the task function are captured with a [stderr] prefix."""
         import sys
 
         log_lines: list[str] = []

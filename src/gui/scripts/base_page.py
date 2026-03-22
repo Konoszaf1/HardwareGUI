@@ -88,7 +88,7 @@ class BaseHardwarePage(QWidget):
         # Buttons to enable/disable during task execution
         self._action_buttons: list[QPushButton] = []
 
-        # Cancel button — hidden by default, subclasses place in their layouts
+        # Cancel button - hidden by default, subclasses place in their layouts
         self._btn_cancel = QPushButton("Cancel")
         self._btn_cancel.setAccessibleName("Cancel task")
         self._btn_cancel.hide()
@@ -285,7 +285,7 @@ class BaseHardwarePage(QWidget):
 
         Note: Status bar updates are handled globally by MainWindow.
         This method logs verification state but does **not** toggle
-        buttons — that is handled by ``_update_action_buttons_state``.
+        buttons - that is handled by ``_update_action_buttons_state``.
 
         Args:
             verified (bool): True if instrument is verified, False otherwise.
@@ -309,7 +309,7 @@ class BaseHardwarePage(QWidget):
             return
         self.service.instrumentVerified.connect(self._on_instrument_verified)
         self.service.connectedChanged.connect(self._on_connected_changed)
-        # Apply initial state — buttons disabled until connected
+        # Apply initial state - buttons disabled until connected
         self._update_action_buttons_state()
 
     # ---- Layout Factory Methods ----

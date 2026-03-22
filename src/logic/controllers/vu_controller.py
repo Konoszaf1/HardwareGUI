@@ -5,6 +5,7 @@ calibration, coefficient management, and guard operations. Ports the logic from
 the legacy setup_cal.py script into a structured controller.
 """
 
+import contextlib
 import os
 import time
 from collections.abc import Callable
@@ -87,7 +88,7 @@ class VUController(HardwareController):
         """Send SING and wait for AUTO-mode acquisition to complete.
 
         Mirrors setup_cal.py: ``scope.ask("SING;*OPC?")`` with default
-        timeout — no custom timeout overrides.
+        timeout - no custom timeout overrides.
         """
         scope.ask("SING;*OPC?")
 
@@ -101,7 +102,7 @@ class VUController(HardwareController):
             scope.ask("*OPC?")
             return True
         except Exception:
-            print("  ⚠ Scope did not trigger — check probe connections")
+            print("  ⚠ Scope did not trigger - check probe connections")
             logger.warning("Scope NORM trigger timed out")
             self._scope_discard_link(scope)
             return False
@@ -367,7 +368,7 @@ class VUController(HardwareController):
 
             scope = self._scope
 
-            # Scope setup at 0.20 V/div — setOutputVoltage already accounts
+            # Scope setup at 0.20 V/div - setOutputVoltage already accounts
             # for amplification, so ±0.75V setpoints produce ±0.75V output.
             scope.write("*RST")
             scope.write("CHAN:TYPE HRES")
@@ -457,11 +458,12 @@ class VUController(HardwareController):
             # Save plot
             os.makedirs(self._artifact_dir, exist_ok=True)
             fig, ax = plt.subplots(figsize=(8, 5))
-            for i, (ch, c) in enumerate(zip(("CH1", "CH2", "CH3"), COLORS)):
+            for i, (ch, c) in enumerate(zip(("CH1", "CH2", "CH3"), COLORS, strict=False)):
                 ax.plot(voltages, [1000 * e for e in errors[i]], "x-", label=ch, c=c)
             ax.set_title(
-                f"Output Voltage Error — VU {self._vu_serial}",
-                fontsize=11, fontweight="bold",
+                f"Output Voltage Error - VU {self._vu_serial}",
+                fontsize=11,
+                fontweight="bold",
             )
             ax.set_xlabel("Setpoint Voltage / V")
             ax.set_ylabel("Error / mV")
@@ -473,16 +475,19 @@ class VUController(HardwareController):
 
             # Build result before hardware reset so plot data is
             # preserved even if the reset commands fail.
-            result = OperationResult(ok=all_ok, data={
-                "artifacts": self._list_artifacts(),
-                "plot": {
-                    "type": "outputs",
-                    "voltages": list(voltages),
-                    "errors": [list(map(float, e)) for e in errors],
+            result = OperationResult(
+                ok=all_ok,
+                data={
+                    "artifacts": self._list_artifacts(),
+                    "plot": {
+                        "type": "outputs",
+                        "voltages": list(voltages),
+                        "errors": [list(map(float, e)) for e in errors],
+                    },
                 },
-            })
+            )
 
-            # Reset outputs (best-effort — don't lose plot data)
+            # Reset outputs (best-effort - don't lose plot data)
             try:
                 self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
                 self._vu.setOutputsEnabled(0)
@@ -532,7 +537,9 @@ class VUController(HardwareController):
 
             print("── Ramp Linearity Test ──")
             print(f"Scope scales: CH1={scale[0]:.1f}  CH2={scale[1]:.1f}  CH3={scale[2]:.1f} V/div")
-            print(f"Ramp slopes:  CH1={slopes[0]:.1f}  CH2={slopes[1]:.1f}  CH3={slopes[2]:.1f} V/s")
+            print(
+                f"Ramp slopes:  CH1={slopes[0]:.1f}  CH2={slopes[1]:.1f}  CH3={slopes[2]:.1f} V/s"
+            )
 
             scope = self._scope
 
@@ -629,14 +636,12 @@ class VUController(HardwareController):
             triggered = self._scope_wait_trigger(scope)
 
             if not triggered:
-                print("  ⚠ No valid data — trigger did not fire")
-                try:
+                print("  ⚠ No valid data - trigger did not fire")
+                with contextlib.suppress(Exception):
                     self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
-                except Exception:
-                    pass
                 return OperationResult(
                     ok=False,
-                    message="Trigger did not fire — check scope probe connections",
+                    message="Trigger did not fire - check scope probe connections",
                 )
 
             # Process data and plot
@@ -669,7 +674,7 @@ class VUController(HardwareController):
                 tr = t[(t > 405e-3) * (t < 445e-3)]
                 datar = data[(t > 405e-3) * (t < 445e-3)]
 
-                # Fit slope — filter NaN before polyfit
+                # Fit slope - filter NaN before polyfit
                 valid = ~(np.isnan(tm) | np.isnan(datam))
                 tm_clean = tm[valid]
                 datam_clean = datam[valid]
@@ -681,7 +686,10 @@ class VUController(HardwareController):
                     print(f"  CH{channel + 1}  ⚠ insufficient data ({len(tm_clean)} pts), skipping")
                     flag_return = False
                 elif np.ptp(datam_clean) < 0.5:
-                    print(f"  CH{channel + 1}  ⚠ signal too flat (pk-pk={np.ptp(datam_clean):.3f}V), skipping")
+                    print(
+                        f"  CH{channel + 1}  ⚠ signal too flat "
+                        f"(pk-pk={np.ptp(datam_clean):.3f}V), skipping"
+                    )
                     flag_return = False
                 else:
                     k, d_fit = np.polyfit(tm_clean, datam_clean, deg=1)
@@ -704,7 +712,7 @@ class VUController(HardwareController):
 
                         # Adjust coefficient (bounded to prevent divergence)
                         if np.sign(k) != np.sign(slopes[channel]):
-                            print(f"         ⚠ slope sign mismatch")
+                            print("         ⚠ slope sign mismatch")
                         ratio = slopes[channel] / k
                         if abs(ratio) > 5.0:
                             print(f"         ⚠ correction ratio {ratio:.2f} clamped to ±5.0")
@@ -718,36 +726,44 @@ class VUController(HardwareController):
                 ideal[t > 0.4] = 0.0
 
                 # Always collect waveform and plot (even if fit failed)
-                waveforms.append({
-                    "series": f"CH{channel + 1}",
-                    "x": t.tolist(),
-                    "y": data.tolist(),
-                })
-                waveforms.append({
-                    "series": f"CH{channel + 1} (ideal)",
-                    "x": t.tolist(),
-                    "y": ideal.tolist(),
-                    "linestyle": "--",
-                    "alpha": 0.5,
-                    "color": COLORS[channel],
-                })
-
-                if on_waveform is not None:
-                    on_waveform({
-                        "type": "ramp",
+                waveforms.append(
+                    {
                         "series": f"CH{channel + 1}",
                         "x": t.tolist(),
                         "y": data.tolist(),
-                    })
-                    on_waveform({
-                        "type": "ramp",
+                    }
+                )
+                waveforms.append(
+                    {
                         "series": f"CH{channel + 1} (ideal)",
                         "x": t.tolist(),
                         "y": ideal.tolist(),
                         "linestyle": "--",
                         "alpha": 0.5,
                         "color": COLORS[channel],
-                    })
+                    }
+                )
+
+                if on_waveform is not None:
+                    on_waveform(
+                        {
+                            "type": "ramp",
+                            "series": f"CH{channel + 1}",
+                            "x": t.tolist(),
+                            "y": data.tolist(),
+                        }
+                    )
+                    on_waveform(
+                        {
+                            "type": "ramp",
+                            "series": f"CH{channel + 1} (ideal)",
+                            "x": t.tolist(),
+                            "y": ideal.tolist(),
+                            "linestyle": "--",
+                            "alpha": 0.5,
+                            "color": COLORS[channel],
+                        }
+                    )
 
                 # Plot
                 c = COLORS[channel]
@@ -768,8 +784,9 @@ class VUController(HardwareController):
 
             os.makedirs(self._artifact_dir, exist_ok=True)
             axs[0].set_title(
-                f"Ramp Linearity Test — VU {self._vu_serial}",
-                fontsize=11, fontweight="bold",
+                f"Ramp Linearity Test - VU {self._vu_serial}",
+                fontsize=11,
+                fontweight="bold",
             )
             axs[1].set_xlabel("Time / s")
             axs[0].set_ylabel("Signal / V")
@@ -783,10 +800,13 @@ class VUController(HardwareController):
 
             # Build result before hardware reset so plot data is
             # preserved even if the reset commands fail.
-            result = OperationResult(ok=flag_return, data={
-                "artifacts": self._list_artifacts(),
-                "plot": {"type": "ramp", "waveforms": waveforms},
-            })
+            result = OperationResult(
+                ok=flag_return,
+                data={
+                    "artifacts": self._list_artifacts(),
+                    "plot": {"type": "ramp", "waveforms": waveforms},
+                },
+            )
 
             try:
                 self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
@@ -845,7 +865,7 @@ class VUController(HardwareController):
             scope.write("TRIG:A:TYPE EDGE")
             scope.write("TRIG:A:EDGE:SLOPE POS")
             scope.write("TRIG:A:LEVEL1:VAL 0.0")
-            print(f"  Trigger level: 0.000 V  (POS edge, CH1)")
+            print("  Trigger level: 0.000 V  (POS edge, CH1)")
             scope.write("FORM REAL")
             scope.write("FORM:BORD LSBF")
             scope.write("CHAN:DATA:POIN DMAX")
@@ -888,10 +908,10 @@ class VUController(HardwareController):
             triggered = self._scope_wait_trigger(scope)
 
             if not triggered:
-                print("  ⚠ No valid data — trigger did not fire")
+                print("  ⚠ No valid data - trigger did not fire")
                 return OperationResult(
                     ok=False,
-                    message="Trigger did not fire — check scope probe connections",
+                    message="Trigger did not fire - check scope probe connections",
                 )
 
             # Process data and plot
@@ -901,20 +921,24 @@ class VUController(HardwareController):
                 data, t = self._scope_get_data(channel + 1)
 
                 # Collect waveform for result
-                waveforms.append({
-                    "series": f"CH{channel + 1}",
-                    "x": t.tolist(),
-                    "y": data.tolist(),
-                })
-
-                # Emit waveform for live plot
-                if on_waveform is not None:
-                    on_waveform({
-                        "type": "transient",
+                waveforms.append(
+                    {
                         "series": f"CH{channel + 1}",
                         "x": t.tolist(),
                         "y": data.tolist(),
-                    })
+                    }
+                )
+
+                # Emit waveform for live plot
+                if on_waveform is not None:
+                    on_waveform(
+                        {
+                            "type": "transient",
+                            "series": f"CH{channel + 1}",
+                            "x": t.tolist(),
+                            "y": data.tolist(),
+                        }
+                    )
 
                 c = COLORS[channel]
                 ax_t.plot(t, data, label=f"CH{channel + 1}", c=c)
@@ -963,8 +987,9 @@ class VUController(HardwareController):
             ideal[t > 5e-6] = 0
             ax_t.plot(t, ideal, ls="--", c="k", alpha=0.75, label="Ideal")
             ax_t.set_title(
-                f"Transient Step Response — VU {self._vu_serial}",
-                fontsize=11, fontweight="bold",
+                f"Transient Step Response - VU {self._vu_serial}",
+                fontsize=11,
+                fontweight="bold",
             )
             ax_t.set_xlabel("Time / s")
             ax_t.set_ylabel("Signal / V")
@@ -974,10 +999,13 @@ class VUController(HardwareController):
             fig_t.savefig(self._artifact_path("transient"), dpi=150)
             plt.close(fig_t)
 
-            return OperationResult(ok=True, data={
-                "artifacts": self._list_artifacts(),
-                "plot": {"type": "transient", "waveforms": waveforms},
-            })
+            return OperationResult(
+                ok=True,
+                data={
+                    "artifacts": self._list_artifacts(),
+                    "plot": {"type": "transient", "waveforms": waveforms},
+                },
+            )
         except Exception as e:
             print(f"  ✗ test_transient failed: {e}")
             logger.error("VU test_transient failed: %s", e)
@@ -1006,10 +1034,13 @@ class VUController(HardwareController):
         for r in (r1, r2, r3):
             if r.data and "plot" in r.data:
                 plots.append(r.data["plot"])
-        return OperationResult(ok=all_ok, data={
-            "artifacts": self._list_artifacts(),
-            "plots": plots,
-        })
+        return OperationResult(
+            ok=all_ok,
+            data={
+                "artifacts": self._list_artifacts(),
+                "plots": plots,
+            },
+        )
 
     # =========================================================================
     # Python Auto-Calibration (iterative)
@@ -1034,6 +1065,8 @@ class VUController(HardwareController):
                 a dict containing ``iteration``, ``converged``, and ``coeffs``.
             on_point_measured: Optional callback forwarded to
                 :meth:`test_outputs` for per-setpoint live data.
+            on_waveform: Optional callback forwarded to
+                :meth:`test_ramp` for waveform data.
 
         Returns:
             OperationResult with ok status, coefficients, and artifacts.
@@ -1078,19 +1111,31 @@ class VUController(HardwareController):
 
             print("\n── Final Verification ──")
             if on_iteration is not None:
-                on_iteration({"iteration": "final_transient", "converged": True, "coeffs": {
-                    k: list(v) for k, v in self._coeffs.items()
-                }})
+                on_iteration(
+                    {
+                        "iteration": "final_transient",
+                        "converged": True,
+                        "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                    }
+                )
             self.test_transient(on_waveform=on_waveform)
             if on_iteration is not None:
-                on_iteration({"iteration": "final_outputs", "converged": True, "coeffs": {
-                    k: list(v) for k, v in self._coeffs.items()
-                }})
+                on_iteration(
+                    {
+                        "iteration": "final_outputs",
+                        "converged": True,
+                        "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                    }
+                )
             final_outputs = self.test_outputs(on_point_measured=on_point_measured)
             if on_iteration is not None:
-                on_iteration({"iteration": "final_ramp", "converged": True, "coeffs": {
-                    k: list(v) for k, v in self._coeffs.items()
-                }})
+                on_iteration(
+                    {
+                        "iteration": "final_ramp",
+                        "converged": True,
+                        "coeffs": {k: list(v) for k, v in self._coeffs.items()},
+                    }
+                )
             final_ramp = self.test_ramp(on_waveform=on_waveform)
 
             plots = []

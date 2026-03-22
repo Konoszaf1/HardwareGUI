@@ -99,8 +99,8 @@ class MainWindow(QMainWindow):
         if self.presenter:
             # Map each service to its hardware_id (from populate_items.py)
             service_hw_map = [
-                (self.presenter.vu_service, 1),   # VU
-                (self.presenter.su_service, 2),   # SU
+                (self.presenter.vu_service, 1),  # VU
+                (self.presenter.su_service, 2),  # SU
                 (self.presenter.smu_service, 3),  # SMU
             ]
             for svc, hw_id in service_hw_map:

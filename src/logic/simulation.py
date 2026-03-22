@@ -126,11 +126,11 @@ class SimulatedServiceBase(BaseHardwareService):
     """
 
     def _ensure_connected(self) -> None:
-        """No-op — simulation doesn't use real hardware."""
+        """No-op - simulation doesn't use real hardware."""
         pass
 
     def _disconnect(self) -> None:
-        """No-op — simulation doesn't use real hardware."""
+        """No-op - simulation doesn't use real hardware."""
         pass
 
     def _artifact_dir(self) -> str:
@@ -300,7 +300,7 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
         def job():
             self._simulate_work("test_all", 0.3)
 
-            # Outputs test phase — emit per-setpoint data
+            # Outputs test phase - emit per-setpoint data
             voltages = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]
             print("Running outputs test...")
             for v in voltages:
@@ -308,7 +308,8 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
                 e2 = float(np.random.normal(0, 0.0015))
                 e3 = float(np.random.normal(0, 0.0008))
                 print(
-                    f"  {v}V -> CH1: {e1 * 1000:.2f}mV, CH2: {e2 * 1000:.2f}mV, CH3: {e3 * 1000:.2f}mV"
+                    f"  {v}V -> CH1: {e1 * 1000:.2f}mV, "
+                    f"CH2: {e2 * 1000:.2f}mV, CH3: {e3 * 1000:.2f}mV"
                 )
                 task.signals.data_chunk.emit(
                     {
@@ -342,7 +343,7 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
                 print(f"\n  Iteration {iteration}: ramp test...")
                 time.sleep(0.2)
 
-                # test_outputs phase — emit per-setpoint errors (decreasing with iterations)
+                # test_outputs phase - emit per-setpoint errors (decreasing with iterations)
                 scale = max(0.1, 1.0 - iteration * 0.25)
                 print(f"  Iteration {iteration}: outputs test...")
                 for v in voltages:
@@ -473,39 +474,50 @@ class SimulatedSMUService(SimulatedServiceBase):
             for vsmu in vsmu_modes:
                 for pa in pa_list:
                     for iv in iv_list:
-                        task.signals.data_chunk.emit({
-                            "type": "cal_range",
-                            "pa": pa, "iv": iv, "vsmu": vsmu,
-                            "status": "running",
-                        })
+                        task.signals.data_chunk.emit(
+                            {
+                                "type": "cal_range",
+                                "pa": pa,
+                                "iv": iv,
+                                "vsmu": vsmu,
+                                "status": "running",
+                            }
+                        )
                         print(f"  Range: VSMU={vsmu} PA={pa} IV={iv}")
 
                         t0 = time.time()
                         currents = np.linspace(-1e-3, 1e-3, n_points)
                         for i_set in currents:
                             i_ref = float(i_set)
-                            i_meas = float(
-                                i_ref * 1.001 + 2e-6 + np.random.normal(0, 5e-6)
-                            )
+                            i_meas = float(i_ref * 1.001 + 2e-6 + np.random.normal(0, 5e-6))
                             point_idx += 1
-                            task.signals.data_chunk.emit({
-                                "type": "cal_point",
-                                "vsmu": vsmu, "pa": pa, "iv": iv,
-                                "x": i_ref, "y": i_meas,
-                                "i_set": float(i_set),
-                                "point_index": point_idx,
-                                "total_points": total,
-                            })
+                            task.signals.data_chunk.emit(
+                                {
+                                    "type": "cal_point",
+                                    "vsmu": vsmu,
+                                    "pa": pa,
+                                    "iv": iv,
+                                    "x": i_ref,
+                                    "y": i_meas,
+                                    "i_set": float(i_set),
+                                    "point_index": point_idx,
+                                    "total_points": total,
+                                }
+                            )
                             time.sleep(0.02)
 
                         elapsed = time.time() - t0
-                        task.signals.data_chunk.emit({
-                            "type": "cal_range",
-                            "pa": pa, "iv": iv, "vsmu": vsmu,
-                            "status": "done",
-                            "points": n_points,
-                            "duration": elapsed,
-                        })
+                        task.signals.data_chunk.emit(
+                            {
+                                "type": "cal_range",
+                                "pa": pa,
+                                "iv": iv,
+                                "vsmu": vsmu,
+                                "status": "done",
+                                "points": n_points,
+                                "duration": elapsed,
+                            }
+                        )
 
             artifacts = _artifact_gen.generate_artifacts("smu", ["calibration.png"])
             return {
@@ -546,7 +558,9 @@ class SimulatedSMUService(SimulatedServiceBase):
 
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
         return self.run_calibration_fit(
-            draw_plot=True, auto_calibrate=False, model_type=model,
+            draw_plot=True,
+            auto_calibrate=False,
+            model_type=model,
         )
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
@@ -562,14 +576,17 @@ class SimulatedSMUService(SimulatedServiceBase):
         vguard: str,
     ) -> FunctionTask:
         def body():
-            print(f"Programming relais: IV={iv_channel} ref={iv_reference} "
-                  f"PA={pa_channel} HP={highpass} route={dut_routing} guard={vguard}")
+            print(
+                f"Programming relais: IV={iv_channel} ref={iv_reference} "
+                f"PA={pa_channel} HP={highpass} route={dut_routing} guard={vguard}"
+            )
             return {"ok": True}
 
         return self._sim_task("program_relais", 0.5, body=body)
 
     def run_load_calibration_status(self) -> FunctionTask | None:
         """Simulate loading calibration status from folder scan."""
+
         def body():
             print("  Scanning calibration folder...")
             print("  Found 3 calibration ranges")
@@ -639,16 +656,21 @@ class SimulatedSMUService(SimulatedServiceBase):
             print("  Reading channel configuration from EEPROM...")
             for i in range(1, 10):
                 ch = {
-                    "id": f"ivch{i}", "ch_type": "INPUT",
-                    "type": "TIA", "gain": 10 ** -(7 + (i - 1) % 4),
+                    "id": f"ivch{i}",
+                    "ch_type": "INPUT",
+                    "type": "TIA",
+                    "gain": 10 ** -(7 + (i - 1) % 4),
                     "range": -(7 + (i - 1) % 4),
                 }
                 channels.append(ch)
                 print(f"  {ch['id']}: {ch['type']}, range={ch['range']}")
             for i in range(4):
                 ch = {
-                    "id": f"pach{i}", "ch_type": "AMPLIFIER",
-                    "type": "AMP", "gain": 10.0 ** i, "range": i,
+                    "id": f"pach{i}",
+                    "ch_type": "AMPLIFIER",
+                    "type": "AMP",
+                    "gain": 10.0**i,
+                    "range": i,
                 }
                 channels.append(ch)
                 print(f"  {ch['id']}: {ch['type']}, range={ch['range']}")
@@ -723,7 +745,7 @@ class SimulatedSUService(SimulatedServiceBase):
             amp_channels = ["AMP01", "AMP1", "AMP2"]
             gains = [10.0, 1.0, 0.1]
 
-            for ch, gain in zip(amp_channels, gains):
+            for ch, gain in zip(amp_channels, gains, strict=False):
                 max_v = 6.5 if ch != "AMP2" else 2.0
                 voltages = np.linspace(-max_v, max_v, 15)
                 print(f"  Channel {ch} (gain={gain}): {len(voltages)} points")

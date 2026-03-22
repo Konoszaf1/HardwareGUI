@@ -124,7 +124,7 @@ class TestLivePlotWidgetClear:
     """Tests for clear method."""
 
     def test_clear_removes_all_series(self, plot_widget):
-        """clear removes all series data."""
+        """Clear removes all series data."""
         plot_widget.append_point("CH1", 1.0, 2.0)
         plot_widget.append_point("CH2", 3.0, 4.0)
 
@@ -133,7 +133,7 @@ class TestLivePlotWidgetClear:
         assert len(plot_widget._series) == 0
 
     def test_clear_on_empty_widget_is_safe(self, plot_widget):
-        """clear on empty widget doesn't crash."""
+        """Clear on empty widget doesn't crash."""
         plot_widget.clear()  # Should not raise
 
     def test_clear_then_append_works(self, plot_widget):

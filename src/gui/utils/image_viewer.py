@@ -36,9 +36,7 @@ class ImageViewerDialog(QDialog):
 
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         if self._original_pixmap.isNull():
             self.image_label.setText("Failed to load image.")
         layout.addWidget(self.image_label, 1)

@@ -9,9 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QWidget
 
-from src.logic.qt_workers import FunctionTask, TaskResult, TaskSignals
+from src.logic.qt_workers import FunctionTask, TaskResult
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +180,7 @@ def make_dummy_task():
     """Factory fixture to create FunctionTask with controllable behavior."""
 
     def _make(name: str = "test_task", return_value=None, side_effect=None):
-        if side_effect:
-            fn = side_effect
-        else:
-            fn = lambda: return_value  # noqa: E731
+        fn = side_effect if side_effect else lambda: return_value  # noqa: E731
         task = FunctionTask(name, fn)
         return task
 

@@ -5,8 +5,11 @@ from the application config. It eliminates repetitive animation setup code and
 handles signal connection/disconnection cleanly.
 """
 
+from __future__ import annotations
+
 import contextlib
 from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import (
     QAbstractAnimation,
@@ -14,7 +17,6 @@ from PySide6.QtCore import (
     QPropertyAnimation,
     QVariantAnimation,
 )
-from PySide6.QtWidgets import QWidget
 
 from src.config import config
 
@@ -31,21 +33,21 @@ class AnimatedWidgetMixin:
     """
 
     _variant_animation: QVariantAnimation | None = None
-    _value_changed_callback: Callable | None = None
+    _value_changed_callback: Callable[..., Any] | None = None
 
-    def setup_variant_animation(self: QWidget) -> QVariantAnimation:
+    def setup_variant_animation(self) -> QVariantAnimation:  # type: ignore[reportGeneralTypeIssues]
         """Create and configure a QVariantAnimation with config-based settings.
 
         Returns:
             Configured QVariantAnimation ready for use.
         """
-        self._variant_animation = QVariantAnimation(self)
+        self._variant_animation = QVariantAnimation(self)  # type: ignore[arg-type]
         self._variant_animation.setDuration(config.ui.animation_duration_ms)
         self._variant_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         return self._variant_animation
 
     def animate_value(
-        self: QWidget,
+        self,
         start_value: int,
         end_value: int,
         on_value_changed: Callable[[int], None],
@@ -63,6 +65,8 @@ class AnimatedWidgetMixin:
         if self._variant_animation is None:
             self.setup_variant_animation()
 
+        assert self._variant_animation is not None
+
         # Safely disconnect previous callback if one exists
         if self._value_changed_callback is not None:
             with contextlib.suppress(RuntimeError):
@@ -74,7 +78,7 @@ class AnimatedWidgetMixin:
         self._value_changed_callback = on_value_changed
         self._variant_animation.start()
 
-    def stop_variant_animation(self: QWidget) -> None:
+    def stop_variant_animation(self) -> None:
         """Stop any running animation safely."""
         if (
             self._variant_animation is not None
@@ -83,7 +87,7 @@ class AnimatedWidgetMixin:
             self._variant_animation.stop()
 
     @property
-    def is_animation_running(self: QWidget) -> bool:
+    def is_animation_running(self) -> bool:
         """Check if the animation is currently running."""
         if self._variant_animation is None:
             return False
@@ -97,9 +101,9 @@ class AnimatedPropertyMixin:
     """
 
     _property_animation: QPropertyAnimation | None = None
-    _finished_callback: Callable | None = None
+    _finished_callback: Callable[..., Any] | None = None
 
-    def setup_property_animation(self: QWidget, target_property: bytes) -> QPropertyAnimation:
+    def setup_property_animation(self, target_property: bytes) -> QPropertyAnimation:  # type: ignore[reportGeneralTypeIssues]
         """Create and configure a QPropertyAnimation with config-based settings.
 
         Args:
@@ -108,13 +112,13 @@ class AnimatedPropertyMixin:
         Returns:
             Configured QPropertyAnimation ready for use.
         """
-        self._property_animation = QPropertyAnimation(self, target_property)
+        self._property_animation = QPropertyAnimation(self, target_property)  # type: ignore[arg-type]
         self._property_animation.setDuration(config.ui.animation_duration_ms)
         self._property_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         return self._property_animation
 
     def animate_property(
-        self: QWidget,
+        self,
         start_value: int,
         end_value: int,
         on_finished: Callable[[], None] | None = None,
@@ -145,7 +149,7 @@ class AnimatedPropertyMixin:
 
         self._property_animation.start()
 
-    def stop_property_animation(self: QWidget) -> None:
+    def stop_property_animation(self) -> None:
         """Stop any running property animation safely."""
         if (
             self._property_animation is not None

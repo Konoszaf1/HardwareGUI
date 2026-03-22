@@ -57,7 +57,9 @@ class TestVoltageUnitServiceTasks:
     - Results contain expected data
     """
 
-    def test_connect_and_read_executes_and_returns_coeffs(self, mock_vu_hardware, qtbot):
+    def test_connect_and_read_executes_and_returns_coeffs(
+        self, mock_vu_hardware, qtbot  # noqa: F811
+    ):
         """connect_and_read should execute and return coefficient data."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -77,7 +79,7 @@ class TestVoltageUnitServiceTasks:
         assert "coeffs" in result.data
         assert isinstance(result.data["coeffs"], dict)
 
-    def test_test_outputs_delegates_to_controller(self, mock_vu_hardware, qtbot):
+    def test_test_outputs_delegates_to_controller(self, mock_vu_hardware, qtbot):  # noqa: F811
         """test_outputs should delegate to controller and return artifacts."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -93,7 +95,7 @@ class TestVoltageUnitServiceTasks:
         assert "artifacts" in result.data
         assert isinstance(result.data["artifacts"], list)
 
-    def test_test_ramp_delegates_to_controller(self, mock_vu_hardware, qtbot):
+    def test_test_ramp_delegates_to_controller(self, mock_vu_hardware, qtbot):  # noqa: F811
         """test_ramp should delegate to controller and return artifacts."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -107,7 +109,7 @@ class TestVoltageUnitServiceTasks:
         assert results[0].ok is True
         assert "artifacts" in results[0].data
 
-    def test_autocal_python_executes_calibration(self, mock_vu_hardware, qtbot):
+    def test_autocal_python_executes_calibration(self, mock_vu_hardware, qtbot):  # noqa: F811
         """autocal_python should run calibration and return updated coefficients."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -123,7 +125,7 @@ class TestVoltageUnitServiceTasks:
         # Calibration should return both coefficients and artifacts
         assert "coeffs" in result.data or "artifacts" in result.data
 
-    def test_task_emits_started_signal(self, mock_vu_hardware, qtbot):
+    def test_task_emits_started_signal(self, mock_vu_hardware, qtbot):  # noqa: F811
         """Tasks should emit started signal when execution begins."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -139,7 +141,7 @@ class TestVoltageUnitServiceTasks:
 class TestVoltageUnitServiceGuard:
     """Test guard signal functionality."""
 
-    def test_guard_signal_returns_task(self, mock_vu_hardware):
+    def test_guard_signal_returns_task(self, mock_vu_hardware):  # noqa: F811
         """set_guard_signal should return a FunctionTask."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")
@@ -148,7 +150,7 @@ class TestVoltageUnitServiceGuard:
 
         assert task is not None
 
-    def test_guard_ground_returns_task(self, mock_vu_hardware):
+    def test_guard_ground_returns_task(self, mock_vu_hardware):  # noqa: F811
         """set_guard_ground should return a FunctionTask."""
         service = VoltageUnitService()
         service.set_instrument_ip("192.168.1.1")

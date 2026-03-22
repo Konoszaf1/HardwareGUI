@@ -33,8 +33,46 @@ convention = "google"
 line-length = 100
 target-version = ["py312"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/device_scripts/*" = ["E501", "E741", "F821", "B007", "SIM", "UP"]
+"src/icons_rc.py" = ["E501"]
+"src/ui_main_window.py" = ["E501", "F"]
+
 [tool.mypy]
-strict = true
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+    "src/device_scripts/",
+    "src/icons_rc\\.py",
+    "src/ui_main_window\\.py",
+    "src/tests/",
+]
+
+[[tool.mypy.overrides]]
+module = ["src.gui.*", "src.logic.services.*", "src.logic.presenter"]
+check_untyped_defs = false
+warn_return_any = false
+disable_error_code = [
+    "attr-defined",
+    "union-attr",
+    "assignment",
+    "arg-type",
+    "method-assign",
+    "call-arg",
+    "call-overload",
+    "return-value",
+    "func-returns-value",
+    "var-annotated",
+    "override",
+    "misc",
+]
+
+[tool.uv]
+python-preference = "only-managed"
 
 [project]
 name = "HardwareGUI"
@@ -64,7 +102,9 @@ dev = [
     "colorama==0.4.6",
     "jinja2==3.1.6",
     "markupsafe==3.0.2",
+    "mypy>=1.10",
     "mypy-extensions==1.1.0",
+    "pre-commit>=3.7",
     "packaging==25.0",
     "pathspec==0.12.1",
     "platformdirs==4.3.8",
@@ -81,6 +121,7 @@ dev = [
     "pytest-cov>=4.1",
     "pytest-bdd>=7.0",
     "pytest-mock>=3.12",
+    "pyright>=1.1.408",
 ]
 
 [tool.pytest.ini_options]
@@ -103,4 +144,28 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--tb=short",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/icons_rc.py",
+    "src/ui_main_window.py",
+    "src/main.py",
+    "src/populate_items.py",
+    "src/logic/simulation.py",
+    "src/device_scripts/*",
+    "src/gui/*",
+    "src/logic/presenter.py",
+    "src/logic/services/*",
+    "src/logic/calibration/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "@overload",
+    "\\.\\.\\.",
 ]

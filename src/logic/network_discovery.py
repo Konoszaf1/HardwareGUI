@@ -80,7 +80,7 @@ def get_local_subnets() -> list[str]:
     try:
         hostname = socket.gethostname()
         for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
-            ip = info[4][0]
+            ip = str(info[4][0])
             if ip.startswith("127."):
                 continue
             parts = ip.split(".")
@@ -99,11 +99,13 @@ def _tcp_connect(ip: str, port: int, timeout: float = _CONNECT_TIMEOUT) -> bool:
             s.settimeout(timeout)
             s.connect((ip, port))
             return True
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return False
 
 
-def _query_scpi_raw(ip: str, port: int = SCPI_RAW_PORT, timeout: float = _QUERY_TIMEOUT) -> str | None:
+def _query_scpi_raw(
+    ip: str, port: int = SCPI_RAW_PORT, timeout: float = _QUERY_TIMEOUT
+) -> str | None:
     """Send ``*IDN?`` over a raw TCP socket and return the response."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -112,7 +114,7 @@ def _query_scpi_raw(ip: str, port: int = SCPI_RAW_PORT, timeout: float = _QUERY_
             s.sendall(b"*IDN?\n")
             data = s.recv(1024)
             return data.decode("ascii", errors="replace").strip()
-    except (OSError, socket.timeout, UnicodeDecodeError):
+    except (TimeoutError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -145,12 +147,12 @@ def _scan_host_scpi(ip: str, port: int) -> DiscoveredInstrument | None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(_CONNECT_TIMEOUT)
             s.connect((ip, port))
-            # Port is open — now query *IDN? on the same socket
+            # Port is open - now query *IDN? on the same socket
             s.settimeout(_QUERY_TIMEOUT)
             s.sendall(b"*IDN?\n")
             data = s.recv(1024)
             identity = data.decode("ascii", errors="replace").strip()
-    except (OSError, socket.timeout, UnicodeDecodeError):
+    except (TimeoutError, OSError, UnicodeDecodeError):
         return None
     if not identity or "," not in identity:
         return None
@@ -202,26 +204,18 @@ def discover_instruments(
             if not results:
                 if progress_callback:
                     progress_callback(f"No VXI-11 found, scanning SCPI port {SCPI_RAW_PORT}...")
-                results.extend(
-                    _scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT))
-                )
+                results.extend(_scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT)))
         else:
             # SCPI / Keithley scan
             if progress_callback:
                 progress_callback(f"Scanning {subnet}.0/24 on port {SCPI_RAW_PORT}...")
-            results.extend(
-                _scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT))
-            )
+            results.extend(_scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT)))
 
-    # Filter by instrument type — strict, no fallback
+    # Filter by instrument type - strict, no fallback
     if instrument_type == "keithley":
-        results = [
-            r for r in results if r.identity and "keithley" in r.identity.lower()
-        ]
+        results = [r for r in results if r.identity and "keithley" in r.identity.lower()]
     elif instrument_type == "scope":
-        results = [
-            r for r in results if r.identity and "keithley" not in r.identity.lower()
-        ]
+        results = [r for r in results if r.identity and "keithley" not in r.identity.lower()]
 
     if progress_callback:
         progress_callback(f"Scan complete. Found {len(results)} instrument(s).")

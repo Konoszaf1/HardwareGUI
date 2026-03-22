@@ -205,7 +205,9 @@ class SUSetupPage(BaseHardwarePage):
         )
         self._start_task(
             self.service.run_hw_setup(
-                serial=serial, processor_type=processor, connector_type=connector,
+                serial=serial,
+                processor_type=processor,
+                connector_type=connector,
             )
         )
 

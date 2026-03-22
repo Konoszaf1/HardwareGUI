@@ -19,9 +19,7 @@ _BOX_CHARS = frozenset("│─┼┤├┬┴┐┘┌└╴╵╶╷")
 
 # Regex to strip DPI library log prefixes like:
 #   "2026-03-20 14:38:41 - DPI(dpiio.py:128): INFO - "
-_DPI_LOG_PREFIX_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+\S+:\s+\w+\s+-\s+"
-)
+_DPI_LOG_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+\S+:\s+\w+\s+-\s+")
 
 # ANSI escape code to HTML span mapping
 # Maps common terminal color codes to styled HTML spans
@@ -47,7 +45,7 @@ class LogBatcher:
     This prevents per-line appendHtml() calls which cause expensive reflows.
     """
 
-    _instances: dict[int, "LogBatcher"] = {}
+    _instances: dict[int, LogBatcher] = {}
 
     def __init__(self, console: QPlainTextEdit) -> None:
         self._console = console
@@ -58,7 +56,7 @@ class LogBatcher:
         self._timer.timeout.connect(self._flush)
 
     @classmethod
-    def for_console(cls, console: QPlainTextEdit) -> "LogBatcher":
+    def for_console(cls, console: QPlainTextEdit) -> LogBatcher:
         """Get or create a LogBatcher for a given console widget."""
         wid = id(console)
         batcher = cls._instances.get(wid)
@@ -109,10 +107,10 @@ def append_log(console: QPlainTextEdit, text: str) -> None:
 
     line = text.rstrip("\n")
 
-    # Detect and strip [stderr] prefix — style as muted text
+    # Detect and strip [stderr] prefix - style as muted text
     is_stderr = line.startswith(_STDERR_PREFIX)
     if is_stderr:
-        line = line[len(_STDERR_PREFIX):]
+        line = line[len(_STDERR_PREFIX) :]
         if not line.strip():
             return  # skip blank stderr lines
         # Strip verbose DPI library log prefix (timestamp + source)

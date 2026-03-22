@@ -178,7 +178,7 @@ class VUConnectionPage(BaseHardwarePage):
 
         main_layout.addStretch()
 
-        # Register action buttons (disconnect NOT included — managed separately)
+        # Register action buttons (disconnect NOT included - managed separately)
         self._action_buttons = [self.btn_connect, self.btn_ping, self.btn_search_scope]
 
         # ==== Signals ====
@@ -215,7 +215,7 @@ class VUConnectionPage(BaseHardwarePage):
         self._start_task(task)
 
     def _on_search_finished(self, result) -> None:
-        """Handle search results — populate IP field or show menu."""
+        """Handle search results - populate IP field or show menu."""
         if not result.ok or not result.data:
             return
         instruments = result.data.get("instruments", [])
@@ -224,18 +224,18 @@ class VUConnectionPage(BaseHardwarePage):
             return
 
         if len(instruments) == 1:
-            # Single result — auto-fill
+            # Single result - auto-fill
             self.le_scope_ip.setText(instruments[0]["ip"])
             self._log(f"Found: {instruments[0]['display']}")
         else:
-            # Multiple results — show popup menu
+            # Multiple results - show popup menu
             menu = QMenu(self)
             for instr in instruments:
                 action = menu.addAction(instr["display"])
                 action.setData(instr["ip"])
-            action = menu.exec(self.btn_search_scope.mapToGlobal(
-                self.btn_search_scope.rect().bottomLeft()
-            ))
+            action = menu.exec(
+                self.btn_search_scope.mapToGlobal(self.btn_search_scope.rect().bottomLeft())
+            )
             if action:
                 self.le_scope_ip.setText(action.data())
 
@@ -303,14 +303,12 @@ class VUConnectionPage(BaseHardwarePage):
     def _on_connected_changed(self, connected: bool) -> None:
         """Toggle button states based on connection.
 
-        Does NOT call super() — Connect/Ping must stay enabled regardless
+        Does NOT call super() - Connect/Ping must stay enabled regardless
         of connection state so the user can always reconnect.
         """
         self.btn_disconnect.setEnabled(connected)
         self.btn_connect.setText("Reconnect" if connected else "Connect")
-        self.lbl_connection_status.setText(
-            "Connected" if connected else "Not connected"
-        )
+        self.lbl_connection_status.setText("Connected" if connected else "Not connected")
         self.lbl_connection_status.setStyleSheet(
             "color: #4ec9b0;" if connected else "color: #cccccc;"
         )

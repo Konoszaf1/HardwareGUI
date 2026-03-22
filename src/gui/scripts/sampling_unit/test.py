@@ -238,7 +238,7 @@ class SUTestPage(BaseHardwarePage):
             if result and result.data and result.data.get("ok"):
                 voltage = result.data.get("voltage", "--")
                 self.lbl_single_value.setText(
-                    f"{voltage:.6f} V" if isinstance(voltage, (int, float)) else f"{voltage}"
+                    f"{voltage:.6f} V" if isinstance(voltage, int | float) else f"{voltage}"
                 )
                 self._log(f"Measured voltage: {voltage} V")
             else:

@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, Signal
 
 from src.logging_config import get_logger
 from src.logic.artifact_manager import ArtifactManager
-from src.logic.network_discovery import DiscoveredInstrument, discover_instruments
+from src.logic.network_discovery import discover_instruments
 from src.logic.qt_workers import FunctionTask, make_task
 
 logger = get_logger(__name__)
@@ -107,8 +107,7 @@ class BaseHardwareService(QObject):
                 print("No instruments found.")
             return {
                 "instruments": [
-                    {"ip": i.ip, "identity": i.identity, "display": i.display_name}
-                    for i in found
+                    {"ip": i.ip, "identity": i.identity, "display": i.display_name} for i in found
                 ]
             }
 
