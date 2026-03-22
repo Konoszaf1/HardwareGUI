@@ -37,7 +37,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
         self.setAutoExclusive(True)
         self.setAutoRaise(False)
         self.setSizePolicy(self._create_size_policy())
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         # Ensure button never shrinks below icon size + padding
         min_size = config.ui.sidebar_button_icon_size
         self.setMinimumSize(min_size, min_size)
@@ -139,6 +139,7 @@ class SidebarButton(QToolButton, AnimatedPropertyMixin):
             btn = SidebarButton(parent)
             btn.setObjectName(desc.label)
             btn.setText(desc.label)
+            btn.setAccessibleName(desc.label)
             if getattr(desc, "icon_path", None):
                 btn.setIcon(QIcon(desc.icon_path))
             btn.setProperty("id", desc.id)

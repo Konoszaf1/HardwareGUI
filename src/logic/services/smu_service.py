@@ -9,15 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib
 from dpi import DPISourceMeasureUnit
 
 from src.logging_config import get_logger
 from src.logic.controllers.smu_controller import SMUController
 from src.logic.qt_workers import FunctionTask, make_task
 from src.logic.services.base_service import BaseHardwareService
-
-matplotlib.use("Agg")
 
 logger = get_logger(__name__)
 
@@ -329,6 +326,7 @@ class SourceMeasureUnitService(BaseHardwareService):
         self,
         vsmu_mode: bool | None = None,
         verify_calibration: bool = False,
+        verify_only: bool = False,
         pa_channels: list[str] | None = None,
         speed_preset: str = "normal",
         single_range: tuple[str, str] | None = None,
@@ -346,6 +344,8 @@ class SourceMeasureUnitService(BaseHardwareService):
         Args:
             vsmu_mode: True for VSMU mode, False for normal, None for both.
             verify_calibration: If True, also verify the calibration.
+            verify_only: If True, skip raw measurement and only run
+                the verification pass (writes to raw_data_verify.h5).
             pa_channels: PA channels to measure.
             speed_preset: "fast", "normal", or "precise".
             single_range: If set, (pa_channel, iv_channel) for single range.
@@ -388,6 +388,7 @@ class SourceMeasureUnitService(BaseHardwareService):
                 folder_path=folder_path,
                 vsmu_mode=vsmu_mode,
                 verify_calibration=verify_calibration,
+                verify_only=verify_only,
                 pa_channels=pa_channels,
                 speed_preset=speed_preset,
                 single_range=single_range,
@@ -422,6 +423,8 @@ class SourceMeasureUnitService(BaseHardwareService):
         auto_calibrate: bool = False,
         model_type: str = "linear",
         verify_calibration: bool = True,
+        single_range: tuple[bool, str, str] | None = None,
+        vsmu_filter: bool | None = None,
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -432,6 +435,10 @@ class SourceMeasureUnitService(BaseHardwareService):
             auto_calibrate: If True, write calibration to EEPROM.
             model_type: Model to save ("linear" or "gp").
             verify_calibration: If True, load verification data too.
+            single_range: If set, (vsmu, pa_channel, iv_channel) to fit
+                only that range while preserving other ranges.
+            vsmu_filter: If not None, only analyze ranges matching this
+                VSMU mode. Ignored when single_range is set.
 
         Returns:
             FunctionTask that fits calibration data.
@@ -449,6 +456,8 @@ class SourceMeasureUnitService(BaseHardwareService):
                     auto_calibrate=auto_calibrate,
                     model_type=model_type,
                     verify_calibration=verify_calibration,
+                    single_range=single_range,
+                    vsmu_filter=vsmu_filter,
                 )
                 data = result.data or {}
                 return {
@@ -485,8 +494,8 @@ class SourceMeasureUnitService(BaseHardwareService):
         )
 
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask | None:
-        """Verify calibration by re-measuring."""
-        return self.run_calibration_measure(verify_calibration=True)
+        """Verify calibration by re-measuring (verification pass only)."""
+        return self.run_calibration_measure(verify_only=True)
 
     def run_program_relais(
         self,

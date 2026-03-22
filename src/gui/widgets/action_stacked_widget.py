@@ -335,10 +335,7 @@ class ContentWithPanels(QWidget):
 
         def finalize() -> None:
             # After animation, ensure correct final width
-            if expanded:
-                self._artifacts_stack.setFixedWidth(end_w)
-            else:
-                self._artifacts_stack.setFixedWidth(end_w)
+            self._artifacts_stack.setFixedWidth(end_w)
 
         self._artifacts_anim = animate_value(
             parent=self,

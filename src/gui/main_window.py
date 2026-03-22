@@ -7,6 +7,7 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import (
+    QCloseEvent,
     QColor,
     QMouseEvent,
 )
@@ -119,6 +120,10 @@ class MainWindow(QMainWindow):
         self.ui.minimizePushButton.clicked.connect(self.showMinimized)
         self.ui.maximizePushButton.clicked.connect(self.toggle_max_restore)
         self.ui.closePushButton.clicked.connect(self.close)
+
+        self.ui.minimizePushButton.setAccessibleName("Minimize")
+        self.ui.maximizePushButton.setAccessibleName("Maximize")
+        self.ui.closePushButton.setAccessibleName("Close")
 
         self.ui.maximizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ui.minimizePushButton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -312,6 +317,14 @@ class MainWindow(QMainWindow):
             expanded (bool): New expanded state.
         """
         self.menu_bar.toggle_console_action.setChecked(expanded)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Stop running animations and timers before closing."""
+        if self.splitter:
+            self.splitter.expand_timer.stop()
+            self.splitter.collapse_timer.stop()
+            self.splitter.stop_variant_animation()
+        super().closeEvent(event)
 
     def _style_title_bar(self) -> None:
         """Apply styling to title bar buttons."""

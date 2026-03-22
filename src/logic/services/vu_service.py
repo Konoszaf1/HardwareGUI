@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from PySide6.QtCore import Signal
 
 import dpi  # noqa: F401 - required to avoid circular imports
-import matplotlib
 import vxi11
 from dpimaincontrolunit.dpimaincontrolunit import DPIMainControlUnit
 from dpivoltageunit.dpivoltageunit import DPIVoltageUnit
@@ -22,8 +21,6 @@ from src.logging_config import get_logger
 from src.logic.controllers.vu_controller import VUController
 from src.logic.qt_workers import FunctionTask, make_task
 from src.logic.services.base_service import BaseHardwareService
-
-matplotlib.use("Agg")
 
 logger = get_logger(__name__)
 
@@ -159,26 +156,31 @@ class VoltageUnitService(BaseHardwareService):
             vu_serial, vu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", vu)[0])
             mcu_serial, mcu_if = map(int, re.findall(r"s(\d{4})i(\d{2})", mu)[0])
 
-        # Create device objects
-        self._vu = DPIVoltageUnit(serial=vu_serial, interface=vu_if, busaddress=vu_if)
-        self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
-        self._scope = vxi11.Instrument(self._target_instrument_ip)
-        # Immediately query *IDN? to open the VXI11 link and verify the
-        # scope is responsive — mirrors setup_cal.py connection sequence.
-        idn = self._scope.ask("*IDN?")
-        print(f"Scope: {idn}")
+        # Create device objects — wrap so partial failures clean up handles
+        try:
+            self._vu = DPIVoltageUnit(serial=vu_serial, interface=vu_if, busaddress=vu_if)
+            self._mcu = DPIMainControlUnit(serial=mcu_serial, interface=mcu_if)
+            self._scope = vxi11.Instrument(self._target_instrument_ip)
+            # Immediately query *IDN? to open the VXI11 link and verify the
+            # scope is responsive — mirrors setup_cal.py connection sequence.
+            idn = self._scope.ask("*IDN?")
+            print(f"Scope: {idn}")
 
-        # Initialize DAC hardware (required after power glitch or firmware reset)
-        self._vu.dacInit()
+            # Initialize DAC hardware (required after power glitch or firmware reset)
+            self._vu.dacInit()
 
-        # Create controller with hardware instances
-        self._controller = VUController(
-            vu=self._vu,
-            mcu=self._mcu,
-            scope=self._scope,
-            vu_serial=vu_serial,
-            artifact_dir=self._artifact_dir(),
-        )
+            # Create controller with hardware instances
+            self._controller = VUController(
+                vu=self._vu,
+                mcu=self._mcu,
+                scope=self._scope,
+                vu_serial=vu_serial,
+                artifact_dir=self._artifact_dir(),
+            )
+        except Exception:
+            # Clean up any partially-created handles to avoid USB resource leaks
+            self._disconnect()
+            raise
 
         self._connected = True
         logger.info("VU connected: serial=%s", vu_serial)

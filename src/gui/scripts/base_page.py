@@ -90,6 +90,7 @@ class BaseHardwarePage(QWidget):
 
         # Cancel button — hidden by default, subclasses place in their layouts
         self._btn_cancel = QPushButton("Cancel")
+        self._btn_cancel.setAccessibleName("Cancel task")
         self._btn_cancel.hide()
 
     # ---- Shared panel accessors ----
@@ -190,6 +191,10 @@ class BaseHardwarePage(QWidget):
             self._btn_cancel.setText("Cancel")
             self._btn_cancel.setEnabled(True)
             self._btn_cancel.show()
+            try:
+                self._btn_cancel.clicked.disconnect(self._on_cancel_task)
+            except RuntimeError:
+                pass
             self._btn_cancel.clicked.connect(self._on_cancel_task)
 
         signals.started.connect(lambda: self._log(f"Started: {task.name}"))

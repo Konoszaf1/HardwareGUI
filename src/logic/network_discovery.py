@@ -133,12 +133,25 @@ def _query_vxi11(ip: str, timeout: float = _QUERY_TIMEOUT) -> str | None:
 def _scan_host_scpi(ip: str, port: int) -> DiscoveredInstrument | None:
     """Scan a single host for SCPI on the given port.
 
+    Uses a single TCP connection for both port-open check and ``*IDN?`` query.
+    A previous two-connection approach (connect-close-reconnect) caused
+    instruments that accept only one SCPI connection at a time (e.g. Keithley)
+    to refuse the second connection, making the first scan always fail.
+
     Only returns a result if the host responds with a valid ``*IDN?`` string
     (must contain at least one comma, per IEEE 488.2 format).
     """
-    if not _tcp_connect(ip, port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(_CONNECT_TIMEOUT)
+            s.connect((ip, port))
+            # Port is open — now query *IDN? on the same socket
+            s.settimeout(_QUERY_TIMEOUT)
+            s.sendall(b"*IDN?\n")
+            data = s.recv(1024)
+            identity = data.decode("ascii", errors="replace").strip()
+    except (OSError, socket.timeout, UnicodeDecodeError):
         return None
-    identity = _query_scpi_raw(ip, port)
     if not identity or "," not in identity:
         return None
     return DiscoveredInstrument(ip=ip, identity=identity, port=port)

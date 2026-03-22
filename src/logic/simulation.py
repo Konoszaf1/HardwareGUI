@@ -332,13 +332,13 @@ class SimulatedVoltageUnitService(SimulatedServiceBase):
         task = make_task("test_all", job)
         return task
 
-    def autocal_python(self) -> FunctionTask:
+    def autocal_python(self, max_iterations: int = 10) -> FunctionTask:
         def job():
             self._simulate_work("autocal_python", 0.3)
             print("Running Python auto-calibration...")
             voltages = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]
 
-            for iteration in range(5):
+            for iteration in range(max_iterations):
                 print(f"\n  Iteration {iteration}: ramp test...")
                 time.sleep(0.2)
 
@@ -443,6 +443,7 @@ class SimulatedSMUService(SimulatedServiceBase):
         self,
         vsmu_mode: bool | None = None,
         verify_calibration: bool = False,
+        verify_only: bool = False,
         pa_channels: list[str] | None = None,
         speed_preset: str = "normal",
         single_range: tuple[str, str] | None = None,
@@ -522,6 +523,8 @@ class SimulatedSMUService(SimulatedServiceBase):
         auto_calibrate: bool = False,
         model_type: str = "linear",
         verify_calibration: bool = True,
+        single_range: tuple[bool, str, str] | None = None,
+        vsmu_filter: bool | None = None,
     ) -> FunctionTask:
         def body():
             print(f"Fitting calibration model ({model_type})...")
@@ -549,12 +552,37 @@ class SimulatedSMUService(SimulatedServiceBase):
     def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
         return self.run_calibration_measure(verify_calibration=True)
 
-    def run_program_relais(self, **kwargs) -> FunctionTask:
+    def run_program_relais(
+        self,
+        iv_channel: int,
+        iv_reference: str,
+        pa_channel: int,
+        highpass: bool,
+        dut_routing: str,
+        vguard: str,
+    ) -> FunctionTask:
         def body():
-            print(f"Programming relais: {kwargs}")
+            print(f"Programming relais: IV={iv_channel} ref={iv_reference} "
+                  f"PA={pa_channel} HP={highpass} route={dut_routing} guard={vguard}")
             return {"ok": True}
 
         return self._sim_task("program_relais", 0.5, body=body)
+
+    def run_load_calibration_status(self) -> FunctionTask | None:
+        """Simulate loading calibration status from folder scan."""
+        def body():
+            print("  Scanning calibration folder...")
+            print("  Found 3 calibration ranges")
+            return {
+                "ok": True,
+                "calibration_status": [
+                    {"pa": "pach0", "iv": "ivch1", "vsmu": False, "status": "done"},
+                    {"pa": "pach2", "iv": "ivch3", "vsmu": False, "status": "done"},
+                    {"pa": "pach3", "iv": "ivch5", "vsmu": True, "status": "done"},
+                ],
+            }
+
+        return self._sim_task("load_calibration_status", 0.3, body=body)
 
     def run_set_pa_clip(self, channel: int, enabled: bool) -> FunctionTask:
         def body():

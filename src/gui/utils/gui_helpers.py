@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit
 
@@ -37,6 +37,49 @@ _ANSI_TO_HTML = {
 }
 
 _STDERR_PREFIX = "[stderr] "
+
+_FLUSH_INTERVAL_MS = 50  # Batch log lines and flush every 50ms
+
+
+class LogBatcher:
+    """Accumulates HTML log lines and flushes them to a QPlainTextEdit on a timer.
+
+    This prevents per-line appendHtml() calls which cause expensive reflows.
+    """
+
+    _instances: dict[int, "LogBatcher"] = {}
+
+    def __init__(self, console: QPlainTextEdit) -> None:
+        self._console = console
+        self._buffer: list[str] = []
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(_FLUSH_INTERVAL_MS)
+        self._timer.timeout.connect(self._flush)
+
+    @classmethod
+    def for_console(cls, console: QPlainTextEdit) -> "LogBatcher":
+        """Get or create a LogBatcher for a given console widget."""
+        wid = id(console)
+        batcher = cls._instances.get(wid)
+        if batcher is None or batcher._console is not console:
+            batcher = cls(console)
+            cls._instances[wid] = batcher
+        return batcher
+
+    def append(self, html_line: str) -> None:
+        """Queue a line and schedule a flush."""
+        self._buffer.append(html_line)
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def _flush(self) -> None:
+        """Flush all buffered lines to the console in one batch."""
+        if not self._buffer or not self._console:
+            return
+        combined = "<br>".join(self._buffer)
+        self._buffer.clear()
+        self._console.appendHtml(combined)
 
 
 def _convert_ansi_to_html(text: str) -> str:
@@ -92,7 +135,7 @@ def append_log(console: QPlainTextEdit, text: str) -> None:
     if is_stderr:
         line = f'<span style="color: #6272a4;">{line}</span>'
 
-    console.appendHtml(line)
+    LogBatcher.for_console(console).append(line)
 
 
 def add_thumbnail_item(list_widget: QListWidget, path: str, tooltip: str | None = None) -> None:

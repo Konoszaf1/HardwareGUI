@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QTimer
-from PySide6.QtWidgets import QApplication, QListView, QSplitter, QWidget
+from PySide6.QtWidgets import QListView, QSplitter, QWidget
 
 from src.config import config
 from src.gui.mixins.animation_mixin import AnimatedWidgetMixin
@@ -45,7 +45,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         self.expand_timer.setInterval(config.ui.expand_hover_delay_ms)
         self.expand_timer.timeout.connect(self.expand)
 
-        self.collapse_timer = QTimer()
+        self.collapse_timer = QTimer(self)
         self.collapse_timer.setSingleShot(True)
         self.collapse_timer.timeout.connect(self.collapse)
 
@@ -87,7 +87,7 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
             button.updateGeometry()
 
         self.collapse_immediate()
-        QApplication.processEvents()
+        QTimer.singleShot(0, self.collapse_immediate)
 
     def set_sidebar(self, sidebar: QWidget) -> None:
         """Set the sidebar widget and configure its splitter behavior.

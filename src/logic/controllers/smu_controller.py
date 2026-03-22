@@ -537,6 +537,7 @@ class SMUController(HardwareController):
         folder_path: str,
         vsmu_mode: bool | None = None,
         verify_calibration: bool = False,
+        verify_only: bool = False,
         pa_channels: list[str] | None = None,
         speed_preset: str = "normal",
         single_range: tuple[str, str] | None = None,
@@ -605,7 +606,12 @@ class SMUController(HardwareController):
                     delta_log=delta_log, delta_lin=delta_lin,
                 )
 
-            verify_list = [False, True] if verify_calibration else [False]
+            if verify_only:
+                verify_list = [True]
+            elif verify_calibration:
+                verify_list = [False, True]
+            else:
+                verify_list = [False]
             completed_ranges = 0
             total_ranges = 0
             cancelled = False
@@ -736,6 +742,8 @@ class SMUController(HardwareController):
         auto_calibrate: bool = False,
         model_type: str = "linear",
         verify_calibration: bool = True,
+        single_range: tuple[bool, str, str] | None = None,
+        vsmu_filter: bool | None = None,
     ) -> OperationResult:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -749,6 +757,11 @@ class SMUController(HardwareController):
             auto_calibrate: If True, write calibration to EEPROM.
             model_type: Model to save ("linear" or "gp").
             verify_calibration: If True, load verification data too.
+            single_range: If set, (vsmu, pa_channel, iv_channel) to fit
+                only that range. Loads existing model first so other
+                ranges are preserved.
+            vsmu_filter: If not None, only fit ranges matching this VSMU
+                mode. Ignored when single_range is set.
 
         Returns:
             OperationResult with folder path and analysis_plots list.
@@ -770,6 +783,8 @@ class SMUController(HardwareController):
             print(f"  Folder  : {folder_path}")
             print(f"  Model   : {model_type}")
             print(f"  Verify  : {verify_calibration}")
+            if single_range:
+                print(f"  Range   : vsmu={single_range[0]}, pa={single_range[1]}, iv={single_range[2]}")
 
             smf = SMUCalibrationFit(
                 calibration_folder=folder_path,
@@ -778,33 +793,70 @@ class SMUController(HardwareController):
                 log_level=DPILogger.DEBUG,
             )
 
-            if draw_plot:
-                print(">> Plotting measurement overview...")
-                smf.plot_measurement_overview()
+            if single_range:
+                key = tuple(single_range)
+
+                # Load existing models so other ranges are preserved
+                print(">> Loading existing model...")
                 try:
-                    smf.plot_aggregated_overview()
-                except (KeyError, Exception) as e:
-                    print(f"  Aggregated overview skipped ({e})")
+                    smf.load_model(script_dir=Path("/"), model_type=model_type)
+                except Exception as e:
+                    print(f"  No existing model found ({e}), starting fresh.")
 
-            print(">> Training linear model...")
-            smf.train_linear_model()
+                # Ensure key exists in model dict
+                if key not in smf.model:
+                    smf.model[key] = {}
 
-            if model_type == "gp":
-                print(">> Training GP model...")
-                smf.train_gp_model()
+                print(f">> Training {model_type} model for {key}...")
+                smf.train_linear_model(key)
+                if model_type == "gp":
+                    smf.train_gp_model(key)
 
-            # save_model does script_dir / calibration_folder internally.
-            # Since calibration_folder is absolute, Path("/") works as a no-op root.
-            smf.save_model(script_dir=Path("/"), model_type=model_type)
-            print(">> Analyzing ranges...")
-            smf.analyze_ranges(save_plot=True)
+                smf.save_model(script_dir=Path("/"), model_type=model_type)
 
-            if draw_plot:
-                print(">> Plotting calibrated overview...")
-                try:
-                    smf.plot_calibrated_overview(model_type=model_type)
-                except (KeyError, Exception) as e:
-                    print(f"  Calibrated overview skipped ({e})")
+                print(f">> Analyzing range {key}...")
+                smf.analyze_range(key, save_plot=True)
+
+            elif vsmu_filter is not None:
+                # All ranges filtered by VSMU mode: train all, analyze filtered
+                print(f">> Training all ranges (will analyze VSMU={vsmu_filter} only)...")
+                smf.train_linear_model()
+                if model_type == "gp":
+                    smf.train_gp_model()
+                smf.save_model(script_dir=Path("/"), model_type=model_type)
+
+                matching = [k for k in smf.model if k[0] == vsmu_filter]
+                print(f">> Analyzing {len(matching)} ranges with VSMU={vsmu_filter}...")
+                for key in matching:
+                    smf.analyze_range(key, save_plot=True)
+            else:
+                if draw_plot:
+                    print(">> Plotting measurement overview...")
+                    smf.plot_measurement_overview()
+                    try:
+                        smf.plot_aggregated_overview()
+                    except (KeyError, Exception) as e:
+                        print(f"  Aggregated overview skipped ({e})")
+
+                print(">> Training linear model...")
+                smf.train_linear_model()
+
+                if model_type == "gp":
+                    print(">> Training GP model...")
+                    smf.train_gp_model()
+
+                # save_model does script_dir / calibration_folder internally.
+                # Since calibration_folder is absolute, Path("/") works as a no-op root.
+                smf.save_model(script_dir=Path("/"), model_type=model_type)
+                print(">> Analyzing ranges...")
+                smf.analyze_ranges(save_plot=True)
+
+                if draw_plot:
+                    print(">> Plotting calibrated overview...")
+                    try:
+                        smf.plot_calibrated_overview(model_type=model_type)
+                    except (KeyError, Exception) as e:
+                        print(f"  Calibrated overview skipped ({e})")
 
             # Collect analysis plot paths
             analysis_plots = self._collect_analysis_plots(folder_path)

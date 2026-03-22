@@ -8,15 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import matplotlib
 from dpi import DPIMainControlUnit, DPISamplingUnit
 
 from src.logging_config import get_logger
 from src.logic.controllers.su_controller import SUController
 from src.logic.qt_workers import FunctionTask, make_task
 from src.logic.services.base_service import BaseHardwareService
-
-matplotlib.use("Agg")
 
 logger = get_logger(__name__)
 

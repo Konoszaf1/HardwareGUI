@@ -34,6 +34,7 @@ def create_console_widget(max_block_count: int | None = None) -> QPlainTextEdit:
 
     console = QPlainTextEdit()
     console.setObjectName("console")
+    console.setAccessibleName("Console output")
     console.setReadOnly(True)
     console.setUndoRedoEnabled(False)
     console.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)

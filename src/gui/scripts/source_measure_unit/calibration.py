@@ -158,9 +158,13 @@ class SMUCalibrationPage(BaseHardwarePage):
         # Secondary action: measurement only, skip verification pass
         self.btn_measure = QPushButton("Measure Only")
         self._configure_input(self.btn_measure, min_width=110)
+        # Verify-only: re-run verification pass without new raw measurement
+        self.btn_verify_only = QPushButton("Verify Only")
+        self._configure_input(self.btn_verify_only, min_width=110)
         self._configure_input(self._btn_cancel, min_width=100)
         btn_layout.addWidget(self.btn_verify)
         btn_layout.addWidget(self.btn_measure)
+        btn_layout.addWidget(self.btn_verify_only)
         btn_layout.addWidget(self._btn_cancel)
         btn_layout.addStretch()
         meas_form.addRow("", btn_layout)
@@ -189,6 +193,37 @@ class SMUCalibrationPage(BaseHardwarePage):
         self._configure_input(self.chk_auto_eeprom)
         self.chk_auto_eeprom.setChecked(False)
         fit_form.addRow("", self.chk_auto_eeprom)
+
+        # Fit VSMU filter (always visible, applies to both all and single range)
+        self.cb_fit_vsmu = QComboBox()
+        self.cb_fit_vsmu.addItems(["Both", "Normal Only", "VSMU Only"])
+        self._configure_input(self.cb_fit_vsmu)
+        fit_form.addRow("VSMU:", self.cb_fit_vsmu)
+
+        # Fit scope selector (independent from measurement scope)
+        self.cb_fit_scope = QComboBox()
+        self.cb_fit_scope.addItems(["All Ranges", "Single Range"])
+        self._configure_input(self.cb_fit_scope)
+        self.cb_fit_scope.currentTextChanged.connect(self._on_fit_scope_changed)
+        fit_form.addRow("Scope:", self.cb_fit_scope)
+
+        # Fit single-range PA/IV selectors (hidden by default)
+        self._fit_single_range_widget = QWidget()
+        fsr_layout = QHBoxLayout(self._fit_single_range_widget)
+        fsr_layout.setContentsMargins(0, 0, 0, 0)
+        fsr_layout.addWidget(QLabel("PA:"))
+        self.cb_fit_pa = QComboBox()
+        self.cb_fit_pa.addItems(["pach0", "pach1", "pach2", "pach3"])
+        self._configure_input(self.cb_fit_pa)
+        fsr_layout.addWidget(self.cb_fit_pa)
+        fsr_layout.addWidget(QLabel("IV:"))
+        self.cb_fit_iv = QComboBox()
+        self.cb_fit_iv.addItems([f"ivch{i}" for i in range(1, 10)])
+        self._configure_input(self.cb_fit_iv)
+        fsr_layout.addWidget(self.cb_fit_iv)
+        fsr_layout.addStretch()
+        fit_form.addRow("", self._fit_single_range_widget)
+        self._fit_single_range_widget.hide()
 
         fit_btn_layout = QHBoxLayout()
         self.btn_run_fit = QPushButton("Run Fit")
@@ -261,12 +296,14 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         # Register action buttons
         self._action_buttons = [
-            self.btn_measure, self.btn_verify, self.btn_run_fit, self.btn_refresh,
+            self.btn_measure, self.btn_verify, self.btn_verify_only,
+            self.btn_run_fit, self.btn_refresh,
         ]
 
         # ==== Signals ====
         self.btn_measure.clicked.connect(self._on_measure)
         self.btn_verify.clicked.connect(self._on_verify)
+        self.btn_verify_only.clicked.connect(self._on_verify_only)
         self.btn_run_fit.clicked.connect(self._on_run_fit)
 
         self._connect_service_signals()
@@ -305,23 +342,46 @@ class SMUCalibrationPage(BaseHardwarePage):
     def _on_scope_changed(self, text: str) -> None:
         self._single_range_widget.setVisible(text == "Single Range")
 
+    def _on_fit_scope_changed(self, text: str) -> None:
+        self._fit_single_range_widget.setVisible(text == "Single Range")
+
     # ---- Row-click → populate single-range selector ----
 
     def _on_range_row_clicked(self, row: int, _col: int) -> None:
+        vsmu_item = self.ranges_table.item(row, _COL_VSMU)
         pa_item = self.ranges_table.item(row, _COL_PA)
         iv_item = self.ranges_table.item(row, _COL_IV)
         if not pa_item or not iv_item:
             return
         pa = pa_item.text()
         iv = iv_item.text()
-        # Switch to Single Range mode and populate selectors
+        vsmu_text = vsmu_item.text() if vsmu_item else ""
+
+        # Populate measurement scope selectors
         self.cb_scope.setCurrentText("Single Range")
+        if vsmu_text == "True":
+            self.cb_vsmu.setCurrentText("VSMU Only")
+        elif vsmu_text == "False":
+            self.cb_vsmu.setCurrentText("Normal Only")
         idx_pa = self.cb_single_pa.findText(pa)
         if idx_pa >= 0:
             self.cb_single_pa.setCurrentIndex(idx_pa)
         idx_iv = self.cb_single_iv.findText(iv)
         if idx_iv >= 0:
             self.cb_single_iv.setCurrentIndex(idx_iv)
+
+        # Populate fit scope selectors
+        self.cb_fit_scope.setCurrentText("Single Range")
+        if vsmu_text == "True":
+            self.cb_fit_vsmu.setCurrentText("VSMU Only")
+        elif vsmu_text == "False":
+            self.cb_fit_vsmu.setCurrentText("Normal Only")
+        idx_pa = self.cb_fit_pa.findText(pa)
+        if idx_pa >= 0:
+            self.cb_fit_pa.setCurrentIndex(idx_pa)
+        idx_iv = self.cb_fit_iv.findText(iv)
+        if idx_iv >= 0:
+            self.cb_fit_iv.setCurrentIndex(idx_iv)
 
     # ---- Elapsed timer ----
 
@@ -357,7 +417,12 @@ class SMUCalibrationPage(BaseHardwarePage):
     def _on_verify(self) -> None:
         self._start_calibration_measure(verify=True)
 
-    def _start_calibration_measure(self, verify: bool) -> None:
+    def _on_verify_only(self) -> None:
+        self._start_calibration_measure(verify=False, verify_only=True)
+
+    def _start_calibration_measure(
+        self, verify: bool, verify_only: bool = False,
+    ) -> None:
         if not self.service:
             self._log("Service not available.")
             return
@@ -367,11 +432,16 @@ class SMUCalibrationPage(BaseHardwarePage):
             self._log("Select at least one PA channel.")
             return
 
-        label = "verification" if verify else "measurement"
+        if verify_only:
+            label = "verify-only"
+        elif verify:
+            label = "measure + verify"
+        else:
+            label = "measurement"
         self._log(f"Starting calibration {label}...")
         self.plot_widget.clear()
         self.plot_widget.set_labels(
-            f"Calibration {'Verify' if verify else 'Measure'}",
+            f"Calibration {'Verify' if (verify or verify_only) else 'Measure'}",
             "I_ref / A", "I_meas / A",
         )
         # Clear live status column but keep overview data
@@ -384,6 +454,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         task = self.service.run_calibration_measure(
             vsmu_mode=self._get_vsmu_mode(),
             verify_calibration=verify,
+            verify_only=verify_only,
             pa_channels=pa_channels,
             speed_preset=self._get_speed_preset(),
             single_range=self._get_single_range(),
@@ -396,6 +467,25 @@ class SMUCalibrationPage(BaseHardwarePage):
         task.signals.data_chunk.connect(self._on_cal_chunk)
         self._start_task(task)
 
+    def _get_fit_vsmu_filter(self) -> bool | None:
+        """Get VSMU filter from fit config. None means both."""
+        text = self.cb_fit_vsmu.currentText()
+        if text == "VSMU Only":
+            return True
+        if text == "Normal Only":
+            return False
+        return None
+
+    def _get_fit_single_range(self) -> tuple[bool, str, str] | None:
+        """Build single_range tuple from fit scope selector, or None."""
+        if self.cb_fit_scope.currentText() != "Single Range":
+            return None
+        vsmu = self._get_fit_vsmu_filter()
+        if vsmu is None:
+            self._log("Select 'Normal Only' or 'VSMU Only' for single-range fit.")
+            return None  # caller should abort
+        return (vsmu, self.cb_fit_pa.currentText(), self.cb_fit_iv.currentText())
+
     def _on_run_fit(self) -> None:
         if not self.service:
             self._log("Service not available.")
@@ -403,15 +493,36 @@ class SMUCalibrationPage(BaseHardwarePage):
 
         model = "linear" if self.rb_linear.isChecked() else "gp"
         auto_cal = self.chk_auto_eeprom.isChecked()
-        self._log(f"Running {model} fit (auto-EEPROM: {auto_cal})...")
+        vsmu_filter = self._get_fit_vsmu_filter()
+        is_single = self.cb_fit_scope.currentText() == "Single Range"
+
+        # Single range requires explicit VSMU
+        single_range = None
+        if is_single:
+            single_range = self._get_fit_single_range()
+            if single_range is None:
+                return  # VSMU "Both" not valid for single range
+
+        # Log what we're doing
+        vsmu_label = {True: "VSMU", False: "Normal", None: "all"}[vsmu_filter]
+        if single_range:
+            _, pa, iv = single_range
+            self._log(f"Running {model} fit for {vsmu_label} {pa} {iv}...")
+        elif vsmu_filter is not None:
+            self._log(f"Running {model} fit for {vsmu_label} ranges...")
+        else:
+            self._log(f"Running {model} fit on all ranges (auto-EEPROM: {auto_cal})...")
+
         self.analysis_widget.clear()
         self._start_elapsed_timer()
         self._progress_label.setText("Fitting...")
 
         task = self.service.run_calibration_fit(
-            draw_plot=True,
+            draw_plot=not bool(single_range) and vsmu_filter is None,
             auto_calibrate=auto_cal,
             model_type=model,
+            single_range=single_range,
+            vsmu_filter=vsmu_filter if not single_range else None,
         )
         self._start_task(task)
 

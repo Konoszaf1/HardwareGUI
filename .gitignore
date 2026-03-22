@@ -66,4 +66,7 @@ implementation_plan.md
 .agent/knowledge-base/build-and-run.md
 .agent/knowledge-base/architecture.md
 src/simulation_artifacts/calibration_smu1/calibration.png
-.gitignore
+
+# Setup GUI (legacy calibration scripts)
+Setup GUI/
+calibration/
