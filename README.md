@@ -2,52 +2,57 @@
 
 # HardwareGUI
 
-**Desktop application for controlling and calibrating DPI hardware at the Institute of Microelectronics.**
+### Desktop control & calibration suite for DPI semiconductor test hardware
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![PySide6](https://img.shields.io/badge/PySide6-Qt%206-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Ruff](https://img.shields.io/badge/linting-ruff-261230?logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![PySide6](https://img.shields.io/badge/PySide6-Qt%206-41CD52?style=flat-square&logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
+[![pytest](https://img.shields.io/badge/pytest-315%20tests-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9?style=flat-square&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+[![Ruff](https://img.shields.io/badge/ruff-linter-261230?style=flat-square&logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-Built with **Model-View-Presenter (MVP)** architecture &bull; Type-safe configuration &bull; Async hardware communication
+Built for the **Institute of Microelectronics, TU Wien** &mdash; Bachelor thesis project
 
-[Getting Started](#getting-started) &bull;
-[Architecture](#architecture) &bull;
-[Development](#development) &bull;
-[Troubleshooting](#troubleshooting)
+[Quick Start](#quick-start) &bull; [Architecture](#architecture) &bull; [Hardware Support](#hardware-support) &bull; [Testing](#testing) &bull; [Development](#development)
 
 </div>
 
 ---
 
-## Features
+## The Problem
 
-- **Multi-Hardware Support** — Voltage Unit, Source Measure Unit, and Sampling Unit with a plug-in architecture for adding new devices
-- **Automated Calibration** — Python-based and onboard firmware calibration workflows with visual artifact generation
-- **Real-Time Monitoring** — Live console output, status bar feedback, and thumbnail previews during operations
-- **Simulation Mode** — Full UI testing without physical hardware (`--simulation` flag)
-- **Modular Design** — Page factory registry (OCP), frozen dataclass configs, and service-controller separation
-- **Zero-Config Deployment** — Automated `setup.sh` + `run.sh` scripts handle virtual environment, PYTHONPATH, and dependencies
+DPI hardware calibration involves dozens of manual steps across three instrument types&mdash;setting voltages, reading coefficients, triggering scope acquisitions, fitting correction curves, and writing EEPROM data. Doing this through bare Python scripts means no feedback during long-running operations, no artifact management, and no way to recover from errors mid-workflow.
+
+## What This Project Does
+
+HardwareGUI wraps the entire calibration and test pipeline in a Qt desktop application with real-time console output, live plot visualization, and structured artifact collection. Each hardware operation runs on a background thread with cancellation support, while the GUI remains responsive.
+
+| Capability | Without HardwareGUI | With HardwareGUI |
+|:---|:---|:---|
+| **Calibration workflow** | Manual script execution, copy-paste parameters | One-click automated pipeline with visual feedback |
+| **Error handling** | Script crashes, lost state | Graceful recovery, operation results, status bar |
+| **Artifact management** | Manually save/rename plots | Timestamped auto-collection with thumbnail preview |
+| **Hardware verification** | Manual ping, hope for the best | Network discovery, SCPI scanning, ping verification |
+| **Multi-device support** | Separate scripts per device | Unified interface, plug-in page architecture |
 
 ---
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
 - **OS**: Linux (X11 or Wayland)
 - **Python**: 3.12+
-- **Network**: Access to DPI hardware (default scope IP: `192.168.68.154`)
+- **Network**: Access to DPI hardware (or use `--simulation`)
 
-> **Note**: The DPI package library (`/measdata/dpi`) is loaded dynamically via `PYTHONPATH` by the launcher script — no manual installation required.
+> The DPI library (`/measdata/dpi`) is loaded dynamically via `PYTHONPATH` in the launcher&mdash;no manual installation required.
 
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/HardwareGUI.git
+git clone https://github.com/Konoszaf1/HardwareGUI.git
 cd HardwareGUI
-./setup.sh          # Creates venv with uv, installs dependencies
+./setup.sh          # Creates venv with uv, installs all dependencies
 ```
 
 ### Usage
@@ -57,30 +62,30 @@ cd HardwareGUI
 ./run.sh --simulation       # Simulation mode (no hardware needed)
 ```
 
-> Always use `run.sh` — it sets up `PYTHONPATH` and environment variables that direct `python` invocation would miss.
+> Always use `run.sh`&mdash;it configures `PYTHONPATH` and environment variables that direct invocation would miss.
 
 ---
 
 ## Architecture
 
-The application follows a **Model-View-Presenter (MVP)** pattern with a layered service architecture:
+The application follows **Model-View-Presenter (MVP)** with a layered service architecture that separates hardware I/O from UI concerns:
 
 ```mermaid
 graph TD
     subgraph Presentation ["Presentation Layer"]
-        View["View\n(MainWindow, Hardware Pages)"]
-        Presenter["Presenter\n(ActionsPresenter)"]
+        View["View<br/><em>MainWindow, Hardware Pages</em>"]
+        Presenter["Presenter<br/><em>ActionsPresenter</em>"]
     end
 
     subgraph Domain ["Domain Layer"]
-        Model["Model\n(ActionModel)"]
-        Services["Services\n(VU / SMU / SU)"]
-        Controllers["Controllers\n(VU / SMU / SU)"]
+        Model["Model<br/><em>ActionModel</em>"]
+        Services["Services<br/><em>VU / SMU / SU</em>"]
+        Controllers["Controllers<br/><em>VU / SMU / SU</em>"]
     end
 
     subgraph Infra ["Infrastructure"]
-        Workers["Qt Workers\n(QRunnable + Signals)"]
-        Hardware["DPI Hardware\n(/measdata/dpi)"]
+        Workers["Qt Workers<br/><em>QRunnable + Signals</em>"]
+        Hardware["DPI Hardware<br/><em>/measdata/dpi</em>"]
     end
 
     User((User)) -->|Interacts| View
@@ -95,19 +100,49 @@ graph TD
 
 ### Layer Responsibilities
 
-**View** (`gui/`) — Renders UI, captures user input, displays data. Hardware pages inherit from `BaseHardwarePage` which provides task lifecycle, artifact watching, and layout factories.
+| Layer | Location | Role |
+|:---|:---|:---|
+| **View** | `gui/` | Renders UI, captures input. Hardware pages inherit `BaseHardwarePage` for task lifecycle, artifact watching, and layout factories |
+| **Presenter** | `logic/presenter.py` | Routes events to services. `PAGE_FACTORIES` registry maps page IDs to factory functions (Open/Closed Principle) |
+| **Services** | `logic/services/` | Own connection lifecycle and threading. `BaseHardwareService` provides signals, `threading.Lock`, IP verification, and the `require_instrument_ip` decorator |
+| **Controllers** | `logic/controllers/` | Pure hardware logic, no threading or UI. Return `OperationResult` frozen dataclass from every operation |
+| **Workers** | `logic/qt_workers.py` | `FunctionTask` (`QRunnable`) wraps callables with stdout capture and lifecycle signals via `TaskSignals` |
+| **Config** | `config.py` | Nested frozen dataclasses (`AppConfig`). Environment overrides for `LOG_LEVEL`, `LOG_FILE` |
 
-**Presenter** (`logic/presenter.py`) — Routes view events to services. Uses a `PAGE_FACTORIES` registry to map page IDs to factory functions, following the Open/Closed Principle.
+### Simulation Mode
 
-**Services** (`logic/services/`) — Own hardware connection lifecycle and threading. Each service inherits from `BaseHardwareService` (a `QObject` ABC) which provides signals (`connectedChanged`, `inputRequested`, `instrumentVerified`), a `threading.Lock`, IP verification via `ping_instrument()`, input redirection (`provide_input` / `wait_for_input`), and the `require_instrument_ip` guard decorator.
+`SimulatedVoltageUnitService`, `SimulatedSMUService`, and `SimulatedSUService` extend `BaseHardwareService` directly (no controller needed). They use `_simulate_work()` to generate timestamped output and matplotlib artifacts&mdash;enabling full UI development without physical hardware.
 
-**Controllers** (`logic/controllers/`) — Pure hardware logic with no threading or UI concerns. Return `OperationResult` (frozen dataclass) from every operation. All inherit from `HardwareController` ABC which defines `initialize_device`, `read_temperature`, and `perform_autocalibration`.
+---
 
-**Simulation** (`logic/simulation.py`) — `SimulatedVoltageUnitService`, `SimulatedSMUService`, and `SimulatedSUService` extend `BaseHardwareService` directly (no controller needed). They use `_simulate_work()` from the base class to print timestamped output and generate matplotlib artifacts via `SimulationArtifactGenerator`.
+## Hardware Support
 
-**Workers** (`logic/qt_workers.py`) — `FunctionTask` (`QRunnable`) wraps callables with stdout/stderr capture (`_EmittingStream`) and emits lifecycle signals via `TaskSignals`. The `run_in_thread()` helper submits tasks to the global `QThreadPool`.
-
-**Configuration** — Centralized in `src/config.py` using nested frozen dataclasses (`AppConfig → UIConfig, HardwareConfig, ...`). Environment variable overrides supported for `LOG_LEVEL` and `LOG_FILE`.
+<table>
+  <thead>
+    <tr>
+      <th align="left">Instrument</th>
+      <th align="left">Operations</th>
+      <th align="left">Pages</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Voltage Unit</strong></td>
+      <td>Session &amp; coefficient management, output/ramp/transient testing, Python and onboard calibration, guard signal control</td>
+      <td>Connection, Setup, Test, Calibration, Guard</td>
+    </tr>
+    <tr>
+      <td><strong>Source Measure Unit</strong></td>
+      <td>Device initialization, EEPROM calibration, relay control (IV converter, post-amp, highpass, input routing, VGUARD), saturation detection</td>
+      <td>Connection, Setup, Test, Calibration</td>
+    </tr>
+    <tr>
+      <td><strong>Sampling Unit</strong></td>
+      <td>Device initialization, single-shot/transient/pulse measurements, MCU synchronization, trigger control</td>
+      <td>Connection, Setup, Test, Calibration</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
@@ -118,37 +153,70 @@ HardwareGUI/
 ├── src/
 │   ├── main.py                        # Entry point (argparse, simulation mode)
 │   ├── config.py                      # Centralized frozen-dataclass configuration
-│   ├── populate_items.py              # Hardware & action descriptors
 │   ├── gui/                           # View layer
 │   │   ├── main_window.py             #   Frameless QMainWindow
 │   │   ├── scripts/                   #   Hardware-specific pages
 │   │   │   ├── base_page.py           #     Abstract base (task lifecycle, layouts)
-│   │   │   ├── voltage_unit/          #     VU: Connection, Setup, Test, Calibration, Guard
-│   │   │   ├── source_measure_unit/   #     SMU: Connection, Setup, Test, Calibration
-│   │   │   └── sampling_unit/         #     SU: Connection, Setup, Test, Calibration
-│   │   ├── services/                  #   UI services (StatusBar, SharedPanels, Tooltip)
-│   │   └── widgets/                   #   Reusable components (Sidebar, Stacked, Panels)
+│   │   │   ├── voltage_unit/          #     VU pages
+│   │   │   ├── source_measure_unit/   #     SMU pages
+│   │   │   └── sampling_unit/         #     SU pages
+│   │   ├── services/                  #   UI services (StatusBar, SharedPanels)
+│   │   └── widgets/                   #   Reusable components (LivePlotWidget, Sidebar)
 │   └── logic/                         # Business logic
 │       ├── presenter.py               #   MVP presenter + page factory registry
 │       ├── simulation.py              #   Simulated services for --simulation mode
 │       ├── controllers/               #   Hardware controllers (VU, SMU, SU)
-│       │   └── base_controller.py     #     ABC + OperationResult dataclass
-│       ├── services/                  #   Hardware service layer (VU, SMU, SU)
-│       ├── model/                     #   Qt item models
+│       ├── services/                  #   Hardware service layer
 │       └── qt_workers.py              #   FunctionTask / QRunnable with signal bridge
-├── tests/                             # pytest + pytest-qt test suite
-├── setup.sh                           # One-time install (venv, dependencies, symlinks)
-├── run.sh                             # Application launcher (PYTHONPATH setup)
-└── pyproject.toml                     # Dependencies, ruff, black, mypy, pytest config
+├── tests/                             # 315 tests across 4 layers
+│   ├── unit/                          #   Pure logic tests (no Qt event loop)
+│   ├── component/                     #   Qt widget tests (qtbot)
+│   ├── integration/                   #   Service + controller + threading
+│   └── bdd/                           #   Gherkin acceptance tests (pytest-bdd)
+├── .github/workflows/test.yml         # CI pipeline (5 jobs)
+├── setup.sh / run.sh                  # Install & launch scripts
+└── pyproject.toml                     # Dependencies, ruff, pytest config
 ```
 
-### Supported Hardware
+---
 
-**Voltage Unit** — Session & coefficient management, output/ramp/transient testing, Python and onboard calibration, guard signal control.
+## Testing
 
-**Source Measure Unit** — Device initialization, EEPROM calibration, relay control (IV converter, post-amplifier, highpass, input routing, VGUARD), saturation detection.
+The test suite follows a **four-layer pyramid** with 315 tests running in ~3 seconds:
 
-**Sampling Unit** — Device initialization, single-shot/transient/pulse measurements, MCU synchronization, trigger control.
+| Layer | Tests | Scope | Marker |
+|:---|---:|:---|:---|
+| **Unit** | 139 | Controllers, config, workers, network discovery | `@pytest.mark.unit` |
+| **Component** | 68 | Qt widgets and pages with `qtbot` | `@pytest.mark.component` |
+| **Integration** | 12 | Full service &rarr; controller &rarr; thread chain | `@pytest.mark.integration` |
+| **BDD** | 7 | Gherkin scenarios via `pytest-bdd` | `@pytest.mark.bdd` |
+| **Legacy** | 89 | Pre-existing service and helper tests | *(unmarked)* |
+
+```bash
+# Run everything
+uv run pytest
+
+# Run by layer
+uv run pytest tests/unit/ -m unit
+uv run pytest tests/component/ -m component
+uv run pytest tests/integration/ -m integration
+uv run pytest tests/bdd/ -m bdd
+
+# With coverage
+uv run pytest --cov=src --cov-report=term-missing
+```
+
+### CI Pipeline
+
+The GitHub Actions workflow runs a five-stage pipeline:
+
+```
+unit-tests ──┬── component-tests ──┬── bdd-tests
+             └── integration-tests ─┘
+                                         coverage-report
+```
+
+Component, integration, and BDD stages run under `xvfb-run` for headless Qt rendering.
 
 ---
 
@@ -158,48 +226,29 @@ HardwareGUI/
 
 ```bash
 uv run ruff format .          # Format (Black-compatible)
-uv run ruff check .           # Lint (Google docstring convention)
-uv run mypy src/              # Static type checking (strict mode)
-```
-
-### Testing
-
-```bash
-uv run pytest                 # Run all tests
-uv run pytest --cov=src       # With coverage report
-uv run pytest -x -q           # Stop on first failure, quiet output
+uv run ruff check .           # Lint
+uv run mypy src/              # Static type checking
 ```
 
 ### Adding New Hardware
 
 1. Create a controller in `logic/controllers/` inheriting `HardwareController`
-2. Create a service in `logic/services/` managing connection lifecycle
-3. Create GUI pages in `gui/scripts/<hardware_name>/` inheriting `BaseHardwarePage`
-4. Register pages in `PAGE_FACTORIES` dict in `presenter.py`
+2. Create a service in `logic/services/` inheriting `BaseHardwareService`
+3. Create GUI pages in `gui/scripts/<device>/` inheriting `BaseHardwarePage`
+4. Register pages in `PAGE_FACTORIES` in `presenter.py`
 5. Add action descriptors in `populate_items.py`
 
-> See [Adding Hardware Guide](.agent/knowledge-base/adding-hardware.md) for detailed instructions.
+### Troubleshooting
 
-### Regenerating Qt Resources
-
-```bash
-./scripts/build_resources.sh
-```
-
----
-
-## Troubleshooting
-
-**`ModuleNotFoundError: No module named 'dpi'`** — Always run via `./run.sh`, not `python src/main.py` directly.
-
-**Qt Platform Plugin Error** — Install missing system libraries: `sudo apt install libxcb-cursor0 libxkbcommon-x11-0`
-
-**Permission Denied on scripts** — `chmod +x setup.sh run.sh scripts/*.sh`
-
-**Debug logging** — `LOG_LEVEL=DEBUG ./run.sh`
+| Problem | Solution |
+|:---|:---|
+| `ModuleNotFoundError: No module named 'dpi'` | Always run via `./run.sh`, not `python src/main.py` |
+| Qt platform plugin error | `sudo apt install libxcb-cursor0 libxkbcommon-x11-0` |
+| Permission denied on scripts | `chmod +x setup.sh run.sh scripts/*.sh` |
+| Debug logging | `LOG_LEVEL=DEBUG ./run.sh` |
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License &mdash; see [LICENSE](LICENSE) for details.

@@ -177,7 +177,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install coverage tool
-        run: uv pip install coverage
+        run: uv pip install --system coverage
 
       - name: Combine and report coverage
         run: |
