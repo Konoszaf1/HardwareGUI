@@ -92,6 +92,7 @@ class BaseHardwarePage(QWidget):
         self._btn_cancel = QPushButton("Cancel")
         self._btn_cancel.setAccessibleName("Cancel task")
         self._btn_cancel.hide()
+        self._cancel_connected = False
 
     # ---- Shared panel accessors ----
 
@@ -191,11 +192,10 @@ class BaseHardwarePage(QWidget):
             self._btn_cancel.setText("Cancel")
             self._btn_cancel.setEnabled(True)
             self._btn_cancel.show()
-            try:
+            if self._cancel_connected:
                 self._btn_cancel.clicked.disconnect(self._on_cancel_task)
-            except RuntimeError:
-                pass
             self._btn_cancel.clicked.connect(self._on_cancel_task)
+            self._cancel_connected = True
 
         signals.started.connect(lambda: self._log(f"Started: {task.name}"))
         signals.started.connect(
@@ -230,10 +230,9 @@ class BaseHardwarePage(QWidget):
         task_name = self._active_task.name if self._active_task else "task"
         if self._btn_cancel.parent() is not None:
             self._btn_cancel.hide()
-            try:
+            if self._cancel_connected:
                 self._btn_cancel.clicked.disconnect(self._on_cancel_task)
-            except RuntimeError:
-                pass
+                self._cancel_connected = False
         self._set_busy(False)
         self._active_task = None
         self._ensure_artifact_watcher()

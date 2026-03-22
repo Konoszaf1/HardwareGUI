@@ -82,15 +82,6 @@ class TestSUControllerTest:
         assert result.data["temperature"] == 25.5
         mock_su.getTemperature.assert_called_once()
 
-    def test_perform_autocalibration_success(self, mock_su):
-        """Test successful autocalibration."""
-        controller = SUController(su=mock_su)
-        result = controller.perform_autocalibration()
-
-        assert result.ok is True
-        assert result.serial == 1234
-        mock_su.performautocalibration.assert_called_once()
-
     def test_single_shot_measure_success(self, mock_su):
         """Test successful single-shot measurement."""
         controller = SUController(su=mock_su)

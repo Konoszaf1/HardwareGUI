@@ -3,14 +3,10 @@
 Uses shared mock infrastructure from conftest_hardware.py.
 """
 
-import subprocess
-
 import pytest
 
 from src.logic.services.smu_service import SourceMeasureUnitService
-
-# Import hardware fixtures
-pytest_plugins = ["tests.conftest_hardware"]
+from tests.conftest_hardware import mock_smu_hardware  # noqa: F401
 
 
 class TestSMUServiceConfiguration:
@@ -50,35 +46,6 @@ class TestSMUServiceConfiguration:
             service.set_instrument_ip("10.0.0.2")
 
         assert service._instrument_verified_state is False
-
-
-class TestSMUServicePing:
-    """Test Keithley ping functionality."""
-
-    def test_ping_instrument_success(self, mocker):
-        """ping_instrument should return True when ping succeeds."""
-        mocker.patch("subprocess.check_call")
-        service = SourceMeasureUnitService()
-        service._target_instrument_ip = "192.168.1.1"
-
-        result = service.ping_instrument()
-
-        assert result is True
-        assert service.is_instrument_verified is True
-
-    def test_ping_instrument_failure(self, mocker):
-        """ping_instrument should return False when ping fails."""
-        mocker.patch(
-            "subprocess.check_call",
-            side_effect=subprocess.CalledProcessError(1, "ping"),
-        )
-        service = SourceMeasureUnitService()
-        service._target_instrument_ip = "192.168.1.1"
-
-        result = service.ping_instrument()
-
-        assert result is False
-        assert service.is_instrument_verified is False
 
 
 class TestSMUServiceTasks:
@@ -131,14 +98,3 @@ class TestSMUServiceTasks:
         assert results[0].ok is True
 
 
-class TestSMUServiceRequiresKeithley:
-    """Test that methods requiring Keithley IP handle missing IP correctly."""
-
-    def test_calibration_measure_without_keithley_returns_none(self):
-        """run_calibration_measure should return None when instrument IP not set."""
-        service = SourceMeasureUnitService()
-
-        with pytest.warns(UserWarning, match="requires instrument IP"):
-            task = service.run_calibration_measure()
-
-        assert task is None

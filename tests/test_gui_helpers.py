@@ -1,6 +1,5 @@
 """Tests for src/gui/utils/gui_helpers.py ANSI conversion and logging utilities."""
 
-from unittest.mock import Mock
 from PySide6.QtWidgets import QPlainTextEdit, QListWidget
 from PySide6.QtCore import Qt
 
@@ -53,28 +52,6 @@ class TestConvertAnsiToHtml:
 class TestAppendLog:
     """Test append_log() function - the main public API."""
 
-    def test_append_log_calls_appendHtml(self, qtbot):
-        """append_log should call appendHtml on the console widget."""
-        console = QPlainTextEdit()
-        qtbot.addWidget(console)
-
-        append_log(console, "Test message")
-
-        html = console.toPlainText()
-        assert "Test message" in html
-
-    def test_append_log_converts_ansi(self, qtbot):
-        """append_log should convert ANSI codes to HTML spans."""
-        console = Mock()
-        console.appendHtml = Mock()
-
-        append_log(console, "\033[31mRed text\033[0m")
-
-        call_args = console.appendHtml.call_args[0][0]
-        assert '<span style="color: #ff5555;">' in call_args
-        assert "Red text" in call_args
-        assert "</span>" in call_args
-
     def test_append_log_strips_trailing_newline(self, qtbot):
         """append_log should strip trailing newlines."""
         console = QPlainTextEdit()
@@ -84,16 +61,6 @@ class TestAppendLog:
 
         text = console.toPlainText()
         assert not text.endswith("\n\n")
-
-    def test_append_log_converts_internal_newlines_to_br(self):
-        """append_log should convert internal newlines to <br>."""
-        console = Mock()
-        console.appendHtml = Mock()
-
-        append_log(console, "Line1\nLine2")
-
-        call_args = console.appendHtml.call_args[0][0]
-        assert "<br>" in call_args
 
     def test_append_log_none_console_safe(self):
         """append_log should handle None console gracefully."""

@@ -86,3 +86,21 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+qt_api = "pyside6"
+markers = [
+    "unit: Pure unit tests (no Qt event loop)",
+    "component: Qt widget/page tests (requires qtbot)",
+    "integration: Service+controller integration tests",
+    "gui: Full GUI integration tests",
+    "bdd: BDD acceptance tests",
+    "slow: Tests that take > 5 seconds",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:PySide6",
+    "ignore::DeprecationWarning:shiboken6",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--tb=short",
+]

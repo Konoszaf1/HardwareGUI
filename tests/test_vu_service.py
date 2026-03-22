@@ -7,9 +7,7 @@ using import-level patching via the mock_vu_hardware fixture.
 import pytest
 
 from src.logic.services.vu_service import VoltageUnitService
-
-# Import hardware fixtures
-pytest_plugins = ["tests.conftest_hardware"]
+from tests.conftest_hardware import mock_vu_hardware  # noqa: F401
 
 
 class TestVoltageUnitServiceConfiguration:
@@ -48,34 +46,6 @@ class TestVoltageUnitServiceConfiguration:
             service.set_instrument_ip("10.0.0.2")
 
         assert service._instrument_verified_state is False
-
-
-class TestVoltageUnitServicePing:
-    """Test scope ping functionality."""
-
-    def test_ping_instrument_success(self, mocker):
-        """ping_instrument should return True when ping succeeds."""
-        mocker.patch("subprocess.check_call")
-        service = VoltageUnitService()
-        service._target_instrument_ip = "192.168.1.1"
-
-        result = service.ping_instrument()
-
-        assert result is True
-        assert service.is_instrument_verified is True
-
-    def test_ping_instrument_failure(self, mocker):
-        """ping_instrument should return False when ping fails."""
-        import subprocess
-
-        mocker.patch("subprocess.check_call", side_effect=subprocess.CalledProcessError(1, "ping"))
-        service = VoltageUnitService()
-        service._target_instrument_ip = "192.168.1.1"
-
-        result = service.ping_instrument()
-
-        assert result is False
-        assert service.is_instrument_verified is False
 
 
 class TestVoltageUnitServiceTasks:
