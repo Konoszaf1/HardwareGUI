@@ -3,6 +3,8 @@
 Tests all SU hardware operations with mocked DPISamplingUnit.
 """
 
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -145,3 +147,134 @@ class TestSUControllerMCU:
 
         assert result.ok is True
         mock_mcu.su_set_trigger.assert_called_once()
+
+
+class TestSUControllerCalibration:
+    """Tests for SU calibration data management."""
+
+    def test_speed_presets_exist(self):
+        """All three speed presets should be defined."""
+        assert "fast" in SUController.SPEED_PRESETS
+        assert "normal" in SUController.SPEED_PRESETS
+        assert "precise" in SUController.SPEED_PRESETS
+        for preset in SUController.SPEED_PRESETS.values():
+            assert len(preset) == 3  # (decades, delta_log, delta_lin)
+
+    def test_get_calibration_status_empty_folder(self, mock_su):
+        """get_calibration_status should return empty list for empty folder."""
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = controller.get_calibration_status(tmpdir)
+            assert result == []
+
+    def test_get_calibration_status_with_h5_data(self, mock_su):
+        """get_calibration_status should parse HDF5 keys correctly."""
+        h5py = pytest.importorskip("h5py")
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a mock raw_data.h5 with SU-format keys
+            h5_path = Path(tmpdir) / "raw_data.h5"
+            with h5py.File(str(h5_path), "w") as f:
+                f.create_dataset("amp=AMP1 v_set=1.000e-03", data=[0.0])
+                f.create_dataset("amp=AMP1 v_set=2.000e-03", data=[0.0])
+                f.create_dataset("amp=AMP2 v_set=1.000e-03", data=[0.0])
+
+            result = controller.get_calibration_status(tmpdir)
+            assert len(result) == 2
+            amp1 = next(r for r in result if r["amp_channel"] == "AMP1")
+            amp2 = next(r for r in result if r["amp_channel"] == "AMP2")
+            assert amp1["measured"] is True
+            assert amp1["points"] == 2
+            assert amp2["points"] == 1
+            assert amp1["verified"] is False
+
+    def test_clear_calibration_file_raw(self, mock_su):
+        """clear_calibration_file should delete raw_data.h5."""
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_path = Path(tmpdir) / "raw_data.h5"
+            raw_path.touch()
+            assert raw_path.exists()
+
+            result = controller.clear_calibration_file(tmpdir, target="raw")
+            assert result.ok is True
+            assert not raw_path.exists()
+
+    def test_clear_calibration_file_verify(self, mock_su):
+        """clear_calibration_file should delete raw_data_verify.h5."""
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            verify_path = Path(tmpdir) / "raw_data_verify.h5"
+            verify_path.touch()
+
+            result = controller.clear_calibration_file(tmpdir, target="verify")
+            assert result.ok is True
+            assert not verify_path.exists()
+
+    def test_clear_fitted_data(self, mock_su):
+        """clear_fitted_data should remove aggregated, model, and figures."""
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "aggregated.h5").touch()
+            (Path(tmpdir) / "linear_model.cal").touch()
+            figures = Path(tmpdir) / "figures" / "ranges"
+            figures.mkdir(parents=True)
+            (figures / "amp_AMP1_analyze.png").touch()
+
+            result = controller.clear_fitted_data(tmpdir)
+            assert result.ok is True
+            assert not (Path(tmpdir) / "aggregated.h5").exists()
+            assert not (Path(tmpdir) / "linear_model.cal").exists()
+            assert not (Path(tmpdir) / "figures").exists()
+
+    def test_delete_calibration_ranges(self, mock_su):
+        """delete_calibration_ranges should remove matching HDF5 entries."""
+        h5py = pytest.importorskip("h5py")
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            h5_path = Path(tmpdir) / "raw_data.h5"
+            with h5py.File(str(h5_path), "w") as f:
+                f.create_dataset("amp=AMP1 v_set=1.000e-03", data=[0.0])
+                f.create_dataset("amp=AMP2 v_set=1.000e-03", data=[0.0])
+                f.create_dataset("amp=AMP3 v_set=1.000e-03", data=[0.0])
+
+            result = controller.delete_calibration_ranges(
+                tmpdir, ranges=["AMP1", "AMP3"], target="raw"
+            )
+            assert result.ok is True
+            assert result.data["deleted"] == 2
+
+            # Only AMP2 should remain
+            with h5py.File(str(h5_path), "r") as f:
+                remaining = list(f.keys())
+            assert len(remaining) == 1
+            assert "AMP2" in remaining[0]
+
+    def test_collect_analysis_plots(self, mock_su):
+        """_collect_analysis_plots should find analysis PNGs."""
+        controller = SUController(su=mock_su)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ranges_dir = Path(tmpdir) / "figures" / "ranges"
+            ranges_dir.mkdir(parents=True)
+            (ranges_dir / "amp_AMP1_analyze.png").touch()
+            (ranges_dir / "amp_AMP2_analyze.png").touch()
+            (ranges_dir / "other_file.png").touch()
+
+            plots = controller._collect_analysis_plots(tmpdir)
+            assert len(plots) == 2
+            assert any("AMP1" in p for p in plots)
+            assert any("AMP2" in p for p in plots)
+
+    def test_parse_calibrated_ranges(self):
+        """_parse_calibrated_ranges should extract amp_channel from filenames."""
+        paths = [
+            "/some/path/amp_AMP1_analyze.png",
+            "/some/path/amp_AMP2_analyze.png",
+            "/some/path/amp_AMP3_analyze.png",
+        ]
+        result = SUController._parse_calibrated_ranges(paths)
+        assert len(result) == 3
+        channels = [r["amp_channel"] for r in result]
+        assert "AMP1" in channels
+        assert "AMP2" in channels
+        assert "AMP3" in channels

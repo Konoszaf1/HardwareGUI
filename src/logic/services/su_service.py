@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
+from pathlib import Path
 
 from dpi import DPIMainControlUnit, DPISamplingUnit
 
@@ -146,6 +147,36 @@ class SamplingUnitService(BaseHardwareService):
         except Exception as e:
             logger.warning("Artifact collection failed: %s", e)
             return []
+
+    def _resolve_calibration_folder(self) -> str:
+        """Resolve the calibration folder path.
+
+        Priority: stored folder > serial-based > scan for existing folder.
+        Updates ``_calibration_folder`` when a valid folder is found.
+        """
+        if self._calibration_folder and Path(self._calibration_folder).exists():
+            return self._calibration_folder
+
+        serial = self._targets.su_serial or self._get_serial() or 0
+        if serial:
+            candidate = str(Path(f"calibration/su_calibration_sn{serial}").resolve())
+            if Path(candidate).exists():
+                self._calibration_folder = candidate
+                return candidate
+
+        # Scan for existing calibration folders
+        cal_dir = Path("calibration")
+        if cal_dir.exists():
+            folders = sorted(
+                cal_dir.glob("su_calibration_sn*"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            if folders:
+                self._calibration_folder = str(folders[-1].resolve())
+                return self._calibration_folder
+
+        # Fallback to constructed path
+        return str(Path(f"calibration/su_calibration_sn{serial or 'auto'}").resolve())
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -303,15 +334,28 @@ class SamplingUnitService(BaseHardwareService):
     def run_calibration_measure(
         self,
         verify_calibration: bool = False,
-    ) -> FunctionTask:
+        verify_only: bool = False,
+        amp_channels: list[str] | None = None,
+        speed_preset: str = "normal",
+        single_range: str | None = None,
+    ) -> FunctionTask | None:
         """Run calibration measurement with Keithley.
 
         Delegates to SUController.calibration_measure for the actual workflow.
         Does NOT pre-connect to SU - SUCalibrationMeasure creates its own
         connections to SMU, SU, and Keithley internally.
 
+        Emits data_chunk signals for live progress:
+        - {"type": "cal_range", ...} when a range starts/finishes
+        - {"type": "cal_point", ...} for each measured point
+
         Args:
             verify_calibration: If True, also verify the calibration.
+            verify_only: If True, skip raw measurement and only run
+                the verification pass (writes to raw_data_verify.h5).
+            amp_channels: AMP channels to measure (default: all from device).
+            speed_preset: "fast", "normal", or "precise".
+            single_range: If set, amp_channel for single range measurement.
 
         Returns:
             FunctionTask that runs calibration measurements, or None if
@@ -322,11 +366,8 @@ class SamplingUnitService(BaseHardwareService):
 
         def job():
             serial = self._targets.su_serial or self._get_serial() or "auto"
-            folder_path = f"calibration/su_calibration_sn{serial}"
+            folder_path = str(Path(f"calibration/su_calibration_sn{serial}").resolve())
             self._calibration_folder = folder_path
-
-            def on_point(data: dict) -> None:
-                task.signals.data_chunk.emit(data)
 
             # Keep a local controller ref, then release USB so
             # SUCalibrationMeasure can claim the devices itself
@@ -353,12 +394,30 @@ class SamplingUnitService(BaseHardwareService):
                 su_interface=self._targets.su_interface or None,
                 folder_path=folder_path,
                 verify_calibration=verify_calibration,
-                on_point_measured=on_point,
+                verify_only=verify_only,
+                amp_channels=amp_channels,
+                speed_preset=speed_preset,
+                single_range=single_range,
+                on_point_measured=lambda d: task.signals.data_chunk.emit(d),
+                on_range_started=lambda d: task.signals.data_chunk.emit(d),
+                cancel_event=task.cancel_event,
             )
+
+            # Reconnect so buttons stay enabled after measurement
+            try:
+                with self._hw_lock:
+                    self._ensure_connected()
+            except Exception as e:
+                logger.warning("Failed to reconnect after calibration: %s", e)
+
+            data = result.data or {}
             return {
                 "ok": result.ok,
                 "message": result.message,
                 "folder": folder_path,
+                "cancelled": data.get("cancelled", False),
+                "completed_ranges": data.get("completed_ranges"),
+                "total_ranges": data.get("total_ranges"),
                 "artifacts": self._safe_collect_artifacts(),
             }
 
@@ -368,8 +427,10 @@ class SamplingUnitService(BaseHardwareService):
     def run_calibration_fit(
         self,
         draw_plot: bool = True,
-        auto_calibrate: bool = True,
+        auto_calibrate: bool = False,
         model_type: str = "linear",
+        verify_calibration: bool = True,
+        single_range: str | None = None,
     ) -> FunctionTask:
         """Run calibration fit and optionally write to EEPROM.
 
@@ -379,6 +440,9 @@ class SamplingUnitService(BaseHardwareService):
             draw_plot: If True, generate calibration plots.
             auto_calibrate: If True, write calibration to EEPROM.
             model_type: Model to save ("linear" or "gp").
+            verify_calibration: If True, load verification data too.
+            single_range: If set, amp_channel to fit only that range
+                while preserving other ranges.
 
         Returns:
             FunctionTask that fits calibration data.
@@ -389,44 +453,122 @@ class SamplingUnitService(BaseHardwareService):
                 self._ensure_connected()
                 assert self._controller is not None
 
-                serial = self._get_serial()
-                folder_path = self._calibration_folder or f"calibration/su_calibration_sn{serial}"
+                folder_path = self._resolve_calibration_folder()
 
                 result = self._controller.calibration_fit(
                     folder_path=folder_path,
                     draw_plot=draw_plot,
                     auto_calibrate=auto_calibrate,
                     model_type=model_type,
+                    verify_calibration=verify_calibration,
+                    single_range=single_range,
                 )
+                data = result.data or {}
                 return {
                     "ok": result.ok,
                     "message": result.message,
+                    "analysis_plots": data.get("analysis_plots", []),
+                    "calibrated_ranges": data.get("calibrated_ranges", []),
                     "artifacts": self._safe_collect_artifacts(),
                 }
 
         return make_task("Calibration: Fit", job)
 
+    def run_load_calibration_status(self) -> FunctionTask | None:
+        """Load calibration status by scanning the calibration folder.
+
+        Returns:
+            FunctionTask with calibration_status list, or None if no folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SUController()
+            status = controller.get_calibration_status(folder)
+            return {"ok": True, "calibration_status": status}
+
+        return make_task("Load Cal Status", job)
+
+    def run_delete_calibration_ranges(
+        self,
+        ranges: list[str],
+        target: str = "raw",
+    ) -> FunctionTask | None:
+        """Delete specific ranges from calibration HDF5 files.
+
+        Args:
+            ranges: List of amp_channel names to delete.
+            target: "raw", "verify", or "both".
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SUController()
+            result = controller.delete_calibration_ranges(folder, ranges, target)
+            return {"ok": result.ok, "deleted": (result.data or {}).get("deleted", 0)}
+
+        return make_task("Delete Cal Data", job)
+
+    def run_clear_calibration_file(self, target: str = "raw") -> FunctionTask | None:
+        """Delete an entire calibration HDF5 file.
+
+        Args:
+            target: "raw" or "verify".
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SUController()
+            result = controller.clear_calibration_file(folder, target)
+            return {"ok": result.ok, "file": (result.data or {}).get("file", "")}
+
+        return make_task("Clear Cal File", job)
+
+    def run_clear_fitted_data(self) -> FunctionTask | None:
+        """Delete fitted/analysis calibration artifacts.
+
+        Removes aggregated HDF5 files, model files, and figures directory.
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SUController()
+            result = controller.clear_fitted_data(folder)
+            return {
+                "ok": result.ok,
+                "deleted": (result.data or {}).get("deleted", []),
+            }
+
+        return make_task("Clear Fitted Data", job)
+
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
-        """Run calibration fit (called by calibration page Run Calibration button).
+        """Run calibration fit (called by calibration page Run Calibration button)."""
+        return self.run_calibration_fit(
+            draw_plot=True,
+            auto_calibrate=False,
+            model_type=model,
+        )
 
-        Args:
-            model: Calibration model type ("linear" or "gp").
-
-        Returns:
-            FunctionTask that fits calibration data.
-        """
-        return self.run_calibration_fit(draw_plot=True, auto_calibrate=True, model_type=model)
-
-    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask:
-        """Verify calibration by re-measuring (called by calibration page Verify button).
-
-        Args:
-            num_points: Number of verification points (informational).
-
-        Returns:
-            FunctionTask that verifies calibration.
-        """
-        return self.run_calibration_measure(verify_calibration=True)
+    def run_calibration_verify(self, num_points: int = 10) -> FunctionTask | None:
+        """Verify calibration by re-measuring (verification pass only)."""
+        return self.run_calibration_measure(verify_only=True)
 
     def run_save_config(self) -> FunctionTask:
         """Save current channel configuration to device EEPROM.
