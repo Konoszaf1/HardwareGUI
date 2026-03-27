@@ -33,12 +33,13 @@ ReferenceType = Literal["GND", "VSMU"]
 class _ProgressAdapter:
     """Mimics tqdm interface to redirect measurement progress to callbacks."""
 
-    def __init__(self, total, scm, on_point, on_range):
+    def __init__(self, total, scm, on_point, on_range, verify=False):
         self.total = total
         self.n = 0
         self._scm = scm
         self._on_point = on_point
         self._on_range = on_range
+        self._verify = verify
         self._current_desc = ""
         self._range_points = 0
         self._range_start = 0.0
@@ -54,6 +55,7 @@ class _ProgressAdapter:
                     "vsmu": df.attrs.get("vsmu_mode"),
                     "pa": df.attrs.get("pa_channel"),
                     "iv": df.attrs.get("iv_channel"),
+                    "verify": self._verify,
                     "x": float(df.attrs.get("i_ref", 0)),
                     "y": float(df["current"].mean()),
                     "i_set": float(df.attrs.get("i_set", 0)),
@@ -79,6 +81,7 @@ class _ProgressAdapter:
                     "type": "cal_range",
                     "status": "done",
                     "desc": self._current_desc,
+                    "verify": self._verify,
                     "points": self._range_points,
                     "duration": elapsed,
                 }
@@ -91,6 +94,7 @@ class _ProgressAdapter:
                 running_data = {
                     "type": "cal_range",
                     "status": "running",
+                    "verify": self._verify,
                 }
                 running_data.update(self._parse_desc(desc))
                 if "pa" in running_data:
@@ -103,6 +107,7 @@ class _ProgressAdapter:
                 "type": "cal_range",
                 "status": "done",
                 "desc": self._current_desc,
+                "verify": self._verify,
                 "points": self._range_points,
                 "duration": elapsed,
             }
@@ -647,21 +652,35 @@ class SMUController(HardwareController):
 
                 if single_range:
                     pa_ch, iv_ch = single_range
-                    print(f"  Range: PA={pa_ch}, IV={iv_ch}")
+                    vsmu_val = vsmu_mode if vsmu_mode is not None else False
+                    print(f"  Range: PA={pa_ch}, IV={iv_ch}, VSMU={vsmu_val}")
+                    try:
+                        total = scm._calculate_total_measurements(
+                            [pa_ch],
+                            [iv_ch],
+                            vsmu_val,
+                            verify,
+                            current_values=current_values,
+                        )
+                    except Exception:
+                        total = len(current_values) if current_values is not None else 0
                     adapter = _ProgressAdapter(
-                        0,
+                        total,
                         scm,
                         on_point_measured,
                         on_range_started,
+                        verify=verify,
                     )
+                    adapter.set_description(f"PA: {pa_ch}, IV: {iv_ch}, VSMU: {vsmu_val}")
                     scm.measure_single_range(
                         pa_ch,
                         iv_ch,
-                        vsmu_mode=vsmu_mode if vsmu_mode is not None else False,
+                        vsmu_mode=vsmu_val,
                         verify_calibration=verify,
                         current_values=current_values,
                         progress_bar=adapter,
                     )
+                    adapter.close()
                     completed_ranges += 1
                     scm.save_measurement(
                         folder_path=save_base,
@@ -691,6 +710,7 @@ class SMUController(HardwareController):
                         scm,
                         on_point_measured,
                         on_range_started,
+                        verify=verify,
                     )
 
                     for pa, iv, vsmu_val in range_combos:
@@ -825,7 +845,21 @@ class SMUController(HardwareController):
                 except Exception as e:
                     print(f"  No existing model found ({e}), starting fresh.")
 
-                # Ensure key exists in model dict
+                # Verify data exists for this key
+                if key not in (smf.data or {}):
+                    available = list((smf.data or {}).keys())
+                    print(f"  ERROR: No data for key {key}")
+                    print(f"  Available keys: {available}")
+                    return OperationResult(
+                        ok=False,
+                        message=f"No measurement data for vsmu={key[0]}, "
+                        f"pa={key[1]}, iv={key[2]}. "
+                        f"Available: {available}",
+                    )
+
+                # Ensure model dict exists and key is present
+                if smf.model is None:
+                    smf.model = {}
                 if key not in smf.model:
                     smf.model[key] = {}
 
@@ -916,6 +950,10 @@ class SMUController(HardwareController):
             return []
         return sorted(str(p) for p in ranges_dir.glob("*_analyze.png"))
 
+    # Regex matching the HDF5 key format produced by DPI's save_measurement:
+    #   vsmu=False pa=pach2 iv=ivch3 i_set=-1.000e-09
+    _H5_KEY_RE = re.compile(r"vsmu=(True|False)\s+pa=(\w+)\s+iv=(\w+)")
+
     def get_calibration_status(self, folder_path: str) -> list[dict]:
         """Scan calibration folder and return per-range status.
 
@@ -924,37 +962,33 @@ class SMUController(HardwareController):
         which ranges are measured/verified/calibrated.
 
         Returns:
-            List of dicts with keys: vsmu, pa, iv, measured, verified, calibrated.
+            List of dicts with keys: vsmu, pa, iv, measured, verified,
+            calibrated, points, verify_points.
         """
-        import re
+        from collections import defaultdict
 
         folder = Path(folder_path)
-        measured_keys: set[tuple[bool, str, str]] = set()
-        verified_keys: set[tuple[bool, str, str]] = set()
         calibrated_keys: set[tuple[bool, str, str]] = set()
 
-        def _scan_h5(filepath: Path) -> set[tuple[bool, str, str]]:
-            keys: set[tuple[bool, str, str]] = set()
+        def _scan_h5(filepath: Path) -> dict[tuple[bool, str, str], int]:
+            counts: dict[tuple[bool, str, str], int] = defaultdict(int)
             if not filepath.exists():
-                return keys
+                return counts
             try:
                 import h5py
 
                 with h5py.File(str(filepath), "r") as f:
                     for key in f:
-                        m = re.match(
-                            r"\(?(True|False),\s*'?(\w+)'?,\s*'?(\w+)'?\)?",
-                            key,
-                        )
+                        m = self._H5_KEY_RE.search(key)
                         if m:
                             vsmu = m.group(1) == "True"
-                            keys.add((vsmu, m.group(2), m.group(3)))
+                            counts[(vsmu, m.group(2), m.group(3))] += 1
             except Exception as e:
                 print(f"  Warning: could not read {filepath.name}: {e}")
-            return keys
+            return counts
 
-        measured_keys = _scan_h5(folder / "raw_data.h5")
-        verified_keys = _scan_h5(folder / "raw_data_verify.h5")
+        measured_counts = _scan_h5(folder / "raw_data.h5")
+        verified_counts = _scan_h5(folder / "raw_data_verify.h5")
 
         # Check analysis plots for calibrated ranges
         analysis_plots = self._collect_analysis_plots(folder_path)
@@ -962,20 +996,144 @@ class SMUController(HardwareController):
             calibrated_keys.add((info.get("vsmu", False), info.get("pa", ""), info.get("iv", "")))
 
         # Merge into unified list
-        all_keys = measured_keys | verified_keys | calibrated_keys
+        all_keys = set(measured_counts) | set(verified_counts) | calibrated_keys
         ranges = []
         for vsmu, pa, iv in sorted(all_keys):
+            key = (vsmu, pa, iv)
             ranges.append(
                 {
                     "vsmu": vsmu,
                     "pa": pa,
                     "iv": iv,
-                    "measured": (vsmu, pa, iv) in measured_keys,
-                    "verified": (vsmu, pa, iv) in verified_keys,
-                    "calibrated": (vsmu, pa, iv) in calibrated_keys,
+                    "measured": key in measured_counts,
+                    "verified": key in verified_counts,
+                    "calibrated": key in calibrated_keys,
+                    "points": measured_counts.get(key, 0),
+                    "verify_points": verified_counts.get(key, 0),
                 }
             )
         return ranges
+
+    def delete_calibration_ranges(
+        self,
+        folder_path: str,
+        ranges: list[tuple[bool, str, str]],
+        target: str = "raw",
+    ) -> OperationResult:
+        """Delete specific ranges from calibration HDF5 files.
+
+        Args:
+            folder_path: Calibration folder.
+            ranges: List of (vsmu, pa, iv) tuples to delete.
+            target: "raw", "verify", or "both".
+
+        Returns:
+            OperationResult with deleted count.
+        """
+        try:
+            import h5py
+
+            targets_set = set(ranges)
+            filenames = []
+            if target in ("raw", "both"):
+                filenames.append("raw_data.h5")
+            if target in ("verify", "both"):
+                filenames.append("raw_data_verify.h5")
+
+            total_deleted = 0
+            for fname in filenames:
+                fpath = Path(folder_path) / fname
+                if not fpath.exists():
+                    continue
+                with h5py.File(str(fpath), "a") as f:
+                    keys_to_delete = []
+                    for key in f:
+                        m = self._H5_KEY_RE.search(key)
+                        if m:
+                            vsmu = m.group(1) == "True"
+                            if (vsmu, m.group(2), m.group(3)) in targets_set:
+                                keys_to_delete.append(key)
+                    for key in keys_to_delete:
+                        del f[key]
+                    total_deleted += len(keys_to_delete)
+                print(f"  Deleted {len(keys_to_delete)} entries from {fname}")
+
+            print(f"-- Deleted {total_deleted} total entries --")
+            return OperationResult(ok=True, data={"deleted": total_deleted})
+        except Exception as e:
+            logger.error("Delete calibration ranges failed: %s", e)
+            return OperationResult(ok=False, message=str(e))
+
+    def clear_calibration_file(
+        self,
+        folder_path: str,
+        target: str = "raw",
+    ) -> OperationResult:
+        """Delete an entire calibration HDF5 file.
+
+        Args:
+            folder_path: Calibration folder.
+            target: "raw" or "verify".
+
+        Returns:
+            OperationResult with success status.
+        """
+        try:
+            fname = "raw_data_verify.h5" if target == "verify" else "raw_data.h5"
+            fpath = Path(folder_path) / fname
+            if fpath.exists():
+                fpath.unlink()
+                print(f"  Deleted {fname}")
+            else:
+                print(f"  {fname} does not exist")
+            return OperationResult(ok=True, data={"file": fname})
+        except Exception as e:
+            logger.error("Clear calibration file failed: %s", e)
+            return OperationResult(ok=False, message=str(e))
+
+    def clear_fitted_data(self, folder_path: str) -> OperationResult:
+        """Delete fitted/analysis calibration artifacts.
+
+        Removes aggregated HDF5 files, model files (.cal), and
+        the figures directory (analysis plots + overview).
+
+        Args:
+            folder_path: Calibration folder.
+
+        Returns:
+            OperationResult with list of deleted items.
+        """
+        import shutil
+
+        folder = Path(folder_path)
+        deleted = []
+        try:
+            # Aggregated data files
+            for name in ("aggregated.h5", "aggregated_verify.h5"):
+                p = folder / name
+                if p.exists():
+                    p.unlink()
+                    deleted.append(name)
+                    print(f"  Deleted {name}")
+
+            # Model files (linear_model.cal, gp_model.cal, etc.)
+            for cal_file in folder.glob("*.cal"):
+                cal_file.unlink()
+                deleted.append(cal_file.name)
+                print(f"  Deleted {cal_file.name}")
+
+            # Figures directory (ranges plots + overview HTML)
+            figures_dir = folder / "figures"
+            if figures_dir.exists():
+                shutil.rmtree(figures_dir)
+                deleted.append("figures/")
+                print("  Deleted figures/")
+
+            print(f"-- Cleared {len(deleted)} fitted data item(s) --")
+            return OperationResult(ok=True, data={"deleted": deleted})
+        except Exception as e:
+            logger.error("Clear fitted data failed: %s", e)
+            return OperationResult(ok=False, message=str(e))
 
     @staticmethod
     def _parse_calibrated_ranges(plot_paths: list[str]) -> list[dict]:

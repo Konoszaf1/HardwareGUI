@@ -135,6 +135,35 @@ class LivePlotWidget(QWidget):
         self._figure.tight_layout(pad=1.5)
         self._canvas.draw_idle()
 
+    def remove_series(self, name: str) -> None:
+        """Remove a single named series from the plot."""
+        if name in self._series:
+            self._series[name]["line"].remove()
+            del self._series[name]
+            self._refresh_legend()
+            self._ax.relim()
+            self._ax.autoscale_view()
+            self._canvas.draw_idle()
+
+    def set_series_visible(self, names: set[str] | None = None) -> None:
+        """Show only the given series, hiding all others.
+
+        Args:
+            names: Set of series names to show. None or empty shows all.
+        """
+        show_all = not names
+        for sname, s in self._series.items():
+            s["line"].set_visible(show_all or (names is not None and sname in names))
+        self._refresh_legend()
+        self._ax.relim()
+        self._ax.autoscale_view()
+        self._recompute_limits(names)
+        self._canvas.draw_idle()
+
+    def series_names(self) -> list[str]:
+        """Return the names of all series in insertion order."""
+        return list(self._series.keys())
+
     def clear(self) -> None:
         """Remove all series and reset the plot."""
         self._ax.cla()
@@ -146,6 +175,48 @@ class LivePlotWidget(QWidget):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _refresh_legend(self) -> None:
+        """Rebuild the legend showing only visible series."""
+        visible = [(s["line"], n) for n, s in self._series.items() if s["line"].get_visible()]
+        legend = self._ax.get_legend()
+        if visible:
+            lines, labels = zip(*visible, strict=False)
+            self._ax.legend(
+                lines,
+                labels,
+                loc="upper right",
+                fontsize=8,
+                facecolor="#333333",
+                edgecolor="#555555",
+                labelcolor="#cccccc",
+            )
+        elif legend:
+            legend.remove()
+
+    def _recompute_limits(self, visible_names: set[str] | None = None) -> None:
+        """Recompute axis limits based on visible series only.
+
+        ``relim()`` only considers visible artists in newer matplotlib,
+        but to be safe we set limits manually when filtering.
+        """
+        if not visible_names:
+            # Show-all mode — let autoscale handle it
+            self._ax.autoscale_view()
+            return
+        xs, ys = [], []
+        for name in visible_names:
+            s = self._series.get(name)
+            if s and s["x"]:
+                xs.extend(s["x"])
+                ys.extend(s["y"])
+        if xs and ys:
+            xmin, xmax = min(xs), max(xs)
+            ymin, ymax = min(ys), max(ys)
+            xpad = (xmax - xmin) * 0.05 or 1e-12
+            ypad = (ymax - ymin) * 0.05 or 1e-12
+            self._ax.set_xlim(xmin - xpad, xmax + xpad)
+            self._ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def _style_axes(self) -> None:
         """Apply dark theme styling to axes."""
@@ -190,11 +261,5 @@ class LivePlotWidget(QWidget):
                 alpha=alpha,
                 label=name,
             )
-        self._ax.legend(
-            loc="upper right",
-            fontsize=8,
-            facecolor="#333333",
-            edgecolor="#555555",
-            labelcolor="#cccccc",
-        )
+        self._refresh_legend()
         self._series[name] = {"x": [], "y": [], "line": line}

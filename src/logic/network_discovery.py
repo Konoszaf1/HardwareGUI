@@ -205,8 +205,20 @@ def discover_instruments(
                 if progress_callback:
                     progress_callback(f"No VXI-11 found, scanning SCPI port {SCPI_RAW_PORT}...")
                 results.extend(_scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT)))
+        elif instrument_type == "keithley":
+            # Keithley 2636B uses VXI-11, older models use SCPI port 5025
+            if progress_callback:
+                progress_callback(f"Scanning {subnet}.0/24 on port {SCPI_RAW_PORT}...")
+            results.extend(_scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT)))
+
+            if progress_callback:
+                progress_callback(f"Scanning {subnet}.0/24 for VXI-11 instruments...")
+            vxi_results = _scan_subnet(hosts, _scan_host_vxi11)
+            # Avoid duplicates (same IP already found via SCPI)
+            found_ips = {r.ip for r in results}
+            results.extend(r for r in vxi_results if r.ip not in found_ips)
         else:
-            # SCPI / Keithley scan
+            # Generic SCPI scan
             if progress_callback:
                 progress_callback(f"Scanning {subnet}.0/24 on port {SCPI_RAW_PORT}...")
             results.extend(_scan_subnet(hosts, lambda ip: _scan_host_scpi(ip, SCPI_RAW_PORT)))

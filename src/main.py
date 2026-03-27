@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 import qt_material  # isort: skip
 
+import src.icons_rc as icons_rc  # noqa: F401  # Register Qt resources (:/icons/...)
 from src.logging_config import get_logger, setup_logging
 
 

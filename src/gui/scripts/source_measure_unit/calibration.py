@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QTableWidget,
@@ -35,10 +36,11 @@ _SPEED_MAP = {"Fast": "fast", "Normal": "normal", "Precise": "precise"}
 _COL_VSMU = 0
 _COL_PA = 1
 _COL_IV = 2
-_COL_MEASURED = 3
-_COL_VERIFIED = 4
-_COL_FITTED = 5
-_COL_STATUS = 6
+_COL_POINTS = 3
+_COL_MEASURED = 4
+_COL_VERIFIED = 5
+_COL_FITTED = 6
+_COL_STATUS = 7
 
 
 def _status_item(text: str, color: Qt.GlobalColor) -> QTableWidgetItem:
@@ -142,7 +144,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         sr_layout.addWidget(self.cb_single_pa)
         sr_layout.addWidget(QLabel("IV:"))
         self.cb_single_iv = QComboBox()
-        self.cb_single_iv.addItems([f"ivch{i}" for i in range(1, 10)])
+        self.cb_single_iv.addItems([f"ivch{i}" for i in range(2, 9)])
         self._configure_input(self.cb_single_iv)
         sr_layout.addWidget(self.cb_single_iv)
         sr_layout.addStretch()
@@ -216,7 +218,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         fsr_layout.addWidget(self.cb_fit_pa)
         fsr_layout.addWidget(QLabel("IV:"))
         self.cb_fit_iv = QComboBox()
-        self.cb_fit_iv.addItems([f"ivch{i}" for i in range(1, 10)])
+        self.cb_fit_iv.addItems([f"ivch{i}" for i in range(2, 9)])
         self._configure_input(self.cb_fit_iv)
         fsr_layout.addWidget(self.cb_fit_iv)
         fsr_layout.addStretch()
@@ -242,9 +244,18 @@ class SMUCalibrationPage(BaseHardwarePage):
         ranges_layout.addWidget(self._overview_summary)
 
         self.ranges_table = QTableWidget()
-        self.ranges_table.setColumnCount(7)
+        self.ranges_table.setColumnCount(8)
         self.ranges_table.setHorizontalHeaderLabels(
-            ["VSMU", "PA Channel", "IV Channel", "Measured", "Verified", "Fitted", "Status"]
+            [
+                "VSMU",
+                "PA Channel",
+                "IV Channel",
+                "Points",
+                "Measured",
+                "Verified",
+                "Fitted",
+                "Status",
+            ]
         )
         header = self.ranges_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -261,6 +272,27 @@ class SMUCalibrationPage(BaseHardwarePage):
         self._configure_input(self.btn_refresh, min_width=100)
         self.btn_refresh.clicked.connect(self._load_calibration_status)
         ranges_btn_layout.addWidget(self.btn_refresh)
+
+        self.btn_delete_selected = QPushButton("Delete Selected")
+        self._configure_input(self.btn_delete_selected, min_width=120)
+        self.btn_delete_selected.clicked.connect(self._on_delete_selected)
+        ranges_btn_layout.addWidget(self.btn_delete_selected)
+
+        self.btn_clear_raw = QPushButton("Clear Raw Data")
+        self._configure_input(self.btn_clear_raw, min_width=120)
+        self.btn_clear_raw.clicked.connect(self._on_clear_raw)
+        ranges_btn_layout.addWidget(self.btn_clear_raw)
+
+        self.btn_clear_verify = QPushButton("Clear Verify Data")
+        self._configure_input(self.btn_clear_verify, min_width=130)
+        self.btn_clear_verify.clicked.connect(self._on_clear_verify)
+        ranges_btn_layout.addWidget(self.btn_clear_verify)
+
+        self.btn_clear_fitted = QPushButton("Clear Fitted Data")
+        self._configure_input(self.btn_clear_fitted, min_width=130)
+        self.btn_clear_fitted.clicked.connect(self._on_clear_fitted)
+        ranges_btn_layout.addWidget(self.btn_clear_fitted)
+
         ranges_btn_layout.addStretch()
         ranges_layout.addLayout(ranges_btn_layout)
 
@@ -270,6 +302,18 @@ class SMUCalibrationPage(BaseHardwarePage):
         plot_box = self._create_group_box("Live Plot", min_height=250, expanding=True)
         plot_layout = QVBoxLayout(plot_box)
         plot_layout.setContentsMargins(12, 18, 12, 12)
+
+        # Range selector above the plot
+        plot_selector_layout = QHBoxLayout()
+        plot_selector_layout.addWidget(QLabel("View:"))
+        self.cb_plot_range = QComboBox()
+        self._configure_input(self.cb_plot_range, min_width=200)
+        self.cb_plot_range.addItem("Current")
+        self.cb_plot_range.addItem("All")
+        self.cb_plot_range.currentIndexChanged.connect(self._on_plot_range_changed)
+        plot_selector_layout.addWidget(self.cb_plot_range)
+        plot_selector_layout.addStretch()
+        plot_layout.addLayout(plot_selector_layout)
 
         self.plot_widget = LivePlotWidget()
         self.plot_widget.set_labels("Calibration", "I_ref / A", "I_meas / A")
@@ -300,6 +344,10 @@ class SMUCalibrationPage(BaseHardwarePage):
             self.btn_verify_only,
             self.btn_run_fit,
             self.btn_refresh,
+            self.btn_delete_selected,
+            self.btn_clear_raw,
+            self.btn_clear_verify,
+            self.btn_clear_fitted,
         ]
 
         # ==== Signals ====
@@ -313,6 +361,8 @@ class SMUCalibrationPage(BaseHardwarePage):
         # State
         self._row_keys: dict[str, int] = {}  # "vsmu|pa|iv" -> row index
         self._range_points: dict[str, int] = {}  # live point counts per range
+        self._active_series: set[str] = set()  # currently active series names
+        self._completed_series: list[str] = []  # finished series in order
         self._loading_status = False
         self._measuring = False
 
@@ -449,6 +499,14 @@ class SMUCalibrationPage(BaseHardwarePage):
             "I_ref / A",
             "I_meas / A",
         )
+        # Reset plot range selector
+        self._completed_series.clear()
+        self._active_series.clear()
+        self.cb_plot_range.blockSignals(True)
+        while self.cb_plot_range.count() > 2:  # keep "Current" and "All"
+            self.cb_plot_range.removeItem(1)
+        self.cb_plot_range.setCurrentIndex(0)  # "Current"
+        self.cb_plot_range.blockSignals(False)
         # Clear live status column but keep overview data
         self._clear_status_column()
         self._range_points.clear()
@@ -547,6 +605,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         self.ranges_table.setItem(row, _COL_VSMU, QTableWidgetItem(str(vsmu)))
         self.ranges_table.setItem(row, _COL_PA, QTableWidgetItem(pa))
         self.ranges_table.setItem(row, _COL_IV, QTableWidgetItem(iv))
+        self.ranges_table.setItem(row, _COL_POINTS, QTableWidgetItem(""))
         # Persistent columns default to "--"
         for col in (_COL_MEASURED, _COL_VERIFIED, _COL_FITTED):
             self.ranges_table.setItem(
@@ -563,7 +622,31 @@ class SMUCalibrationPage(BaseHardwarePage):
         for row in range(self.ranges_table.rowCount()):
             self.ranges_table.setItem(row, _COL_STATUS, QTableWidgetItem(""))
 
+    # ---- Plot range selector ----
+
+    def _on_plot_range_changed(self) -> None:
+        """Handle plot range combo box selection."""
+        text = self.cb_plot_range.currentText()
+        if text == "Current":
+            # Show only the active series (or all if nothing active)
+            if self._active_series:
+                self.plot_widget.set_series_visible(self._active_series)
+            else:
+                self.plot_widget.set_series_visible(None)
+        elif text == "All":
+            self.plot_widget.set_series_visible(None)
+        else:
+            # Specific completed series
+            self.plot_widget.set_series_visible({text})
+
     # ---- Live data handling ----
+
+    @staticmethod
+    def _series_name(vsmu: bool, pa: str, iv: str, verify: bool = False) -> str:
+        """Build a unique plot series name for a range + phase."""
+        prefix = "V" if vsmu else "G"
+        suffix = " (verify)" if verify else ""
+        return f"{prefix} {pa} {iv}{suffix}"
 
     def _on_cal_chunk(self, data) -> None:
         if not isinstance(data, dict):
@@ -575,15 +658,19 @@ class SMUCalibrationPage(BaseHardwarePage):
             vsmu = data.get("vsmu", False)
             pa = data.get("pa", "?")
             iv = data.get("iv", "?")
-            series = f"{'V' if vsmu else 'G'} {pa} {iv}"
+            verify = data.get("verify", False)
+            series = self._series_name(vsmu, pa, iv, verify)
             self.plot_widget.append_point(series, data["x"], data["y"])
 
             # Update sticky progress label
             idx = data.get("point_index", 0)
             total = data.get("total_points", 0)
+            phase = "verify" if verify else "measure"
             if total > 0:
                 pct = idx * 100 // total
-                self._progress_label.setText(f"Progress: {idx}/{total} points ({pct}%)")
+                self._progress_label.setText(f"Progress ({phase}): {idx}/{total} points ({pct}%)")
+            else:
+                self._progress_label.setText(f"Progress ({phase}): {idx} points")
 
             # Update Status column with point count
             key = self._range_key(vsmu, pa, iv)
@@ -593,18 +680,27 @@ class SMUCalibrationPage(BaseHardwarePage):
                 row = self._row_keys[key]
                 status_item = self.ranges_table.item(row, _COL_STATUS)
                 if status_item:
-                    status_item.setText(f"Running ({pts} pts)")
+                    label = "Verifying" if verify else "Measuring"
+                    status_item.setText(f"{label} ({pts} pts)")
 
         elif chunk_type == "cal_range":
             status = data.get("status", "")
             pa = data.get("pa", "")
             iv = data.get("iv", "")
             vsmu = data.get("vsmu", False)
+            verify = data.get("verify", False)
             key = self._range_key(vsmu, pa, iv)
+            series = self._series_name(vsmu, pa, iv, verify)
 
             if status == "running":
+                # Hide previous series, show only the new active one
+                self._active_series = {series}
+                if self.cb_plot_range.currentText() == "Current":
+                    self.plot_widget.set_series_visible(self._active_series)
+
                 row = self._find_or_insert_row(vsmu, pa, iv)
-                item = _status_item("Running", Qt.GlobalColor.yellow)
+                label = "Verifying" if verify else "Measuring"
+                item = _status_item(label, Qt.GlobalColor.yellow)
                 self.ranges_table.setItem(row, _COL_STATUS, item)
                 self._range_points[key] = 0
                 self.ranges_table.scrollToItem(
@@ -612,11 +708,20 @@ class SMUCalibrationPage(BaseHardwarePage):
                 )
 
             elif status == "done":
+                # Add completed series to the dropdown
+                if series not in self._completed_series:
+                    self._completed_series.append(series)
+                    # Insert before "All" (which is always the last item)
+                    insert_idx = self.cb_plot_range.count() - 1
+                    self.cb_plot_range.insertItem(insert_idx, series)
+
                 if key in self._row_keys:
                     row = self._row_keys[key]
                     pts = data.get("points", 0)
                     duration = data.get("duration")
                     text = "Done"
+                    if verify:
+                        text = "Verified"
                     if pts:
                         text += f" ({pts} pts"
                         if duration is not None:
@@ -626,6 +731,88 @@ class SMUCalibrationPage(BaseHardwarePage):
                         text += f" ({duration:.1f}s)"
                     item = _status_item(text, Qt.GlobalColor.green)
                     self.ranges_table.setItem(row, _COL_STATUS, item)
+
+    # ---- Data management ----
+
+    def _get_selected_ranges(self) -> list[tuple[bool, str, str]]:
+        """Collect (vsmu, pa, iv) tuples from selected table rows."""
+        selected = []
+        for row in range(self.ranges_table.rowCount()):
+            if self.ranges_table.selectionModel().isRowSelected(row):
+                vsmu_item = self.ranges_table.item(row, _COL_VSMU)
+                pa_item = self.ranges_table.item(row, _COL_PA)
+                iv_item = self.ranges_table.item(row, _COL_IV)
+                if vsmu_item and pa_item and iv_item:
+                    vsmu = vsmu_item.text() == "True"
+                    selected.append((vsmu, pa_item.text(), iv_item.text()))
+        return selected
+
+    def _on_delete_selected(self) -> None:
+        """Delete selected ranges from raw calibration data."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+        ranges = self._get_selected_ranges()
+        if not ranges:
+            self._log("Select rows in the table first (click to select, Ctrl+click for multiple).")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Delete Calibration Data",
+            f"Delete {len(ranges)} selected range(s) from raw and verify data?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._log(f"Deleting {len(ranges)} range(s)...")
+        task = self.service.run_delete_calibration_ranges(ranges, target="both")
+        if task:
+            self._start_task(task)
+
+    def _on_clear_raw(self) -> None:
+        """Clear the entire raw_data.h5 file."""
+        self._confirm_and_clear("raw")
+
+    def _on_clear_verify(self) -> None:
+        """Clear the entire raw_data_verify.h5 file."""
+        self._confirm_and_clear("verify")
+
+    def _on_clear_fitted(self) -> None:
+        """Clear fitted/analysis data (aggregated, models, figures)."""
+        if not self.service:
+            self._log("Service not available.")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Clear Fitted Data",
+            "Delete all fitted data (aggregated files, model files, and analysis plots)?\n"
+            "This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._log("Clearing fitted data...")
+        task = self.service.run_clear_fitted_data()
+        if task:
+            self._start_task(task)
+
+    def _confirm_and_clear(self, target: str) -> None:
+        if not self.service:
+            self._log("Service not available.")
+            return
+        label = "raw_data.h5" if target == "raw" else "raw_data_verify.h5"
+        reply = QMessageBox.question(
+            self,
+            "Clear Calibration File",
+            f"Delete {label}? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._log(f"Clearing {label}...")
+        task = self.service.run_clear_calibration_file(target)
+        if task:
+            self._start_task(task)
 
     # ---- Calibration status (disk) ----
 
@@ -654,6 +841,7 @@ class SMUCalibrationPage(BaseHardwarePage):
         n_measured = 0
         n_verified = 0
         n_fitted = 0
+        total_points = 0
 
         for info in ranges:
             vsmu = info.get("vsmu", False)
@@ -662,8 +850,20 @@ class SMUCalibrationPage(BaseHardwarePage):
             measured = info.get("measured", False)
             verified = info.get("verified", False)
             calibrated = info.get("calibrated", False)
+            pts = info.get("points", 0)
+            vpts = info.get("verify_points", 0)
 
             row = self._find_or_insert_row(vsmu, pa, iv)
+
+            # Point counts
+            pts_parts = []
+            if pts:
+                pts_parts.append(str(pts))
+            if vpts:
+                pts_parts.append(f"v:{vpts}")
+            pts_text = " / ".join(pts_parts) if pts_parts else "--"
+            self.ranges_table.setItem(row, _COL_POINTS, QTableWidgetItem(pts_text))
+            total_points += pts + vpts
 
             if measured:
                 self.ranges_table.setItem(
@@ -692,7 +892,7 @@ class SMUCalibrationPage(BaseHardwarePage):
             self._overview_summary.setText("No calibration data found")
             return
 
-        parts = [f"{total} ranges"]
+        parts = [f"{total} ranges", f"{total_points} points"]
         if n_measured:
             parts.append(f"{n_measured} measured")
         if n_verified:

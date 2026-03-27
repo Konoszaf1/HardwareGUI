@@ -491,6 +491,73 @@ class SourceMeasureUnitService(BaseHardwareService):
 
         return make_task("Load Cal Status", job)
 
+    def run_delete_calibration_ranges(
+        self,
+        ranges: list[tuple[bool, str, str]],
+        target: str = "raw",
+    ) -> FunctionTask | None:
+        """Delete specific ranges from calibration HDF5 files.
+
+        Args:
+            ranges: List of (vsmu, pa, iv) tuples to delete.
+            target: "raw", "verify", or "both".
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SMUController()
+            result = controller.delete_calibration_ranges(folder, ranges, target)
+            return {"ok": result.ok, "deleted": (result.data or {}).get("deleted", 0)}
+
+        return make_task("Delete Cal Data", job)
+
+    def run_clear_calibration_file(self, target: str = "raw") -> FunctionTask | None:
+        """Delete an entire calibration HDF5 file.
+
+        Args:
+            target: "raw" or "verify".
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SMUController()
+            result = controller.clear_calibration_file(folder, target)
+            return {"ok": result.ok, "file": (result.data or {}).get("file", "")}
+
+        return make_task("Clear Cal File", job)
+
+    def run_clear_fitted_data(self) -> FunctionTask | None:
+        """Delete fitted/analysis calibration artifacts.
+
+        Removes aggregated HDF5 files, model files, and figures directory.
+
+        Returns:
+            FunctionTask, or None if no calibration folder.
+        """
+        folder = self._resolve_calibration_folder()
+        if not folder or not Path(folder).exists():
+            return None
+
+        def job():
+            controller = self._controller or SMUController()
+            result = controller.clear_fitted_data(folder)
+            return {
+                "ok": result.ok,
+                "deleted": (result.data or {}).get("deleted", []),
+            }
+
+        return make_task("Clear Fitted Data", job)
+
     def run_calibrate(self, model: str = "linear") -> FunctionTask:
         """Run calibration fit (called by calibration page Run Calibration button)."""
         return self.run_calibration_fit(

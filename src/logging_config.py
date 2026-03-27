@@ -89,5 +89,5 @@ def get_logger(name: str) -> logging.Logger:
     """
     # Strip 'src.' prefix for cleaner log output
     if name.startswith("src."):
-        name = name[4:]
+        name = name.removeprefix("src.")
     return logging.getLogger(f"hardwaregui.{name}")

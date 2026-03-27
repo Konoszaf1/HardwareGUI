@@ -593,13 +593,66 @@ class SimulatedSMUService(SimulatedServiceBase):
             return {
                 "ok": True,
                 "calibration_status": [
-                    {"pa": "pach0", "iv": "ivch1", "vsmu": False, "status": "done"},
-                    {"pa": "pach2", "iv": "ivch3", "vsmu": False, "status": "done"},
-                    {"pa": "pach3", "iv": "ivch5", "vsmu": True, "status": "done"},
+                    {
+                        "pa": "pach0",
+                        "iv": "ivch2",
+                        "vsmu": False,
+                        "measured": True,
+                        "verified": True,
+                        "calibrated": False,
+                        "points": 218,
+                        "verify_points": 218,
+                    },
+                    {
+                        "pa": "pach2",
+                        "iv": "ivch3",
+                        "vsmu": False,
+                        "measured": True,
+                        "verified": False,
+                        "calibrated": False,
+                        "points": 76,
+                        "verify_points": 0,
+                    },
+                    {
+                        "pa": "pach3",
+                        "iv": "ivch5",
+                        "vsmu": True,
+                        "measured": True,
+                        "verified": True,
+                        "calibrated": True,
+                        "points": 218,
+                        "verify_points": 218,
+                    },
                 ],
             }
 
         return self._sim_task("load_calibration_status", 0.3, body=body)
+
+    def run_delete_calibration_ranges(
+        self,
+        ranges: list[tuple[bool, str, str]],
+        target: str = "raw",
+    ) -> FunctionTask | None:
+        def body():
+            print(f"  Deleting {len(ranges)} range(s) from {target} data...")
+            return {"ok": True, "deleted": len(ranges)}
+
+        return self._sim_task("delete_cal_data", 0.3, body=body)
+
+    def run_clear_calibration_file(self, target: str = "raw") -> FunctionTask | None:
+        def body():
+            label = "raw_data.h5" if target == "raw" else "raw_data_verify.h5"
+            print(f"  Clearing {label}...")
+            return {"ok": True, "file": label}
+
+        return self._sim_task("clear_cal_file", 0.2, body=body)
+
+    def run_clear_fitted_data(self) -> FunctionTask | None:
+        def body():
+            print("  Clearing fitted data (aggregated, models, figures)...")
+            return {"ok": True, "deleted": ["aggregated.h5", "linear_model.cal", "figures/"]}
+
+        return self._sim_task("clear_fitted_data", 0.3, body=body)
 
     def run_set_pa_clip(self, channel: int, enabled: bool) -> FunctionTask:
         def body():
