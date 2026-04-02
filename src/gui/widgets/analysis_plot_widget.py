@@ -13,11 +13,13 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.image import imread
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QEvent, QObject, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -55,6 +57,8 @@ class AnalysisPlotWidget(QWidget):
         # Matplotlib canvas - no inner scroll area; parent page scrolls
         self._figure = Figure(facecolor="#2a2a2a")
         self._canvas = FigureCanvasQTAgg(self._figure)
+        self._canvas.installEventFilter(self)
+        self._cb_range.installEventFilter(self)
         layout.addWidget(self._canvas)
 
         self._image_paths: list[str] = []
@@ -95,6 +99,18 @@ class AnalysisPlotWidget(QWidget):
         self._lbl_range.hide()
         self._cb_range.hide()
         self._show_placeholder()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Redirect scroll events from canvas/combo to the parent scroll area."""
+        if event.type() == QEvent.Type.Wheel and isinstance(obj, QWidget):
+            parent = self.parentWidget()
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    QApplication.sendEvent(parent.verticalScrollBar(), event)
+                    return True
+                parent = parent.parentWidget()
+            return True
+        return super().eventFilter(obj, event)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

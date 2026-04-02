@@ -111,7 +111,7 @@ class SUCalibrationPage(BaseHardwarePage):
         for amp in ["AMP01", "AMP1", "AMP2", "AMP3"]:
             chk = QCheckBox(amp)
             self._configure_input(chk)
-            chk.setChecked(amp in ("AMP1", "AMP2", "AMP3"))
+            chk.setChecked(amp in ("AMP01", "AMP1"))
             amp_layout.addWidget(chk)
             self.chk_amp[amp] = chk
         amp_layout.addStretch()

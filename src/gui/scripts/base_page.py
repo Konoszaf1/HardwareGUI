@@ -5,8 +5,9 @@ used across hardware control pages, including shared panel access, task lifecycl
 artifact watching, and service signal handling.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
@@ -26,6 +27,64 @@ from src.gui.widgets.shared_panels_widget import SharedPanelsWidget
 from src.logging_config import get_logger
 from src.logic.protocols import ConnectableService
 from src.logic.qt_workers import FunctionTask, run_in_thread
+
+
+class _WheelRedirect(QObject):
+    """Redirects wheel events to the nearest ancestor QScrollArea.
+
+    Install on any widget inside a scroll area to prevent it from
+    consuming wheel events (e.g. QComboBox, QSpinBox, matplotlib canvas).
+    """
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Wheel and isinstance(obj, QWidget):
+            parent = obj.parentWidget()
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    # Send directly to the scrollbar — QScrollArea internally
+                    # delegates wheel events to the scrollbar, so bypassing
+                    # the scroll area and going straight there is reliable.
+                    QApplication.sendEvent(parent.verticalScrollBar(), event)
+                    return True
+                parent = parent.parentWidget()
+        return False
+
+
+# Lazy singleton — created after QApplication exists
+_wheel_redirect_instance: _WheelRedirect | None = None
+
+
+def _wheel_redirect() -> _WheelRedirect:
+    global _wheel_redirect_instance
+    if _wheel_redirect_instance is None:
+        _wheel_redirect_instance = _WheelRedirect()
+    return _wheel_redirect_instance
+
+
+class _ResizeScrollTracker(QObject):
+    """Keeps a target widget visible during scroll-area resizes.
+
+    Used to sync page scrolling pixel-for-pixel with the terminal
+    expansion animation — each frame the scroll area shrinks, this
+    filter calls ensureWidgetVisible to compensate.
+    """
+
+    def __init__(self, scroll_area: QScrollArea, target: QWidget):
+        super().__init__(scroll_area)
+        self._scroll = scroll_area
+        self._target = target
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Resize and self._target is not None:
+            self._scroll.ensureWidgetVisible(self._target, 0, 50)
+        return False
+
+    def detach(self) -> None:
+        if self._scroll is not None:
+            self._scroll.removeEventFilter(self)
+        self._target = None
+        self._scroll = None
+        self.deleteLater()
 
 # Import status bar service lazily to avoid circular imports
 _status_bar_service = None
@@ -93,6 +152,7 @@ class BaseHardwarePage(QWidget):
         self._btn_cancel.setAccessibleName("Cancel task")
         self._btn_cancel.hide()
         self._cancel_connected = False
+        self._resize_tracker: _ResizeScrollTracker | None = None
 
     # ---- Shared panel accessors ----
 
@@ -201,6 +261,12 @@ class BaseHardwarePage(QWidget):
         signals.started.connect(
             lambda: _get_status_bar() and _get_status_bar().set_busy(f"Running: {task.name}")
         )
+
+        # If the terminal is about to auto-open, track resize events on the
+        # scroll area so the clicked button's group box scrolls into view
+        # pixel-for-pixel as the terminal rises.
+        self._install_resize_tracker()
+
         signals.log.connect(lambda s: self._log(s))
         signals.error.connect(
             lambda e: (
@@ -255,6 +321,49 @@ class BaseHardwarePage(QWidget):
         """
         if self._shared_panels:
             self._shared_panels.log(msg)
+
+    def _install_resize_tracker(self) -> None:
+        """Install a resize tracker if the terminal is about to auto-open.
+
+        The tracker calls ensureWidgetVisible on every resize frame,
+        keeping the clicked button's group box visible pixel-for-pixel
+        as the terminal rises and the scroll area shrinks.
+        """
+        # Only needed when the console is about to expand
+        if not self._shared_panels or self._shared_panels.is_console_visible():
+            return
+
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return
+
+        # Walk up to find the nearest QGroupBox ancestor
+        group: QWidget | None = focus
+        while group is not None and not isinstance(group, QGroupBox):
+            group = group.parentWidget()
+        if group is None:
+            return
+
+        # Find the scroll area that contains this group box
+        scroll: QWidget | None = group.parentWidget()
+        while scroll is not None and not isinstance(scroll, QScrollArea):
+            scroll = scroll.parentWidget()
+        if not isinstance(scroll, QScrollArea):
+            return
+
+        # Detach any previous tracker
+        self._detach_resize_tracker()
+
+        self._resize_tracker = _ResizeScrollTracker(scroll, group)
+        scroll.installEventFilter(self._resize_tracker)
+        # Auto-detach after the animation completes (~150ms + margin)
+        QTimer.singleShot(300, self._detach_resize_tracker)
+
+    def _detach_resize_tracker(self) -> None:
+        """Remove the resize tracker if active."""
+        if self._resize_tracker is not None:
+            self._resize_tracker.detach()
+            self._resize_tracker = None
 
     # ---- Event handlers ----
 
@@ -461,5 +570,9 @@ class BaseHardwarePage(QWidget):
         # Force QComboBox popup to close after selection (Qt bug in QScrollArea)
         if isinstance(widget, QComboBox):
             widget.activated.connect(widget.hidePopup)
+
+        # Redirect wheel events to the scroll area so scrolling doesn't
+        # stop when the cursor is over a combo box, spin box, etc.
+        widget.installEventFilter(_wheel_redirect())
 
         return widget

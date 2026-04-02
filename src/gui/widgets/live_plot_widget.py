@@ -12,7 +12,8 @@ from collections.abc import Sequence
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtWidgets import QApplication, QScrollArea, QVBoxLayout, QWidget
 
 # Consistent colour cycle for up to 8 series
 _COLORS = [
@@ -55,6 +56,8 @@ class LivePlotWidget(QWidget):
         self._figure = Figure(facecolor="#2a2a2a")
         self._figure.subplots_adjust(left=0.12, right=0.95, top=0.90, bottom=0.15)
         self._canvas = FigureCanvasQTAgg(self._figure)
+        # Let scroll events pass through to the parent scroll area
+        self._canvas.installEventFilter(self)
         self._ax = self._figure.add_subplot(111)
         self._style_axes()
         layout.addWidget(self._canvas)
@@ -171,6 +174,18 @@ class LivePlotWidget(QWidget):
         self._series.clear()
         self._color_idx = 0
         self._canvas.draw_idle()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Redirect scroll events from the canvas to the parent scroll area."""
+        if obj is self._canvas and event.type() == QEvent.Type.Wheel:
+            parent = self.parentWidget()
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    QApplication.sendEvent(parent.verticalScrollBar(), event)
+                    return True
+                parent = parent.parentWidget()
+            return True  # Still block matplotlib zoom if no scroll area
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
     # Internals

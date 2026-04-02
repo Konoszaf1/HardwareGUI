@@ -7,13 +7,15 @@ by delegating to SUController for actual device interactions.
 from __future__ import annotations
 
 import contextlib
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from dpi import DPIMainControlUnit, DPISamplingUnit
 
 from src.logging_config import get_logger
-from src.logic.controllers.su_controller import SUController
+from src.logic.controllers.su_controller import OperationResult, SUController
 from src.logic.qt_workers import FunctionTask, make_task
 from src.logic.services.base_service import BaseHardwareService
 
@@ -96,33 +98,112 @@ class SamplingUnitService(BaseHardwareService):
         return getattr(self._su, "_serial", None) or self._su.serial or 0
 
     # ---- Internals ----
+    _CONNECT_MAX_ATTEMPTS = 3
+    _CONNECT_RETRY_DELAY = 1.0  # seconds
+
     def _ensure_connected(self) -> None:
-        """Ensure SU hardware is connected and controller is initialized."""
+        """Ensure SU hardware is connected and controller is initialized.
+
+        On the fast path (already connected), probes the device with a
+        lightweight USB read to verify it is still responsive.  If the
+        probe fails the connection is torn down and a full reconnect is
+        attempted.
+
+        Connection attempts are retried up to ``_CONNECT_MAX_ATTEMPTS``
+        times with a short delay between each attempt to cover transient
+        USB enumeration failures.
+        """
         if self._connected and self._su and self._controller:
-            return
+            # Health check: verify USB link is still alive
+            try:
+                self._su.get_temperature()
+            except Exception as e:
+                logger.warning("SU health check failed, forcing reconnect: %s", e)
+                self._invalidate_connection()
+                # Fall through to full reconnect below
+            else:
+                return
 
-        su_serial = self._targets.su_serial
-        su_if = self._targets.su_interface
+        last_error: Exception | None = None
+        for attempt in range(1, self._CONNECT_MAX_ATTEMPTS + 1):
+            try:
+                su_serial = self._targets.su_serial
+                su_if = self._targets.su_interface
 
-        if su_serial == 0:
-            # Autodetect SU
-            self._su = DPISamplingUnit(autoinit=True)
-        else:
-            self._su = DPISamplingUnit(serial=su_serial, interface=su_if)
+                if su_serial == 0:
+                    self._su = DPISamplingUnit(autoinit=True)
+                else:
+                    self._su = DPISamplingUnit(serial=su_serial, interface=su_if)
 
-        # Initialize MCU for synchronized operations
-        try:
-            self._mcu = DPIMainControlUnit(autoinit=True)
-        except Exception as e:
-            logger.warning("MCU not available: %s", e)
-            self._mcu = None
+                # Initialize MCU for synchronized operations (optional)
+                try:
+                    self._mcu = DPIMainControlUnit(autoinit=True)
+                except Exception as e:
+                    logger.warning("MCU not available: %s", e)
+                    self._mcu = None
 
-        # Create controller with hardware instances
-        self._controller = SUController(su=self._su, mcu=self._mcu)
+                # Create controller with hardware instances
+                self._controller = SUController(su=self._su, mcu=self._mcu)
+                break  # Connection succeeded
+            except Exception as e:
+                last_error = e
+                # Clean up any partially-created handles
+                self._disconnect()
+                if attempt < self._CONNECT_MAX_ATTEMPTS:
+                    logger.warning(
+                        "SU connect attempt %d/%d failed: %s — retrying in %.0fs",
+                        attempt,
+                        self._CONNECT_MAX_ATTEMPTS,
+                        e,
+                        self._CONNECT_RETRY_DELAY,
+                    )
+                    time.sleep(self._CONNECT_RETRY_DELAY)
+                else:
+                    logger.error(
+                        "SU connect failed after %d attempts: %s",
+                        self._CONNECT_MAX_ATTEMPTS,
+                        e,
+                    )
+                    raise
 
         self._connected = True
         logger.info("SU connected: serial=%s", self._get_serial())
         self.connectedChanged.emit(True)
+
+    def _invalidate_connection(self) -> None:
+        """Tear down hardware and mark as disconnected."""
+        self._disconnect()
+        self._connected = False
+        self.connectedChanged.emit(False)
+
+    def _run_hw_operation(
+        self,
+        operation: Callable[[SUController], OperationResult],
+    ) -> OperationResult:
+        """Execute a hardware operation with auto-disconnect on failure.
+
+        If the controller operation returns ``ok=False`` or raises an
+        exception, the connection is invalidated so the next call forces
+        a fresh reconnect attempt.
+        """
+        with self._hw_lock:
+            self._ensure_connected()
+            assert self._controller is not None
+            try:
+                result = operation(self._controller)
+            except Exception:
+                logger.error("Hardware operation raised, disconnecting for safety")
+                self._invalidate_connection()
+                raise
+
+            if not result.ok:
+                logger.warning(
+                    "Hardware operation failed: %s — disconnecting for safety",
+                    result.message,
+                )
+                self._invalidate_connection()
+
+            return result
 
     def _disconnect(self) -> None:
         """Tear down SU hardware connections."""
@@ -215,11 +296,8 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.perform_autocalibration()
-                return {"ok": result.ok, "serial": result.serial, "message": result.message}
+            result = self._run_hw_operation(lambda c: c.perform_autocalibration())
+            return {"ok": result.ok, "serial": result.serial, "message": result.message}
 
         return make_task("Verify", job)
 
@@ -231,11 +309,8 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.read_temperature()
-                return {"ok": result.ok, "temperature": result.data.get("temperature")}
+            result = self._run_hw_operation(lambda c: c.read_temperature())
+            return {"ok": result.ok, "temperature": result.data.get("temperature")}
 
         return make_task("Read Temperature", job)
 
@@ -255,14 +330,10 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.single_shot_measure(
-                    dac_voltage=dac_voltage,
-                    source=source,
-                )
-                return {"ok": result.ok, "voltage": result.data.get("voltage")}
+            result = self._run_hw_operation(
+                lambda c: c.single_shot_measure(dac_voltage=dac_voltage, source=source)
+            )
+            return {"ok": result.ok, "voltage": result.data.get("voltage")}
 
         return make_task("Single Shot Measure", job)
 
@@ -284,19 +355,18 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.transient_measure(
+            result = self._run_hw_operation(
+                lambda c: c.transient_measure(
                     measurement_time=measurement_time,
                     sampling_rate=sampling_rate,
                     trigger=trigger,
                 )
-                return {
-                    "ok": result.ok,
-                    "time": result.data.get("time"),
-                    "values": result.data.get("values"),
-                }
+            )
+            return {
+                "ok": result.ok,
+                "time": result.data.get("time"),
+                "values": result.data.get("values"),
+            }
 
         return make_task("Transient Measure", job)
 
@@ -316,18 +386,16 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.pulse_measure(
-                    num_samples=num_samples,
-                    sampling_rate=sampling_rate,
+            result = self._run_hw_operation(
+                lambda c: c.pulse_measure(
+                    num_samples=num_samples, sampling_rate=sampling_rate
                 )
-                return {
-                    "ok": result.ok,
-                    "time": result.data.get("time"),
-                    "values": result.data.get("values"),
-                }
+            )
+            return {
+                "ok": result.ok,
+                "time": result.data.get("time"),
+                "values": result.data.get("values"),
+            }
 
         return make_task("Pulse Measure", job)
 
@@ -449,13 +517,9 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-
-                folder_path = self._resolve_calibration_folder()
-
-                result = self._controller.calibration_fit(
+            folder_path = self._resolve_calibration_folder()
+            result = self._run_hw_operation(
+                lambda c: c.calibration_fit(
                     folder_path=folder_path,
                     draw_plot=draw_plot,
                     auto_calibrate=auto_calibrate,
@@ -463,14 +527,15 @@ class SamplingUnitService(BaseHardwareService):
                     verify_calibration=verify_calibration,
                     single_range=single_range,
                 )
-                data = result.data or {}
-                return {
-                    "ok": result.ok,
-                    "message": result.message,
-                    "analysis_plots": data.get("analysis_plots", []),
-                    "calibrated_ranges": data.get("calibrated_ranges", []),
-                    "artifacts": self._safe_collect_artifacts(),
-                }
+            )
+            data = result.data or {}
+            return {
+                "ok": result.ok,
+                "message": result.message,
+                "analysis_plots": data.get("analysis_plots", []),
+                "calibrated_ranges": data.get("calibrated_ranges", []),
+                "artifacts": self._safe_collect_artifacts(),
+            }
 
         return make_task("Calibration: Fit", job)
 
@@ -578,11 +643,8 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.save_channel_config()
-                return {"ok": result.ok, "message": result.message}
+            result = self._run_hw_operation(lambda c: c.save_channel_config())
+            return {"ok": result.ok, "message": result.message}
 
         return make_task("Save Config", job)
 
@@ -594,11 +656,8 @@ class SamplingUnitService(BaseHardwareService):
         """
 
         def job():
-            with self._hw_lock:
-                self._ensure_connected()
-                assert self._controller is not None
-                result = self._controller.load_channel_config()
-                return {"ok": result.ok, "data": result.data, "message": result.message}
+            result = self._run_hw_operation(lambda c: c.load_channel_config())
+            return {"ok": result.ok, "data": result.data, "message": result.message}
 
         return make_task("Load Config", job)
 

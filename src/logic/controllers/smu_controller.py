@@ -650,6 +650,14 @@ class SMUController(HardwareController):
                 if device_serial and save_base.endswith(device_serial):
                     save_base = save_base[: -len(device_serial)]
 
+                # Delete old file so we start fresh (unless single-range,
+                # where the user is intentionally appending one range at a time)
+                if not single_range:
+                    old_file = Path(f"{save_base}{device_serial}") / filename
+                    if old_file.exists():
+                        old_file.unlink()
+                        print(f"  Cleared previous {filename}")
+
                 if single_range:
                     pa_ch, iv_ch = single_range
                     vsmu_val = vsmu_mode if vsmu_mode is not None else False

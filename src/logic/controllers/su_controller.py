@@ -235,7 +235,7 @@ class SUController(HardwareController):
         """
         try:
             su = self._get_su()
-            temp = su.getTemperature()
+            temp = su.get_temperature()
             logger.debug("SU temperature: %s", temp)
             return OperationResult(ok=True, data={"temperature": temp})
         except Exception as e:
@@ -279,7 +279,9 @@ class SUController(HardwareController):
             su.singleshot_init(1)
             su.setDACValue(dac_voltage)
             su.setPath(source=source, ac=0, adc=None, amp=1.0)
-            voltage = su.readInputVoltage()
+            # readInputVoltage returns (samples_array, timestamps_array)
+            samples, _timestamps = su.readInputVoltage()
+            voltage = float(samples[0])
             logger.debug("SU single-shot: %sV", voltage)
             return OperationResult(ok=True, data={"voltage": voltage})
         except Exception as e:
@@ -302,6 +304,7 @@ class SUController(HardwareController):
         Returns:
             OperationResult with time/values arrays in data.
         """
+        sampling_started = False
         try:
             su = self._get_su()
             mcu = self._get_mcu()
@@ -318,18 +321,22 @@ class SUController(HardwareController):
                 adcmaster=0 if mcu else 1,
             )
             su.transientSampling_start()
+            sampling_started = True
 
-            # Read data
-            data = su.transientSampling_readData()
-            logger.debug("SU transient: %s samples", len(data[0]))
-            # Handle both numpy arrays and plain lists
-            time_data = data[0].tolist() if hasattr(data[0], "tolist") else list(data[0])
-            values_data = data[1].tolist() if hasattr(data[1], "tolist") else list(data[1])
+            # Read data — returns (samples, (timestamps, split))
+            samples, (timestamps, _split) = su.transientSampling_readData()
+            logger.debug("SU transient: %s samples", len(samples))
+            time_data = timestamps.tolist() if hasattr(timestamps, "tolist") else list(timestamps)
+            values_data = samples.tolist() if hasattr(samples, "tolist") else list(samples)
             return OperationResult(
                 ok=True,
                 data={"time": time_data, "values": values_data},
             )
         except Exception as e:
+            if sampling_started:
+                with contextlib.suppress(Exception):
+                    self._get_su().singleshot_init(1)
+                    logger.info("SU reset to single-shot after transient failure")
             logger.error("SU transient failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -347,6 +354,7 @@ class SUController(HardwareController):
         Returns:
             OperationResult with time/values arrays in data.
         """
+        sampling_started = False
         try:
             su = self._get_su()
             mcu = self._get_mcu()
@@ -359,22 +367,26 @@ class SUController(HardwareController):
             su.pulseSampling_init(num_samples)
             su.setADC(master=0, dcmi=1, adcB=0, frequency=sampling_rate)
             su.pulseSampling_start()
+            sampling_started = True
 
             # Trigger via MCU if available
             if mcu:
                 mcu.su_set_trigger()
 
-            # Read data
-            data = su.pulseSampling_readData()
-            logger.debug("SU pulse: %s samples", len(data[0]))
-            # Handle both numpy arrays and plain lists
-            time_data = data[0].tolist() if hasattr(data[0], "tolist") else list(data[0])
-            values_data = data[1].tolist() if hasattr(data[1], "tolist") else list(data[1])
+            # Read data — returns (samples, timestamps)
+            samples, timestamps = su.pulseSampling_readData()
+            logger.debug("SU pulse: %s samples", len(samples))
+            time_data = timestamps.tolist() if hasattr(timestamps, "tolist") else list(timestamps)
+            values_data = samples.tolist() if hasattr(samples, "tolist") else list(samples)
             return OperationResult(
                 ok=True,
                 data={"time": time_data, "values": values_data},
             )
         except Exception as e:
+            if sampling_started:
+                with contextlib.suppress(Exception):
+                    self._get_su().singleshot_init(1)
+                    logger.info("SU reset to single-shot after pulse failure")
             logger.error("SU pulse failed: %s", e)
             return OperationResult(ok=False, message=str(e))
 
@@ -383,11 +395,23 @@ class SUController(HardwareController):
     # =========================================================================
 
     # Speed preset definitions: (decades, delta_log, delta_lin)
+    # Original script: calibration max_value=2.4, decades=7, delta_log=1/3, delta_lin=1/8
+    # max_value MUST stay ≤2.4 — higher values drive the SU amplifiers into
+    # saturation (flat ADC output), corrupting the calibration model.
     SPEED_PRESETS = {
         "fast": (2.0, 1 / 2, 1.0),
-        "normal": (7, 1 / 3, 1 / 4),
+        "normal": (7, 1 / 3, 1 / 8),
         "precise": (8, 1 / 10, 1 / 5),
     }
+    # Verification uses sparser points at slightly lower voltage to avoid
+    # retesting the exact same setpoints as calibration.
+    VERIFY_PRESETS = {
+        "fast": (2.0, 1 / 2, 1 / 3),
+        "normal": (8, 1 / 2, 1 / 5),
+        "precise": (8, 1 / 3, 1 / 5),
+    }
+    _CAL_MAX_VALUE = 2.4
+    _VERIFY_MAX_VALUE = 2.2
 
     def calibration_measure(
         self,
@@ -453,15 +477,27 @@ class SUController(HardwareController):
                 DPILogger.VERBOSE,
             )
 
-            # Prepare voltage values based on speed preset
-            voltage_values = None
+            # Prepare voltage values for calibration and verification.
+            # Calibration uses denser points; verification uses sparser
+            # points at a slightly lower max to avoid retesting identical
+            # setpoints.  max_value ≤ 2.4 V — higher values saturate the
+            # SU amplifiers.
+            cal_values = None
+            verify_values = None
             if speed_preset in self.SPEED_PRESETS:
-                decades, delta_log, delta_lin = self.SPEED_PRESETS[speed_preset]
-                voltage_values = scm.prepare_measurement_values(
-                    max_value=6.5,
-                    decades=decades,
-                    delta_log=delta_log,
-                    delta_lin=delta_lin,
+                d, dl, dlin = self.SPEED_PRESETS[speed_preset]
+                cal_values = scm.prepare_measurement_values(
+                    max_value=self._CAL_MAX_VALUE,
+                    decades=d,
+                    delta_log=dl,
+                    delta_lin=dlin,
+                )
+                vd, vdl, vdlin = self.VERIFY_PRESETS[speed_preset]
+                verify_values = scm.prepare_measurement_values(
+                    max_value=self._VERIFY_MAX_VALUE,
+                    decades=vd,
+                    delta_log=vdl,
+                    delta_lin=vdlin,
                 )
 
             if verify_only:
@@ -472,9 +508,24 @@ class SUController(HardwareController):
                 verify_list = [False]
 
             # Determine which amp channels to measure
-            channels_to_measure = amp_channels or list(scm.ampchannels)
+            available = list(scm.ampchannels)
             if amp_channels:
-                print(f"  Channels  : {', '.join(channels_to_measure)}")
+                invalid = [ch for ch in amp_channels if ch not in available]
+                if invalid:
+                    print(
+                        f"  WARNING: Channels {invalid} not found on device "
+                        f"(available: {available}) — skipping"
+                    )
+                channels_to_measure = [ch for ch in amp_channels if ch in available]
+                if not channels_to_measure:
+                    return OperationResult(
+                        ok=False,
+                        message=f"None of the selected channels {amp_channels} "
+                        f"exist on the device (available: {available})",
+                    )
+            else:
+                channels_to_measure = available
+            print(f"  Channels  : {', '.join(channels_to_measure)}")
 
             completed_ranges = 0
             total_ranges = 0
@@ -492,7 +543,16 @@ class SUController(HardwareController):
                 print(f"\n>> Measuring ({phase})...")
                 scm.data = []
 
+                voltage_values = verify_values if verify else cal_values
                 filename = "raw_data_verify.h5" if verify else "raw_data.h5"
+
+                # Delete old file so we start fresh (unless single-range,
+                # where the user is intentionally appending one range at a time)
+                if not single_range:
+                    old_file = Path(f"{save_base}{scm.device_serial}") / filename
+                    if old_file.exists():
+                        old_file.unlink()
+                        print(f"  Cleared previous {filename}")
 
                 if single_range:
                     # Single range measurement
