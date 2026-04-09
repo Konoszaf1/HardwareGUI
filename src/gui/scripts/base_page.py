@@ -269,13 +269,15 @@ class BaseHardwarePage(QWidget):
         self._install_resize_tracker()
 
         signals.log.connect(lambda s: self._log(s))
-        signals.error.connect(
-            lambda e: (
-                logger.error("Task error: %s", e),
-                self._log(f"Error: {e}"),
-                _get_status_bar() and _get_status_bar().show_temporary(f"Error: {task.name}"),
-            )
-        )
+
+        def _handle_error(e: object) -> None:
+            logger.error("Task error: %s", e)
+            self._log(f"Error: {e}")
+            sb = _get_status_bar()
+            if sb:
+                sb.show_temporary(f"Error: {task.name}")
+
+        signals.error.connect(_handle_error)
 
         signals.finished.connect(lambda result: self._on_task_finished(result))
         run_in_thread(task)

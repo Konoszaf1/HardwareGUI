@@ -150,7 +150,7 @@ class SourceMeasureUnitService(BaseHardwareService):
     def _disconnect(self) -> None:
         """Tear down SMU hardware connections."""
         if self._smu:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, RuntimeError):
                 self._smu.disconnect()
             self._smu = None
         self._controller = None
@@ -158,14 +158,6 @@ class SourceMeasureUnitService(BaseHardwareService):
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
         return f"calibration/smu_calibration_sn{self._get_serial()}"
-
-    def _safe_collect_artifacts(self) -> list[str]:
-        """Collect artifacts without crashing if directory is missing."""
-        try:
-            return self._collect_artifacts()
-        except Exception as e:
-            logger.warning("Artifact collection failed: %s", e)
-            return []
 
     # ---- Public operations (threaded) ----
     def run_hw_setup(
@@ -403,7 +395,7 @@ class SourceMeasureUnitService(BaseHardwareService):
             try:
                 with self._hw_lock:
                     self._ensure_connected()
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning("Failed to reconnect after calibration: %s", e)
 
             data = result.data or {}

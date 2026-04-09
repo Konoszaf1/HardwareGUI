@@ -112,7 +112,7 @@ class AnimatedPropertyMixin:
         Returns:
             Configured QPropertyAnimation ready for use.
         """
-        self._property_animation = QPropertyAnimation(self, target_property)  # type: ignore[arg-type]
+        self._property_animation = QPropertyAnimation(self, target_property)  # type: ignore[call-overload]
         self._property_animation.setDuration(config.ui.animation_duration_ms)
         self._property_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         return self._property_animation

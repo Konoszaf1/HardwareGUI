@@ -8,7 +8,6 @@ import contextlib
 import re
 import shutil
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,95 +17,14 @@ from src.logic.controllers.base_controller import (
     ChannelConfig,
     HardwareController,
     OperationResult,
+    operation,
 )
+from src.logic.controllers.progress_adapter import SUProgressAdapter
 
 if TYPE_CHECKING:
     from dpi import DPIMainControlUnit, DPISamplingUnit
 
 logger = get_logger(__name__)
-
-
-class _SUProgressAdapter:
-    """Mimics tqdm interface to redirect measurement progress to callbacks."""
-
-    def __init__(self, total, scm, on_point, on_range, verify=False):
-        self.total = total
-        self.n = 0
-        self._scm = scm
-        self._on_point = on_point
-        self._on_range = on_range
-        self._verify = verify
-        self._current_desc = ""
-        self._range_points = 0
-        self._range_start = 0.0
-
-    def update(self, n=1):
-        self.n += n
-        self._range_points += n
-        if self._on_point and self._scm.data:
-            df = self._scm.data[-1]
-            self._on_point(
-                {
-                    "type": "cal_point",
-                    "amp_channel": df.attrs.get("amp_channel"),
-                    "verify": self._verify,
-                    "x": float(df.attrs.get("v_ref", 0)),
-                    "y": float(df["voltage"].mean()),
-                    "v_set": float(df.attrs.get("v_set", 0)),
-                    "point_index": self.n,
-                    "total_points": self.total,
-                }
-            )
-
-    @staticmethod
-    def _parse_desc(desc: str) -> dict:
-        """Extract amp_channel from a range description string."""
-        m = re.match(r"AMP:\s*(\w+)", desc)
-        if m:
-            return {"amp_channel": m.group(1)}
-        return {}
-
-    def set_description(self, desc):
-        if desc != self._current_desc:
-            # Mark previous range as done
-            if self._current_desc and self._on_range:
-                elapsed = time.time() - self._range_start
-                done_data = {
-                    "type": "cal_range",
-                    "status": "done",
-                    "desc": self._current_desc,
-                    "verify": self._verify,
-                    "points": self._range_points,
-                    "duration": elapsed,
-                }
-                done_data.update(self._parse_desc(self._current_desc))
-                self._on_range(done_data)
-            self._current_desc = desc
-            self._range_points = 0
-            self._range_start = time.time()
-            if self._on_range:
-                running_data = {
-                    "type": "cal_range",
-                    "status": "running",
-                    "verify": self._verify,
-                }
-                running_data.update(self._parse_desc(desc))
-                if "amp_channel" in running_data:
-                    self._on_range(running_data)
-
-    def close(self):
-        if self._current_desc and self._on_range:
-            elapsed = time.time() - self._range_start
-            done_data = {
-                "type": "cal_range",
-                "status": "done",
-                "desc": self._current_desc,
-                "verify": self._verify,
-                "points": self._range_points,
-                "duration": elapsed,
-            }
-            done_data.update(self._parse_desc(self._current_desc))
-            self._on_range(done_data)
 
 
 class SUController(HardwareController):
@@ -138,6 +56,7 @@ class SUController(HardwareController):
     # Setup Operations (hw_setup)
     # =========================================================================
 
+    @operation
     def initialize_device(
         self,
         serial: int,
@@ -156,19 +75,16 @@ class SUController(HardwareController):
         Returns:
             OperationResult with success status and serial number.
         """
-        try:
-            su = self._get_su()
-            su.initNewDevice(
-                serial=serial,
-                processorType=processor_type,
-                connectorType=connector_type,
-            )
-            logger.info("SU initialized: serial=%s", serial)
-            return OperationResult(ok=True, serial=serial)
-        except Exception as e:
-            logger.error("SU initialization failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        su = self._get_su()
+        su.initNewDevice(
+            serial=serial,
+            processorType=processor_type,
+            connectorType=connector_type,
+        )
+        logger.info("SU initialized: serial=%s", serial)
+        return OperationResult(ok=True, serial=serial)
 
+    @operation
     def configure_channel(self, config: ChannelConfig) -> OperationResult:
         """Configure an amplifier channel.
 
@@ -180,14 +96,11 @@ class SUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            self._get_su()
-            logger.info("SU channel configured: %s", config.channel_id)
-            return OperationResult(ok=True, data={"channel_id": config.channel_id})
-        except Exception as e:
-            logger.error("SU channel configuration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._get_su()
+        logger.info("SU channel configured: %s", config.channel_id)
+        return OperationResult(ok=True, data={"channel_id": config.channel_id})
 
+    @operation
     def save_channel_config(self) -> OperationResult:
         """Save current channel configuration to EEPROM.
 
@@ -196,14 +109,10 @@ class SUController(HardwareController):
         Returns:
             OperationResult with informational message.
         """
-        try:
-            self._get_su()
-            print("Note: Channel calibration is managed by the calibration workflow.")
-            print("Use 'Run Calibration' on the Calibration page to write to EEPROM.")
-            return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
-        except Exception as e:
-            logger.error("SU EEPROM save failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._get_su()
+        print("Note: Channel calibration is managed by the calibration workflow.")
+        print("Use 'Run Calibration' on the Calibration page to write to EEPROM.")
+        return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
 
     def load_channel_config(self) -> OperationResult:
         """Load channel configuration from EEPROM.
@@ -220,44 +129,39 @@ class SUController(HardwareController):
                 print("EEPROM content display not available for this device.")
             return OperationResult(ok=True, data={})
         except Exception as e:
-            logger.error("SU EEPROM load failed: %s", e)
+            logger.error("SU EEPROM load failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
     # Test Operations (hw_verify)
     # =========================================================================
 
+    @operation
     def read_temperature(self) -> OperationResult:
         """Read SU temperature sensor.
 
         Returns:
             OperationResult with temperature in data["temperature"].
         """
-        try:
-            su = self._get_su()
-            temp = su.get_temperature()
-            logger.debug("SU temperature: %s", temp)
-            return OperationResult(ok=True, data={"temperature": temp})
-        except Exception as e:
-            logger.error("SU temperature read failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        su = self._get_su()
+        temp = su.get_temperature()
+        logger.debug("SU temperature: %s", temp)
+        return OperationResult(ok=True, data={"temperature": temp})
 
+    @operation
     def perform_autocalibration(self) -> OperationResult:
         """Run autocalibration on SU.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            su = self._get_su()
-            su.performautocalibration()
-            serial = getattr(su, "_serial", None) or su.serial
-            logger.info("SU autocalibration complete: serial=%s", serial)
-            return OperationResult(ok=True, serial=serial)
-        except Exception as e:
-            logger.error("SU autocalibration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        su = self._get_su()
+        su.performautocalibration()
+        serial = getattr(su, "_serial", None) or su.serial
+        logger.info("SU autocalibration complete: serial=%s", serial)
+        return OperationResult(ok=True, serial=serial)
 
+    @operation
     def single_shot_measure(
         self,
         dac_voltage: float = 0.0,
@@ -274,19 +178,15 @@ class SUController(HardwareController):
         Returns:
             OperationResult with voltage in data["voltage"].
         """
-        try:
-            su = self._get_su()
-            su.singleshot_init(1)
-            su.setDACValue(dac_voltage)
-            su.setPath(source=source, ac=0, adc=None, amp=1.0)
-            # readInputVoltage returns (samples_array, timestamps_array)
-            samples, _timestamps = su.readInputVoltage()
-            voltage = float(samples[0])
-            logger.debug("SU single-shot: %sV", voltage)
-            return OperationResult(ok=True, data={"voltage": voltage})
-        except Exception as e:
-            logger.error("SU single-shot failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        su = self._get_su()
+        su.singleshot_init(1)
+        su.setDACValue(dac_voltage)
+        su.setPath(source=source, ac=0, adc=None, amp=1.0)
+        # readInputVoltage returns (samples_array, timestamps_array)
+        samples, _timestamps = su.readInputVoltage()
+        voltage = float(samples[0])
+        logger.debug("SU single-shot: %sV", voltage)
+        return OperationResult(ok=True, data={"voltage": voltage})
 
     def transient_measure(
         self,
@@ -337,7 +237,7 @@ class SUController(HardwareController):
                 with contextlib.suppress(Exception):
                     self._get_su().singleshot_init(1)
                     logger.info("SU reset to single-shot after transient failure")
-            logger.error("SU transient failed: %s", e)
+            logger.error("SU transient failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def pulse_measure(
@@ -387,7 +287,7 @@ class SUController(HardwareController):
                 with contextlib.suppress(Exception):
                     self._get_su().singleshot_init(1)
                     logger.info("SU reset to single-shot after pulse failure")
-            logger.error("SU pulse failed: %s", e)
+            logger.error("SU pulse failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
@@ -558,7 +458,7 @@ class SUController(HardwareController):
                     # Single range measurement
                     print(f"  Range: AMP={single_range}")
                     total = len(voltage_values) if voltage_values is not None else 0
-                    adapter = _SUProgressAdapter(
+                    adapter = SUProgressAdapter(
                         total,
                         scm,
                         on_point_measured,
@@ -584,7 +484,7 @@ class SUController(HardwareController):
                     total = len(channels_to_measure) * (
                         len(voltage_values) if voltage_values is not None else 0
                     )
-                    adapter = _SUProgressAdapter(
+                    adapter = SUProgressAdapter(
                         total,
                         scm,
                         on_point_measured,
@@ -649,7 +549,7 @@ class SUController(HardwareController):
                     scm.smu.disconnect()
                 with contextlib.suppress(Exception):
                     scm.su.disconnect()
-            logger.error("SU calibration measure failed: %s", e)
+            logger.error("SU calibration measure failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
@@ -714,7 +614,7 @@ class SUController(HardwareController):
                 print(">> Loading existing model...")
                 try:
                     smf.load_model(script_dir=Path("/"), model_type=model_type)
-                except Exception as e:
+                except (OSError, KeyError) as e:
                     print(f"  No existing model found ({e}), starting fresh.")
 
                 # Verify data exists for this key
@@ -750,7 +650,7 @@ class SUController(HardwareController):
                     smf.plot_measurement_overview()
                     try:
                         smf.plot_aggregated_overview()
-                    except (KeyError, Exception) as e:
+                    except (KeyError, ValueError) as e:
                         print(f"  Aggregated overview skipped ({e})")
 
                 print(">> Training linear model...")
@@ -770,7 +670,7 @@ class SUController(HardwareController):
                     print(">> Plotting calibrated overview...")
                     try:
                         smf.plot_calibrated_overview(model_type=model_type)
-                    except (KeyError, Exception) as e:
+                    except (KeyError, ValueError) as e:
                         print(f"  Calibrated overview skipped ({e})")
 
             # Collect analysis plot paths
@@ -799,7 +699,7 @@ class SUController(HardwareController):
 
             traceback.print_exc()
             print(f"Fit failed: {e}")
-            logger.error("SU calibration fit failed: %s", e)
+            logger.error("SU calibration fit failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def _collect_analysis_plots(self, folder_path: str) -> list[str]:
@@ -856,7 +756,7 @@ class SUController(HardwareController):
                         m = self._H5_KEY_RE.search(key)
                         if m:
                             counts[m.group(1)] += 1
-            except Exception as e:
+            except OSError as e:
                 print(f"  Warning: could not read {filepath.name}: {e}")
             return counts
 
@@ -884,6 +784,7 @@ class SUController(HardwareController):
             )
         return ranges
 
+    @operation
     def delete_calibration_ranges(
         self,
         folder_path: str,
@@ -900,38 +801,35 @@ class SUController(HardwareController):
         Returns:
             OperationResult with deleted count.
         """
-        try:
-            import h5py
+        import h5py
 
-            targets_set = set(ranges)
-            filenames = []
-            if target in ("raw", "both"):
-                filenames.append("raw_data.h5")
-            if target in ("verify", "both"):
-                filenames.append("raw_data_verify.h5")
+        targets_set = set(ranges)
+        filenames = []
+        if target in ("raw", "both"):
+            filenames.append("raw_data.h5")
+        if target in ("verify", "both"):
+            filenames.append("raw_data_verify.h5")
 
-            total_deleted = 0
-            for fname in filenames:
-                fpath = Path(folder_path) / fname
-                if not fpath.exists():
-                    continue
-                with h5py.File(str(fpath), "a") as f:
-                    keys_to_delete = []
-                    for key in f:
-                        m = self._H5_KEY_RE.search(key)
-                        if m and m.group(1) in targets_set:
-                            keys_to_delete.append(key)
-                    for key in keys_to_delete:
-                        del f[key]
-                    total_deleted += len(keys_to_delete)
-                print(f"  Deleted {len(keys_to_delete)} entries from {fname}")
+        total_deleted = 0
+        for fname in filenames:
+            fpath = Path(folder_path) / fname
+            if not fpath.exists():
+                continue
+            with h5py.File(str(fpath), "a") as f:
+                keys_to_delete = []
+                for key in f:
+                    m = self._H5_KEY_RE.search(key)
+                    if m and m.group(1) in targets_set:
+                        keys_to_delete.append(key)
+                for key in keys_to_delete:
+                    del f[key]
+                total_deleted += len(keys_to_delete)
+            print(f"  Deleted {len(keys_to_delete)} entries from {fname}")
 
-            print(f"-- Deleted {total_deleted} total entries --")
-            return OperationResult(ok=True, data={"deleted": total_deleted})
-        except Exception as e:
-            logger.error("Delete calibration ranges failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        print(f"-- Deleted {total_deleted} total entries --")
+        return OperationResult(ok=True, data={"deleted": total_deleted})
 
+    @operation
     def clear_calibration_file(
         self,
         folder_path: str,
@@ -946,19 +844,16 @@ class SUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            fname = "raw_data_verify.h5" if target == "verify" else "raw_data.h5"
-            fpath = Path(folder_path) / fname
-            if fpath.exists():
-                fpath.unlink()
-                print(f"  Deleted {fname}")
-            else:
-                print(f"  {fname} does not exist")
-            return OperationResult(ok=True, data={"file": fname})
-        except Exception as e:
-            logger.error("Clear calibration file failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        fname = "raw_data_verify.h5" if target == "verify" else "raw_data.h5"
+        fpath = Path(folder_path) / fname
+        if fpath.exists():
+            fpath.unlink()
+            print(f"  Deleted {fname}")
+        else:
+            print(f"  {fname} does not exist")
+        return OperationResult(ok=True, data={"file": fname})
 
+    @operation
     def clear_fitted_data(self, folder_path: str) -> OperationResult:
         """Delete fitted/analysis calibration artifacts.
 
@@ -973,38 +868,36 @@ class SUController(HardwareController):
         """
         folder = Path(folder_path)
         deleted = []
-        try:
-            # Aggregated data files
-            for name in ("aggregated.h5", "aggregated_verify.h5"):
-                p = folder / name
-                if p.exists():
-                    p.unlink()
-                    deleted.append(name)
-                    print(f"  Deleted {name}")
 
-            # Model files (linear_model.cal, gp_model.cal, etc.)
-            for cal_file in folder.glob("*.cal"):
-                cal_file.unlink()
-                deleted.append(cal_file.name)
-                print(f"  Deleted {cal_file.name}")
+        # Aggregated data files
+        for name in ("aggregated.h5", "aggregated_verify.h5"):
+            p = folder / name
+            if p.exists():
+                p.unlink()
+                deleted.append(name)
+                print(f"  Deleted {name}")
 
-            # Figures directory (ranges plots + overview HTML)
-            figures_dir = folder / "figures"
-            if figures_dir.exists():
-                shutil.rmtree(figures_dir)
-                deleted.append("figures/")
-                print("  Deleted figures/")
+        # Model files (linear_model.cal, gp_model.cal, etc.)
+        for cal_file in folder.glob("*.cal"):
+            cal_file.unlink()
+            deleted.append(cal_file.name)
+            print(f"  Deleted {cal_file.name}")
 
-            print(f"-- Cleared {len(deleted)} fitted data item(s) --")
-            return OperationResult(ok=True, data={"deleted": deleted})
-        except Exception as e:
-            logger.error("Clear fitted data failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        # Figures directory (ranges plots + overview HTML)
+        figures_dir = folder / "figures"
+        if figures_dir.exists():
+            shutil.rmtree(figures_dir)
+            deleted.append("figures/")
+            print("  Deleted figures/")
+
+        print(f"-- Cleared {len(deleted)} fitted data item(s) --")
+        return OperationResult(ok=True, data={"deleted": deleted})
 
     # =========================================================================
     # MCU Operations
     # =========================================================================
 
+    @operation
     def set_sync_frequency(
         self,
         su_frequency: float = 1000e3,
@@ -1019,37 +912,30 @@ class SUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            mcu = self._get_mcu()
-            if not mcu:
-                return OperationResult(
-                    ok=False,
-                    message="MCU not connected",
-                )
-            mcu.setSUSyncTimerFrequency(su_frequency)
-            mcu.setVUSyncTimerFrequency(vu_frequency)
-            logger.debug("MCU sync frequencies: SU=%s, VU=%s", su_frequency, vu_frequency)
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("MCU sync setup failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        mcu = self._get_mcu()
+        if not mcu:
+            return OperationResult(
+                ok=False,
+                message="MCU not connected",
+            )
+        mcu.setSUSyncTimerFrequency(su_frequency)
+        mcu.setVUSyncTimerFrequency(vu_frequency)
+        logger.debug("MCU sync frequencies: SU=%s, VU=%s", su_frequency, vu_frequency)
+        return OperationResult(ok=True)
 
+    @operation
     def trigger_su(self) -> OperationResult:
         """Send trigger to SU via MCU.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            mcu = self._get_mcu()
-            if not mcu:
-                return OperationResult(ok=False, message="MCU not connected")
-            mcu.su_set_trigger()
-            logger.debug("MCU trigger sent to SU")
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("MCU trigger failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        mcu = self._get_mcu()
+        if not mcu:
+            return OperationResult(ok=False, message="MCU not connected")
+        mcu.su_set_trigger()
+        logger.debug("MCU trigger sent to SU")
+        return OperationResult(ok=True)
 
     # =========================================================================
     # Private helpers

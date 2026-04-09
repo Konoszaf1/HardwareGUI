@@ -117,7 +117,7 @@ class SamplingUnitService(BaseHardwareService):
             # Health check: verify USB link is still alive
             try:
                 self._su.get_temperature()
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning("SU health check failed, forcing reconnect: %s", e)
                 self._invalidate_connection()
                 # Fall through to full reconnect below
@@ -137,14 +137,14 @@ class SamplingUnitService(BaseHardwareService):
                 # Initialize MCU for synchronized operations (optional)
                 try:
                     self._mcu = DPIMainControlUnit(autoinit=True)
-                except Exception as e:
+                except (OSError, RuntimeError) as e:
                     logger.warning("MCU not available: %s", e)
                     self._mcu = None
 
                 # Create controller with hardware instances
                 self._controller = SUController(su=self._su, mcu=self._mcu)
                 break  # Connection succeeded
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 # Clean up any partially-created handles
                 self._disconnect()
                 if attempt < self._CONNECT_MAX_ATTEMPTS:
@@ -189,7 +189,7 @@ class SamplingUnitService(BaseHardwareService):
             assert self._controller is not None
             try:
                 result = operation(self._controller)
-            except Exception:
+            except (OSError, RuntimeError):
                 logger.error("Hardware operation raised, disconnecting for safety")
                 self._invalidate_connection()
                 raise
@@ -206,11 +206,11 @@ class SamplingUnitService(BaseHardwareService):
     def _disconnect(self) -> None:
         """Tear down SU hardware connections."""
         if self._su:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, RuntimeError):
                 self._su.disconnect()
             self._su = None
         if self._mcu:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, RuntimeError):
                 self._mcu.disconnect()
             self._mcu = None
         self._controller = None
@@ -218,14 +218,6 @@ class SamplingUnitService(BaseHardwareService):
     def _artifact_dir(self) -> str:
         """Returns the path to the directory where artifacts are saved."""
         return f"calibration/su_calibration_sn{self._get_serial()}"
-
-    def _safe_collect_artifacts(self) -> list[str]:
-        """Collect artifacts without crashing if directory is missing."""
-        try:
-            return self._collect_artifacts()
-        except Exception as e:
-            logger.warning("Artifact collection failed: %s", e)
-            return []
 
     def _resolve_calibration_folder(self) -> str:
         """Resolve the calibration folder path.
@@ -438,10 +430,10 @@ class SamplingUnitService(BaseHardwareService):
             with self._hw_lock:
                 controller = self._controller or SUController()
                 if self._su is not None:
-                    with contextlib.suppress(Exception):
+                    with contextlib.suppress(OSError, RuntimeError):
                         self._su.disconnect()
                 if self._mcu is not None:
-                    with contextlib.suppress(Exception):
+                    with contextlib.suppress(OSError, RuntimeError):
                         self._mcu.disconnect()
                 controller._su = None
                 controller._mcu = None
@@ -471,7 +463,7 @@ class SamplingUnitService(BaseHardwareService):
             try:
                 with self._hw_lock:
                     self._ensure_connected()
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning("Failed to reconnect after calibration: %s", e)
 
             data = result.data or {}

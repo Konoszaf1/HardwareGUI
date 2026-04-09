@@ -6,7 +6,7 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/PySide6-Qt%206-41CD52?style=flat-square&logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
-[![pytest](https://img.shields.io/badge/pytest-315%20tests-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![pytest](https://img.shields.io/badge/pytest-342%20tests-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](tests/)
 [![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9?style=flat-square&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![Ruff](https://img.shields.io/badge/ruff-linter-261230?style=flat-square&logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
 [![Black](https://img.shields.io/badge/code%20style-black-000000?style=flat-square)](https://github.com/psf/black)
@@ -72,33 +72,9 @@ cd HardwareGUI
 
 The application follows **Model-View-Presenter (MVP)** with a layered service architecture that separates hardware I/O from UI concerns:
 
-```mermaid
-graph TD
-    subgraph Presentation ["Presentation Layer"]
-        View["View<br/><em>MainWindow, Hardware Pages</em>"]
-        Presenter["Presenter<br/><em>ActionsPresenter</em>"]
-    end
-
-    subgraph Domain ["Domain Layer"]
-        Model["Model<br/><em>ActionModel</em>"]
-        Services["Services<br/><em>VU / SMU / SU</em>"]
-        Controllers["Controllers<br/><em>VU / SMU / SU</em>"]
-    end
-
-    subgraph Infra ["Infrastructure"]
-        Workers["Qt Workers<br/><em>QRunnable + Signals</em>"]
-        Hardware["DPI Hardware<br/><em>/measdata/dpi</em>"]
-    end
-
-    User((User)) -->|Interacts| View
-    View -->|Signals| Presenter
-    Presenter -->|Commands| Services
-    Services -->|Delegates| Controllers
-    Services -->|Spawns| Workers
-    Workers -->|I/O| Hardware
-    Workers -->|Results| View
-    Model -->|Structure| View
-```
+<div align="center">
+<img src="docs/architecture.png" alt="Architecture Overview — MVP with Layered Services" width="800"/>
+</div>
 
 ### Layer Responsibilities
 
@@ -110,6 +86,14 @@ graph TD
 | **Controllers** | `logic/controllers/` | Pure hardware logic, no threading or UI. Return `OperationResult` frozen dataclass from every operation |
 | **Workers** | `logic/qt_workers.py` | `FunctionTask` (`QRunnable`) wraps callables with stdout capture and lifecycle signals via `TaskSignals` |
 | **Config** | `config.py` | Nested frozen dataclasses (`AppConfig`). Environment overrides for `LOG_LEVEL`, `LOG_FILE` |
+
+### Threading & Signal Flow
+
+Hardware operations run on worker threads via `QThreadPool` while the GUI stays responsive. `FunctionTask` captures stdout and emits cross-thread Qt signals back to the UI:
+
+<div align="center">
+<img src="docs/threading_model.png" alt="Threading & Signal Flow" width="800"/>
+</div>
 
 ### Simulation Mode
 
@@ -170,7 +154,7 @@ HardwareGUI/
 │       ├── controllers/               #   Hardware controllers (VU, SMU, SU)
 │       ├── services/                  #   Hardware service layer
 │       └── qt_workers.py              #   FunctionTask / QRunnable with signal bridge
-├── tests/                             # 315 tests across 4 layers
+├── tests/                             # 342 tests across 4 layers
 │   ├── unit/                          #   Pure logic tests (no Qt event loop)
 │   ├── component/                     #   Qt widget tests (qtbot)
 │   ├── integration/                   #   Service + controller + threading
@@ -185,7 +169,7 @@ HardwareGUI/
 
 ## Testing
 
-The test suite follows a **four-layer pyramid** with 315 tests running in ~3 seconds:
+The test suite follows a **four-layer pyramid** with 342 tests running in ~7 seconds:
 
 | Layer | Tests | Scope | Marker |
 |:---|---:|:---|:---|

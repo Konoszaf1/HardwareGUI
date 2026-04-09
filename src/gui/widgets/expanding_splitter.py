@@ -75,10 +75,13 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         for button in buttons:
             sidebar.layout().insertWidget(button.property("order"), button)
             self.add_button(button)
+
             # Use a default argument to capture the button instance correctly in the lambda
-            button.toggled.connect(
-                lambda checked, btn=button: checked and on_hardware_selected(btn.property("id"))
-            )
+            def _on_toggled(checked: bool, btn: object = button) -> None:
+                if checked:
+                    on_hardware_selected(btn.property("id"))  # type: ignore[union-attr]
+
+            button.toggled.connect(_on_toggled)
 
         sidebar.layout().activate()
         sidebar.adjustSize()

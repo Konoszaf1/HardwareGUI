@@ -123,11 +123,11 @@ class VoltageUnitService(BaseHardwareService):
         if old:
             try:
                 old.close()
-            except Exception:
+            except OSError:
                 try:
                     if old.client is not None:
                         old.client.close()
-                except Exception:
+                except OSError:
                     pass
             finally:
                 old.link = None
@@ -178,7 +178,7 @@ class VoltageUnitService(BaseHardwareService):
                 vu_serial=vu_serial,
                 artifact_dir=self._artifact_dir(),
             )
-        except Exception:
+        except (OSError, RuntimeError):
             # Clean up any partially-created handles to avoid USB resource leaks
             self._disconnect()
             raise
@@ -209,7 +209,7 @@ class VoltageUnitService(BaseHardwareService):
                 coeffs = list(self._vu.get_correctionvalues(ch))
                 k, d = coeffs[0], coeffs[1]
                 lines.append(f"  {ch}  amp={amp:+.1f}  k={k:.6f}  d={d:.6f}")
-            except Exception:
+            except (OSError, RuntimeError):
                 lines.append(f"  {ch}  (could not read)")
         lines.append("")
         print("\n".join(lines))
@@ -219,11 +219,11 @@ class VoltageUnitService(BaseHardwareService):
         if self._scope:
             try:
                 self._scope.close()
-            except Exception:
+            except OSError:
                 try:
                     if self._scope.client is not None:
                         self._scope.client.close()
-                except Exception:
+                except OSError:
                     pass
             self._scope = None
         if self._vu:
@@ -267,7 +267,7 @@ class VoltageUnitService(BaseHardwareService):
             try:
                 idn = self._scope.ask("*IDN?")
                 print(f"Scope: {idn}")
-            except Exception as e:
+            except OSError as e:
                 print(f"Scope IDN query failed: {e}")
             return {"coeffs": self.coeffs}
 
@@ -327,14 +327,6 @@ class VoltageUnitService(BaseHardwareService):
         return make_task("Set Guard → Ground", job)
 
     # ---- Tests and calibration ----
-    def _safe_collect_artifacts(self) -> list[str]:
-        """Collect artifacts without crashing the job if directory is missing."""
-        try:
-            return self._collect_artifacts()
-        except Exception as e:
-            logger.warning("Artifact collection failed: %s", e)
-            return []
-
     @BaseHardwareService.require_instrument_ip
     def test_outputs(self) -> FunctionTask:
         task = FunctionTask("Test: Outputs", lambda: None)

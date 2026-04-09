@@ -7,7 +7,6 @@ relay control, and calibration operations. Uses direct imports from dpi package.
 import contextlib
 import re
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -17,7 +16,9 @@ from src.logic.controllers.base_controller import (
     ChannelConfig,
     HardwareController,
     OperationResult,
+    operation,
 )
+from src.logic.controllers.progress_adapter import SMUProgressAdapter
 
 if TYPE_CHECKING:
     from dpi import DPISourceMeasureUnit
@@ -28,91 +29,6 @@ logger = get_logger(__name__)
 InputRouting = Literal["GND", "GUARD", "VSMU", "SU", "VSMU_AND_SU"]
 VGuardRouting = Literal["GND", "VSMU"]
 ReferenceType = Literal["GND", "VSMU"]
-
-
-class _ProgressAdapter:
-    """Mimics tqdm interface to redirect measurement progress to callbacks."""
-
-    def __init__(self, total, scm, on_point, on_range, verify=False):
-        self.total = total
-        self.n = 0
-        self._scm = scm
-        self._on_point = on_point
-        self._on_range = on_range
-        self._verify = verify
-        self._current_desc = ""
-        self._range_points = 0
-        self._range_start = 0.0
-
-    def update(self, n=1):
-        self.n += n
-        self._range_points += n
-        if self._on_point and self._scm.data:
-            df = self._scm.data[-1]
-            self._on_point(
-                {
-                    "type": "cal_point",
-                    "vsmu": df.attrs.get("vsmu_mode"),
-                    "pa": df.attrs.get("pa_channel"),
-                    "iv": df.attrs.get("iv_channel"),
-                    "verify": self._verify,
-                    "x": float(df.attrs.get("i_ref", 0)),
-                    "y": float(df["current"].mean()),
-                    "i_set": float(df.attrs.get("i_set", 0)),
-                    "point_index": self.n,
-                    "total_points": self.total,
-                }
-            )
-
-    @staticmethod
-    def _parse_desc(desc: str) -> dict:
-        """Extract pa/iv/vsmu fields from a range description string."""
-        m = re.match(r"PA: (\w+), IV: (\w+), VSMU: (\w+)", desc)
-        if m:
-            return {"pa": m.group(1), "iv": m.group(2), "vsmu": m.group(3) == "True"}
-        return {}
-
-    def set_description(self, desc):
-        if desc != self._current_desc:
-            # Mark previous range as done
-            if self._current_desc and self._on_range:
-                elapsed = time.time() - self._range_start
-                done_data = {
-                    "type": "cal_range",
-                    "status": "done",
-                    "desc": self._current_desc,
-                    "verify": self._verify,
-                    "points": self._range_points,
-                    "duration": elapsed,
-                }
-                done_data.update(self._parse_desc(self._current_desc))
-                self._on_range(done_data)
-            self._current_desc = desc
-            self._range_points = 0
-            self._range_start = time.time()
-            if self._on_range:
-                running_data = {
-                    "type": "cal_range",
-                    "status": "running",
-                    "verify": self._verify,
-                }
-                running_data.update(self._parse_desc(desc))
-                if "pa" in running_data:
-                    self._on_range(running_data)
-
-    def close(self):
-        if self._current_desc and self._on_range:
-            elapsed = time.time() - self._range_start
-            done_data = {
-                "type": "cal_range",
-                "status": "done",
-                "desc": self._current_desc,
-                "verify": self._verify,
-                "points": self._range_points,
-                "duration": elapsed,
-            }
-            done_data.update(self._parse_desc(self._current_desc))
-            self._on_range(done_data)
 
 
 class SMUController(HardwareController):
@@ -136,6 +52,7 @@ class SMUController(HardwareController):
     # Setup Operations (hw_setup)
     # =========================================================================
 
+    @operation
     def initialize_device(
         self,
         serial: int,
@@ -154,50 +71,41 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status and serial number.
         """
-        try:
-            smu = self._get_smu()
-            smu.set_eeprom_default_values()
-            smu.initNewDevice(
-                serial=serial,
-                processorType=processor_type,
-                connectorType=connector_type,
-            )
-            logger.info("SMU initialized: serial=%s", serial)
-            return OperationResult(ok=True, serial=serial)
-        except Exception as e:
-            logger.error("SMU initialization failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.set_eeprom_default_values()
+        smu.initNewDevice(
+            serial=serial,
+            processorType=processor_type,
+            connectorType=connector_type,
+        )
+        logger.info("SMU initialized: serial=%s", serial)
+        return OperationResult(ok=True, serial=serial)
 
+    @operation
     def set_eeprom_defaults(self) -> OperationResult:
         """Reset EEPROM to default values.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            smu.set_eeprom_default_values()
-            logger.info("SMU EEPROM defaults set")
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("SMU EEPROM defaults failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.set_eeprom_default_values()
+        logger.info("SMU EEPROM defaults set")
+        return OperationResult(ok=True)
 
+    @operation
     def calibrate_eeprom(self) -> OperationResult:
         """Calibrate EEPROM values.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            smu.calibrate_eeprom()
-            logger.info("SMU EEPROM calibrated")
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("SMU EEPROM calibration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.calibrate_eeprom()
+        logger.info("SMU EEPROM calibrated")
+        return OperationResult(ok=True)
 
+    @operation
     def configure_channel(self, config: ChannelConfig) -> OperationResult:
         """Configure an amplifier channel.
 
@@ -209,14 +117,11 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            self._get_smu()
-            logger.info("SMU channel configured: %s", config.channel_id)
-            return OperationResult(ok=True, data={"channel_id": config.channel_id})
-        except Exception as e:
-            logger.error("SMU channel configuration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._get_smu()
+        logger.info("SMU channel configured: %s", config.channel_id)
+        return OperationResult(ok=True, data={"channel_id": config.channel_id})
 
+    @operation
     def save_channel_config(self) -> OperationResult:
         """Save current channel configuration to EEPROM.
 
@@ -225,16 +130,12 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with informational message.
         """
-        try:
-            self._get_smu()
-            print(
-                "Note: Channel calibration is managed by the calibration workflow.\n"
-                "Use 'Run Calibration' on the Calibration page to write to EEPROM."
-            )
-            return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
-        except Exception as e:
-            logger.error("SMU EEPROM save failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._get_smu()
+        print(
+            "Note: Channel calibration is managed by the calibration workflow.\n"
+            "Use 'Run Calibration' on the Calibration page to write to EEPROM."
+        )
+        return OperationResult(ok=True, message="Use calibration workflow for EEPROM writes.")
 
     def load_channel_config(self) -> OperationResult:
         """Load channel configuration from EEPROM.
@@ -296,48 +197,43 @@ class SMUController(HardwareController):
 
             return OperationResult(ok=True, data={"channels": channels})
         except Exception as e:
-            logger.error("SMU EEPROM load failed: %s", e)
+            logger.error("SMU EEPROM load failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================
     # Test Operations (hw_verify) - Temperature
     # =========================================================================
 
+    @operation
     def read_temperature(self) -> OperationResult:
         """Read SMU temperature sensor.
 
         Returns:
             OperationResult with temperature in data["temperature"].
         """
-        try:
-            smu = self._get_smu()
-            temp = smu.get_temperature()
-            logger.debug("SMU temperature: %s", temp)
-            return OperationResult(ok=True, data={"temperature": temp})
-        except Exception as e:
-            logger.error("SMU temperature read failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        temp = smu.get_temperature()
+        logger.debug("SMU temperature: %s", temp)
+        return OperationResult(ok=True, data={"temperature": temp})
 
+    @operation
     def perform_autocalibration(self) -> OperationResult:
         """Run autocalibration on SMU.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            smu.calibrate_eeprom()
-            serial = smu.serial
-            logger.info("SMU autocalibration complete: serial=%s", serial)
-            return OperationResult(ok=True, serial=serial)
-        except Exception as e:
-            logger.error("SMU autocalibration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.calibrate_eeprom()
+        serial = smu.serial
+        logger.info("SMU autocalibration complete: serial=%s", serial)
+        return OperationResult(ok=True, serial=serial)
 
     # =========================================================================
     # Relay Controls
     # =========================================================================
 
+    @operation
     def set_iv_channel(
         self,
         channel: int,
@@ -352,35 +248,29 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            if channel == 0:
-                smu.ivconverter_channel(channel=0)
-            else:
-                smu.ivconverter_channelreference(channel=channel, reference=reference)
-            logger.debug("SMU IV channel: %s, ref=%s", channel, reference)
-            return OperationResult(
-                ok=True,
-                data={"channel": channel, "reference": reference},
-            )
-        except Exception as e:
-            logger.error("SMU IV channel set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        if channel == 0:
+            smu.ivconverter_channel(channel=0)
+        else:
+            smu.ivconverter_channelreference(channel=channel, reference=reference)
+        logger.debug("SMU IV channel: %s, ref=%s", channel, reference)
+        return OperationResult(
+            ok=True,
+            data={"channel": channel, "reference": reference},
+        )
 
+    @operation
     def get_iv_channel(self) -> OperationResult:
         """Get current IV-Converter channel.
 
         Returns:
             OperationResult with channel in data["channel"].
         """
-        try:
-            smu = self._get_smu()
-            channel = smu.ivconverter_getchannel()
-            return OperationResult(ok=True, data={"channel": channel})
-        except Exception as e:
-            logger.error("SMU IV channel get failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        channel = smu.ivconverter_getchannel()
+        return OperationResult(ok=True, data={"channel": channel})
 
+    @operation
     def set_pa_channel(self, channel: int) -> OperationResult:
         """Set Post-Amplifier channel.
 
@@ -390,18 +280,15 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            if channel == 0:
-                smu.postamplifier_disable()
-            else:
-                smu.postamplifier_enable(channel=channel)
-            logger.debug("SMU PA channel: %s", channel)
-            return OperationResult(ok=True, data={"channel": channel})
-        except Exception as e:
-            logger.error("SMU PA channel set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        if channel == 0:
+            smu.postamplifier_disable()
+        else:
+            smu.postamplifier_enable(channel=channel)
+        logger.debug("SMU PA channel: %s", channel)
+        return OperationResult(ok=True, data={"channel": channel})
 
+    @operation
     def set_pa_clip(self, channel: int, enabled: bool) -> OperationResult:
         """Enable/disable Post-Amplifier clip detection.
 
@@ -412,15 +299,12 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            smu.postamplifier_clip_enable(channel=channel, state=1 if enabled else 0)
-            logger.debug("SMU PA clip: ch=%s, enabled=%s", channel, enabled)
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("SMU PA clip set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.postamplifier_clip_enable(channel=channel, state=1 if enabled else 0)
+        logger.debug("SMU PA clip: ch=%s, enabled=%s", channel, enabled)
+        return OperationResult(ok=True)
 
+    @operation
     def set_highpass(self, enabled: bool) -> OperationResult:
         """Enable/disable highpass filter.
 
@@ -430,32 +314,26 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            if enabled:
-                smu.highpass_enable()
-            else:
-                smu.highpass_disable()
-            logger.debug("SMU highpass: enabled=%s", enabled)
-            return OperationResult(ok=True, data={"enabled": enabled})
-        except Exception as e:
-            logger.error("SMU highpass set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        if enabled:
+            smu.highpass_enable()
+        else:
+            smu.highpass_disable()
+        logger.debug("SMU highpass: enabled=%s", enabled)
+        return OperationResult(ok=True, data={"enabled": enabled})
 
+    @operation
     def get_highpass_state(self) -> OperationResult:
         """Get current highpass filter state.
 
         Returns:
             OperationResult with state in data["enabled"].
         """
-        try:
-            smu = self._get_smu()
-            state = smu.highpass_state()
-            return OperationResult(ok=True, data={"enabled": bool(state)})
-        except Exception as e:
-            logger.error("SMU highpass state get failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        state = smu.highpass_state()
+        return OperationResult(ok=True, data={"enabled": bool(state)})
 
+    @operation
     def set_input_routing(self, target: InputRouting) -> OperationResult:
         """Set input routing (DUT connection).
 
@@ -465,22 +343,19 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            routing_map = {
-                "GND": smu.iin_to_gnd,
-                "GUARD": smu.iin_to_guard,
-                "VSMU": smu.iin_to_vsmu,
-                "SU": smu.iin_to_su,
-                "VSMU_AND_SU": smu.iin_to_vsmu_and_su,
-            }
-            routing_map[target]()
-            logger.debug("SMU input routing: %s", target)
-            return OperationResult(ok=True, data={"target": target})
-        except Exception as e:
-            logger.error("SMU input routing set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        routing_map = {
+            "GND": smu.iin_to_gnd,
+            "GUARD": smu.iin_to_guard,
+            "VSMU": smu.iin_to_vsmu,
+            "SU": smu.iin_to_su,
+            "VSMU_AND_SU": smu.iin_to_vsmu_and_su,
+        }
+        routing_map[target]()
+        logger.debug("SMU input routing: %s", target)
+        return OperationResult(ok=True, data={"target": target})
 
+    @operation
     def set_vguard(self, target: VGuardRouting) -> OperationResult:
         """Set VGUARD routing.
 
@@ -490,48 +365,38 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            if target == "GND":
-                smu.vguard_to_gnd()
-            else:
-                smu.vguard_to_vsmu()
-            logger.debug("SMU VGUARD: %s", target)
-            return OperationResult(ok=True, data={"target": target})
-        except Exception as e:
-            logger.error("SMU VGUARD set failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        if target == "GND":
+            smu.vguard_to_gnd()
+        else:
+            smu.vguard_to_vsmu()
+        logger.debug("SMU VGUARD: %s", target)
+        return OperationResult(ok=True, data={"target": target})
 
+    @operation
     def get_saturation_state(self) -> OperationResult:
         """Get saturation detection state.
 
         Returns:
             OperationResult with IV and PA states.
         """
-        try:
-            smu = self._get_smu()
-            state_iv, state_pa = smu.saturationdetection_state()
-            return OperationResult(
-                ok=True,
-                data={"iv_saturated": bool(state_iv), "pa_saturated": bool(state_pa)},
-            )
-        except Exception as e:
-            logger.error("SMU saturation state get failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        state_iv, state_pa = smu.saturationdetection_state()
+        return OperationResult(
+            ok=True,
+            data={"iv_saturated": bool(state_iv), "pa_saturated": bool(state_pa)},
+        )
 
+    @operation
     def clear_saturation(self) -> OperationResult:
         """Clear saturation detection flags.
 
         Returns:
             OperationResult with success status.
         """
-        try:
-            smu = self._get_smu()
-            smu.saturationdetection_clear()
-            return OperationResult(ok=True)
-        except Exception as e:
-            logger.error("SMU saturation clear failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        smu = self._get_smu()
+        smu.saturationdetection_clear()
+        return OperationResult(ok=True)
 
     # =========================================================================
     # Calibration Operations
@@ -670,9 +535,9 @@ class SMUController(HardwareController):
                             verify,
                             current_values=current_values,
                         )
-                    except Exception:
+                    except (TypeError, AttributeError):
                         total = len(current_values) if current_values is not None else 0
-                    adapter = _ProgressAdapter(
+                    adapter = SMUProgressAdapter(
                         total,
                         scm,
                         on_point_measured,
@@ -713,7 +578,7 @@ class SMUController(HardwareController):
                         verify,
                         current_values=current_values,
                     )
-                    adapter = _ProgressAdapter(
+                    adapter = SMUProgressAdapter(
                         total,
                         scm,
                         on_point_measured,
@@ -779,7 +644,7 @@ class SMUController(HardwareController):
                 scm.smu.disconnect()
             with contextlib.suppress(Exception):
                 scm.su.disconnect()
-            logger.error("SMU calibration measure failed: %s", e)
+            logger.error("SMU calibration measure failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def calibration_fit(
@@ -850,7 +715,7 @@ class SMUController(HardwareController):
                 print(">> Loading existing model...")
                 try:
                     smf.load_model(script_dir=Path("/"), model_type=model_type)
-                except Exception as e:
+                except (OSError, KeyError) as e:
                     print(f"  No existing model found ({e}), starting fresh.")
 
                 # Verify data exists for this key
@@ -899,7 +764,7 @@ class SMUController(HardwareController):
                     smf.plot_measurement_overview()
                     try:
                         smf.plot_aggregated_overview()
-                    except (KeyError, Exception) as e:
+                    except (KeyError, ValueError) as e:
                         print(f"  Aggregated overview skipped ({e})")
 
                 print(">> Training linear model...")
@@ -948,7 +813,7 @@ class SMUController(HardwareController):
 
             traceback.print_exc()
             print(f"Fit failed: {e}")
-            logger.error("SMU calibration fit failed: %s", e)
+            logger.error("SMU calibration fit failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def _collect_analysis_plots(self, folder_path: str) -> list[str]:
@@ -991,7 +856,7 @@ class SMUController(HardwareController):
                         if m:
                             vsmu = m.group(1) == "True"
                             counts[(vsmu, m.group(2), m.group(3))] += 1
-            except Exception as e:
+            except OSError as e:
                 print(f"  Warning: could not read {filepath.name}: {e}")
             return counts
 
@@ -1022,6 +887,7 @@ class SMUController(HardwareController):
             )
         return ranges
 
+    @operation
     def delete_calibration_ranges(
         self,
         folder_path: str,
@@ -1038,40 +904,37 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with deleted count.
         """
-        try:
-            import h5py
+        import h5py
 
-            targets_set = set(ranges)
-            filenames = []
-            if target in ("raw", "both"):
-                filenames.append("raw_data.h5")
-            if target in ("verify", "both"):
-                filenames.append("raw_data_verify.h5")
+        targets_set = set(ranges)
+        filenames = []
+        if target in ("raw", "both"):
+            filenames.append("raw_data.h5")
+        if target in ("verify", "both"):
+            filenames.append("raw_data_verify.h5")
 
-            total_deleted = 0
-            for fname in filenames:
-                fpath = Path(folder_path) / fname
-                if not fpath.exists():
-                    continue
-                with h5py.File(str(fpath), "a") as f:
-                    keys_to_delete = []
-                    for key in f:
-                        m = self._H5_KEY_RE.search(key)
-                        if m:
-                            vsmu = m.group(1) == "True"
-                            if (vsmu, m.group(2), m.group(3)) in targets_set:
-                                keys_to_delete.append(key)
-                    for key in keys_to_delete:
-                        del f[key]
-                    total_deleted += len(keys_to_delete)
-                print(f"  Deleted {len(keys_to_delete)} entries from {fname}")
+        total_deleted = 0
+        for fname in filenames:
+            fpath = Path(folder_path) / fname
+            if not fpath.exists():
+                continue
+            with h5py.File(str(fpath), "a") as f:
+                keys_to_delete = []
+                for key in f:
+                    m = self._H5_KEY_RE.search(key)
+                    if m:
+                        vsmu = m.group(1) == "True"
+                        if (vsmu, m.group(2), m.group(3)) in targets_set:
+                            keys_to_delete.append(key)
+                for key in keys_to_delete:
+                    del f[key]
+                total_deleted += len(keys_to_delete)
+            print(f"  Deleted {len(keys_to_delete)} entries from {fname}")
 
-            print(f"-- Deleted {total_deleted} total entries --")
-            return OperationResult(ok=True, data={"deleted": total_deleted})
-        except Exception as e:
-            logger.error("Delete calibration ranges failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        print(f"-- Deleted {total_deleted} total entries --")
+        return OperationResult(ok=True, data={"deleted": total_deleted})
 
+    @operation
     def clear_calibration_file(
         self,
         folder_path: str,
@@ -1086,19 +949,16 @@ class SMUController(HardwareController):
         Returns:
             OperationResult with success status.
         """
-        try:
-            fname = "raw_data_verify.h5" if target == "verify" else "raw_data.h5"
-            fpath = Path(folder_path) / fname
-            if fpath.exists():
-                fpath.unlink()
-                print(f"  Deleted {fname}")
-            else:
-                print(f"  {fname} does not exist")
-            return OperationResult(ok=True, data={"file": fname})
-        except Exception as e:
-            logger.error("Clear calibration file failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        fname = "raw_data_verify.h5" if target == "verify" else "raw_data.h5"
+        fpath = Path(folder_path) / fname
+        if fpath.exists():
+            fpath.unlink()
+            print(f"  Deleted {fname}")
+        else:
+            print(f"  {fname} does not exist")
+        return OperationResult(ok=True, data={"file": fname})
 
+    @operation
     def clear_fitted_data(self, folder_path: str) -> OperationResult:
         """Delete fitted/analysis calibration artifacts.
 
@@ -1115,33 +975,29 @@ class SMUController(HardwareController):
 
         folder = Path(folder_path)
         deleted = []
-        try:
-            # Aggregated data files
-            for name in ("aggregated.h5", "aggregated_verify.h5"):
-                p = folder / name
-                if p.exists():
-                    p.unlink()
-                    deleted.append(name)
-                    print(f"  Deleted {name}")
+        # Aggregated data files
+        for name in ("aggregated.h5", "aggregated_verify.h5"):
+            p = folder / name
+            if p.exists():
+                p.unlink()
+                deleted.append(name)
+                print(f"  Deleted {name}")
 
-            # Model files (linear_model.cal, gp_model.cal, etc.)
-            for cal_file in folder.glob("*.cal"):
-                cal_file.unlink()
-                deleted.append(cal_file.name)
-                print(f"  Deleted {cal_file.name}")
+        # Model files (linear_model.cal, gp_model.cal, etc.)
+        for cal_file in folder.glob("*.cal"):
+            cal_file.unlink()
+            deleted.append(cal_file.name)
+            print(f"  Deleted {cal_file.name}")
 
-            # Figures directory (ranges plots + overview HTML)
-            figures_dir = folder / "figures"
-            if figures_dir.exists():
-                shutil.rmtree(figures_dir)
-                deleted.append("figures/")
-                print("  Deleted figures/")
+        # Figures directory (ranges plots + overview HTML)
+        figures_dir = folder / "figures"
+        if figures_dir.exists():
+            shutil.rmtree(figures_dir)
+            deleted.append("figures/")
+            print("  Deleted figures/")
 
-            print(f"-- Cleared {len(deleted)} fitted data item(s) --")
-            return OperationResult(ok=True, data={"deleted": deleted})
-        except Exception as e:
-            logger.error("Clear fitted data failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        print(f"-- Cleared {len(deleted)} fitted data item(s) --")
+        return OperationResult(ok=True, data={"deleted": deleted})
 
     @staticmethod
     def _parse_calibrated_ranges(plot_paths: list[str]) -> list[dict]:

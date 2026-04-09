@@ -119,7 +119,7 @@ class BaseHardwareService(QObject):
         Returns:
             FunctionTask that performs the ping and updates verification state.
         """
-        ip = self._target_instrument_ip
+        ip = self._target_instrument_ip or ""
 
         def job():
             logger.info("Pinging instrument at %s", ip)
@@ -207,6 +207,18 @@ class BaseHardwareService(QObject):
             List of artifact file paths.
         """
         return self._artifact_manager.collect_artifacts(self._artifact_dir())
+
+    def _safe_collect_artifacts(self) -> list[str]:
+        """Collect artifacts without crashing if the directory is missing.
+
+        Returns:
+            List of artifact file paths, or empty list on error.
+        """
+        try:
+            return self._collect_artifacts()
+        except OSError as e:
+            logger.warning("Artifact collection failed: %s", e)
+            return []
 
     def connect_only(self) -> FunctionTask:
         """Connect to hardware without additional operations.

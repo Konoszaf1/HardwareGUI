@@ -461,7 +461,7 @@ class TestVUControllerTestRamp:
                 # First *OPC? (scope setup at line 589) succeeds;
                 # second *OPC? (_scope_wait_trigger at line 629) times out.
                 if opc_count[0] >= 2:
-                    raise Exception("timeout")
+                    raise TimeoutError("timeout")
                 return "1"
             return mapping.get(cmd, "OK")
 
@@ -592,7 +592,7 @@ class TestVUControllerTestTransient:
                 # First *OPC? call succeeds (pre-trigger setup), second fails (trigger wait)
                 call_count[0] += 1
                 if call_count[0] >= 2:
-                    raise Exception("timeout")
+                    raise TimeoutError("timeout")
                 return "1"
             return mapping.get(cmd, "OK")
 
@@ -1033,7 +1033,7 @@ class TestVUControllerScopeHelpers:
 
     def test_scope_wait_trigger_timeout(self, vu_controller, mock_scope):
         """Verify _scope_wait_trigger returns False on timeout exception."""
-        mock_scope.ask.side_effect = Exception("timeout")
+        mock_scope.ask.side_effect = TimeoutError("timeout")
         result = vu_controller._scope_wait_trigger(mock_scope)
         assert result is False
 
@@ -1155,7 +1155,7 @@ class TestVUControllerEdgeCases:
             call_count[0] += 1
             # The last call is the reset to (0,0,0) after test
             if args == ("all", (0.0, 0.0, 0.0)) and call_count[0] > 7:
-                raise Exception("reset failed")
+                raise OSError("reset failed")
 
         mock_vu.setOutputVoltage.side_effect = reset_fails
         result = vu_controller.test_outputs()

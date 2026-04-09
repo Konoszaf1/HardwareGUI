@@ -121,7 +121,7 @@ class AnalysisPlotWidget(QWidget):
         """Show a placeholder message on the canvas."""
         self._figure.clear()
         self._figure.set_facecolor("#2a2a2a")
-        ax = self._figure.add_axes([0, 0, 1, 1])
+        ax = self._figure.add_axes((0.0, 0.0, 1.0, 1.0))
         ax.set_facecolor("#2a2a2a")
         ax.text(
             0.5,
@@ -156,7 +156,7 @@ class AnalysisPlotWidget(QWidget):
         """Render the image array onto the canvas, sized to fill available width."""
         self._figure.clear()
         self._figure.set_facecolor("#2a2a2a")
-        ax = self._figure.add_axes([0, 0, 1, 1])
+        ax = self._figure.add_axes((0.0, 0.0, 1.0, 1.0))
         ax.imshow(img)
         ax.set_axis_off()
 

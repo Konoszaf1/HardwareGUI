@@ -18,6 +18,7 @@ from src.logging_config import get_logger
 from src.logic.controllers.base_controller import (
     HardwareController,
     OperationResult,
+    operation,
 )
 
 if TYPE_CHECKING:
@@ -101,7 +102,7 @@ class VUController(HardwareController):
         try:
             scope.ask("*OPC?")
             return True
-        except Exception:
+        except (TimeoutError, OSError):
             print("  ⚠ Scope did not trigger - check probe connections")
             logger.warning("Scope NORM trigger timed out")
             self._scope_discard_link(scope)
@@ -116,11 +117,11 @@ class VUController(HardwareController):
         """
         try:
             scope.close()
-        except Exception:
+        except OSError:
             try:
                 if scope.client is not None:
                     scope.client.close()
-            except Exception:
+            except OSError:
                 pass
         scope.link = None
         scope.client = None
@@ -130,13 +131,14 @@ class VUController(HardwareController):
         try:
             scope.write("*RST;*CLS")
             scope.ask("*OPC?")
-        except Exception:
+        except (TimeoutError, OSError):
             logger.warning("Scope recovery after discard failed")
 
     # =========================================================================
     # Setup Operations
     # =========================================================================
 
+    @operation
     def initialize_device(
         self,
         serial: int,
@@ -153,40 +155,34 @@ class VUController(HardwareController):
         Returns:
             OperationResult with success status and serial number.
         """
-        try:
-            self._vu.initNewDevice(
-                serial=serial,
-                processorType=processor_type,
-                connectorType=connector_type,
-            )
-            logger.info("VU initialized: serial=%s", serial)
-            return OperationResult(ok=True, serial=serial)
-        except Exception as e:
-            logger.error("VU initialization failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._vu.initNewDevice(
+            serial=serial,
+            processorType=processor_type,
+            connectorType=connector_type,
+        )
+        logger.info("VU initialized: serial=%s", serial)
+        return OperationResult(ok=True, serial=serial)
 
     # =========================================================================
     # Temperature
     # =========================================================================
 
+    @operation
     def read_temperature(self) -> OperationResult:
         """Read VU temperature sensor.
 
         Returns:
             OperationResult with temperature in data["temperature"].
         """
-        try:
-            temp = self._vu.get_temperature()
-            logger.debug("VU temperature: %s", temp)
-            return OperationResult(ok=True, data={"temperature": temp})
-        except Exception as e:
-            logger.error("VU temperature read failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        temp = self._vu.get_temperature()
+        logger.debug("VU temperature: %s", temp)
+        return OperationResult(ok=True, data={"temperature": temp})
 
     # =========================================================================
     # Autocalibration
     # =========================================================================
 
+    @operation
     def perform_autocalibration(self) -> OperationResult:
         """Run onboard autocalibration on all 3 channels.
 
@@ -195,45 +191,39 @@ class VUController(HardwareController):
         Returns:
             OperationResult with updated coefficients.
         """
-        try:
-            print("── Onboard Autocalibration ──")
-            for ch in ("CH1", "CH2", "CH3"):
-                print(f"  Calibrating {ch}...")
-                self._vu.performautocalibration(ch)
-                print(f"  {ch} done.")
-            # Re-read coefficients after calibration
-            print("Reading back coefficients...")
-            for ch in ("CH1", "CH2", "CH3"):
-                self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-            print("Coefficients:")
-            for ch in ("CH1", "CH2", "CH3"):
-                k, d = self._coeffs[ch]
-                print(f"  {ch}  k={k:.6f}  d={d:.6f}")
-            logger.info("VU onboard autocalibration complete")
-            return OperationResult(ok=True, data={"coeffs": self._coeffs})
-        except Exception as e:
-            logger.error("VU autocalibration failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        print("── Onboard Autocalibration ──")
+        for ch in ("CH1", "CH2", "CH3"):
+            print(f"  Calibrating {ch}...")
+            self._vu.performautocalibration(ch)
+            print(f"  {ch} done.")
+        # Re-read coefficients after calibration
+        print("Reading back coefficients...")
+        for ch in ("CH1", "CH2", "CH3"):
+            self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
+        print("Coefficients:")
+        for ch in ("CH1", "CH2", "CH3"):
+            k, d = self._coeffs[ch]
+            print(f"  {ch}  k={k:.6f}  d={d:.6f}")
+        logger.info("VU onboard autocalibration complete")
+        return OperationResult(ok=True, data={"coeffs": self._coeffs})
 
     # =========================================================================
     # Coefficient Management
     # =========================================================================
 
+    @operation
     def read_coefficients(self) -> OperationResult:
         """Read correction coefficients from hardware.
 
         Returns:
             OperationResult with coefficients in data["coeffs"].
         """
-        try:
-            for ch in ("CH1", "CH2", "CH3"):
-                self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
-            logger.debug("VU coefficients read: %s", self._coeffs)
-            return OperationResult(ok=True, data={"coeffs": self._coeffs})
-        except Exception as e:
-            logger.error("VU coefficient read failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        for ch in ("CH1", "CH2", "CH3"):
+            self._coeffs[ch] = list(self._vu.get_correctionvalues(ch))
+        logger.debug("VU coefficients read: %s", self._coeffs)
+        return OperationResult(ok=True, data={"coeffs": self._coeffs})
 
+    @operation
     def reset_coefficients(self, write_eeprom: bool = False) -> OperationResult:
         """Reset correction coefficients to defaults (k=1.0, d=0.0).
 
@@ -246,24 +236,21 @@ class VUController(HardwareController):
         Returns:
             OperationResult with reset coefficients.
         """
-        try:
-            for ch in ("CH1", "CH2", "CH3"):
-                self._coeffs[ch] = [1.0, 0.0]
-                k, d = self._coeffs[ch]
-                zw = self._vu.voltageToRawWord(channel=ch, voltage=d)
-                self._vu.set_correctionvalues(
-                    channel=ch,
-                    slope=k,
-                    offset=d,
-                    zeroword=zw,
-                    writetoeeprom=write_eeprom,
-                )
-                logger.debug("VU %s coeffs reset: k=%s, d=%s", ch, k, d)
-            return OperationResult(ok=True, data={"coeffs": self._coeffs})
-        except Exception as e:
-            logger.error("VU coefficient reset failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        for ch in ("CH1", "CH2", "CH3"):
+            self._coeffs[ch] = [1.0, 0.0]
+            k, d = self._coeffs[ch]
+            zw = self._vu.voltageToRawWord(channel=ch, voltage=d)
+            self._vu.set_correctionvalues(
+                channel=ch,
+                slope=k,
+                offset=d,
+                zeroword=zw,
+                writetoeeprom=write_eeprom,
+            )
+            logger.debug("VU %s coeffs reset: k=%s, d=%s", ch, k, d)
+        return OperationResult(ok=True, data={"coeffs": self._coeffs})
 
+    @operation
     def write_coefficients(self) -> OperationResult:
         """Write current coefficients to EEPROM and verify by reading back.
 
@@ -272,39 +259,36 @@ class VUController(HardwareController):
         Returns:
             OperationResult with written coefficients.
         """
-        try:
-            for ch in ("CH1", "CH2", "CH3"):
-                k, d = self._coeffs[ch]
-                zw = self._vu.voltageToRawWord(channel=ch, voltage=d)
-                self._vu.set_correctionvalues(
-                    channel=ch,
-                    slope=k,
-                    offset=d,
-                    zeroword=zw,
-                    writetoeeprom=True,
+        for ch in ("CH1", "CH2", "CH3"):
+            k, d = self._coeffs[ch]
+            zw = self._vu.voltageToRawWord(channel=ch, voltage=d)
+            self._vu.set_correctionvalues(
+                channel=ch,
+                slope=k,
+                offset=d,
+                zeroword=zw,
+                writetoeeprom=True,
+            )
+        # Verify by reading back
+        mismatch = False
+        for ch in ("CH1", "CH2", "CH3"):
+            readback = list(self._vu.get_correctionvalues(ch))
+            expected_k, expected_d = self._coeffs[ch]
+            if abs(readback[0] - expected_k) > 1e-9 or abs(readback[1] - expected_d) > 1e-9:
+                print(
+                    f"  {ch}  ⚠ EEPROM mismatch: wrote k={expected_k:.6f} d={expected_d:.6f}"
+                    f"  read k={readback[0]:.6f} d={readback[1]:.6f}"
                 )
-            # Verify by reading back
-            mismatch = False
-            for ch in ("CH1", "CH2", "CH3"):
-                readback = list(self._vu.get_correctionvalues(ch))
-                expected_k, expected_d = self._coeffs[ch]
-                if abs(readback[0] - expected_k) > 1e-9 or abs(readback[1] - expected_d) > 1e-9:
-                    print(
-                        f"  {ch}  ⚠ EEPROM mismatch: wrote k={expected_k:.6f} d={expected_d:.6f}"
-                        f"  read k={readback[0]:.6f} d={readback[1]:.6f}"
-                    )
-                    mismatch = True
-            if mismatch:
-                logger.warning("Coefficient EEPROM verification failed")
-            return OperationResult(ok=not mismatch, data={"coeffs": self._coeffs})
-        except Exception as e:
-            logger.error("VU coefficient write failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+                mismatch = True
+        if mismatch:
+            logger.warning("Coefficient EEPROM verification failed")
+        return OperationResult(ok=not mismatch, data={"coeffs": self._coeffs})
 
     # =========================================================================
     # Guard Controls
     # =========================================================================
 
+    @operation
     def set_guard_signal(self) -> OperationResult:
         """Set output guard to signal mode.
 
@@ -313,27 +297,20 @@ class VUController(HardwareController):
         Returns:
             OperationResult with guard state.
         """
-        try:
-            self._vu.setOutputsGuardToSignal()
-            logger.info("VU guard set to signal")
-            return OperationResult(ok=True, data={"guard": "signal"})
-        except Exception as e:
-            logger.error("VU guard signal failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._vu.setOutputsGuardToSignal()
+        logger.info("VU guard set to signal")
+        return OperationResult(ok=True, data={"guard": "signal"})
 
+    @operation
     def set_guard_ground(self) -> OperationResult:
         """Set output guard to ground mode (safe default).
 
         Returns:
             OperationResult with guard state.
         """
-        try:
-            self._vu.setOutputsGuardToGND()
-            logger.info("VU guard set to ground")
-            return OperationResult(ok=True, data={"guard": "ground"})
-        except Exception as e:
-            logger.error("VU guard ground failed: %s", e)
-            return OperationResult(ok=False, message=str(e))
+        self._vu.setOutputsGuardToGND()
+        logger.info("VU guard set to ground")
+        return OperationResult(ok=True, data={"guard": "ground"})
 
     # =========================================================================
     # Test Operations
@@ -491,13 +468,13 @@ class VUController(HardwareController):
             try:
                 self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
                 self._vu.setOutputsEnabled(0)
-            except Exception as e:
+            except OSError as e:
                 logger.warning("Failed to reset VU outputs: %s", e)
 
             return result
         except Exception as e:
             print(f"  ✗ test_outputs failed: {e}")
-            logger.error("VU test_outputs failed: %s", e)
+            logger.error("VU test_outputs failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def test_ramp(
@@ -810,13 +787,13 @@ class VUController(HardwareController):
 
             try:
                 self._vu.setOutputVoltage("all", (0.0, 0.0, 0.0))
-            except Exception as e:
+            except OSError as e:
                 logger.warning("Failed to reset VU outputs: %s", e)
 
             return result
         except Exception as e:
             print(f"  ✗ test_ramp failed: {e}")
-            logger.error("VU test_ramp failed: %s", e)
+            logger.error("VU test_ramp failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def test_transient(
@@ -1008,7 +985,7 @@ class VUController(HardwareController):
             )
         except Exception as e:
             print(f"  ✗ test_transient failed: {e}")
-            logger.error("VU test_transient failed: %s", e)
+            logger.error("VU test_transient failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     def test_all(
@@ -1153,7 +1130,7 @@ class VUController(HardwareController):
                 },
             )
         except Exception as e:
-            logger.error("VU auto_calibrate failed: %s", e)
+            logger.error("VU auto_calibrate failed: %s: %s", type(e).__name__, e)
             return OperationResult(ok=False, message=str(e))
 
     # =========================================================================

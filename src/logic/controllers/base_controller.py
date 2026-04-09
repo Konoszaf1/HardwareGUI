@@ -4,9 +4,42 @@ This module defines the abstract interface and shared types for hardware control
 All unit-specific controllers inherit from HardwareController.
 """
 
+from __future__ import annotations
+
+import functools
+import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def operation[F: Callable[..., Any]](func: F) -> F:
+    """Decorator providing standardized error handling for controller operations.
+
+    Wraps the method in try/except, catching any unhandled exception, logging it
+    via the originating module's logger, and returning ``OperationResult(ok=False)``.
+
+    This eliminates the repetitive try/except/log/return boilerplate that would
+    otherwise appear in every public controller method.
+    """
+    module_logger = logging.getLogger(func.__module__)
+
+    @functools.wraps(func)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> OperationResult:
+        try:
+            return func(self, *args, **kwargs)  # type: ignore[no-any-return]
+        except Exception as e:
+            module_logger.error(
+                "%s failed: %s: %s",
+                func.__name__,
+                type(e).__name__,
+                e,
+                exc_info=True,
+            )
+            return OperationResult(ok=False, message=str(e))
+
+    return wrapper  # type: ignore[return-value]
 
 
 @dataclass(frozen=True, slots=True)

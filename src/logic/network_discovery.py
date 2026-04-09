@@ -73,7 +73,7 @@ def get_local_subnets() -> list[str]:
             parts = ip.split(".")
             if len(parts) == 4:
                 subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}")
-    except Exception as e:
+    except OSError as e:
         logger.debug("Failed to detect local subnet: %s", e)
 
     # Also try to get all interface IPs via getaddrinfo
@@ -86,7 +86,7 @@ def get_local_subnets() -> list[str]:
             parts = ip.split(".")
             if len(parts) == 4:
                 subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}")
-    except Exception as e:
+    except OSError as e:
         logger.debug("Failed to enumerate interfaces: %s", e)
 
     return list(subnets) if subnets else ["192.168.1"]
@@ -128,7 +128,7 @@ def _query_vxi11(ip: str, timeout: float = _QUERY_TIMEOUT) -> str | None:
         idn = instr.ask("*IDN?")
         instr.close()
         return idn.strip() if idn else None
-    except Exception:
+    except (TimeoutError, OSError):
         return None
 
 
@@ -248,6 +248,6 @@ def _scan_subnet(
                 result = future.result()
                 if result is not None:
                     found.append(result)
-            except Exception as e:
+            except (TimeoutError, OSError) as e:
                 logger.debug("Scan error for %s: %s", futures[future], e)
     return found
