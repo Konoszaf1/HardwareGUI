@@ -172,6 +172,7 @@ class TestScanHostScpi:
 
         assert result is not None
         assert result.ip == "192.168.1.10"
+        assert result.identity is not None
         assert "KEITHLEY" in result.identity
         assert result.port == 5025
 
@@ -250,6 +251,7 @@ class TestDiscoverInstruments:
             results = discover_instruments(instrument_type="keithley")
 
         assert len(results) == 1
+        assert results[0].identity is not None
         assert "KEITHLEY" in results[0].identity
 
     def test_scope_filter(self):
@@ -265,6 +267,7 @@ class TestDiscoverInstruments:
             results = discover_instruments(instrument_type="scope")
 
         assert len(results) == 1
+        assert results[0].identity is not None
         assert "RIGOL" in results[0].identity
 
     def test_progress_callback_called(self):

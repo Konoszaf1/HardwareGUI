@@ -86,6 +86,7 @@ class _ResizeScrollTracker(QObject):
         self._scroll = None
         self.deleteLater()
 
+
 # Import status bar service lazily to avoid circular imports
 _status_bar_service = None
 

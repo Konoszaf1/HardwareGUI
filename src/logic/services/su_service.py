@@ -124,7 +124,6 @@ class SamplingUnitService(BaseHardwareService):
             else:
                 return
 
-        last_error: Exception | None = None
         for attempt in range(1, self._CONNECT_MAX_ATTEMPTS + 1):
             try:
                 su_serial = self._targets.su_serial
@@ -146,7 +145,6 @@ class SamplingUnitService(BaseHardwareService):
                 self._controller = SUController(su=self._su, mcu=self._mcu)
                 break  # Connection succeeded
             except Exception as e:
-                last_error = e
                 # Clean up any partially-created handles
                 self._disconnect()
                 if attempt < self._CONNECT_MAX_ATTEMPTS:
@@ -387,9 +385,7 @@ class SamplingUnitService(BaseHardwareService):
 
         def job():
             result = self._run_hw_operation(
-                lambda c: c.pulse_measure(
-                    num_samples=num_samples, sampling_rate=sampling_rate
-                )
+                lambda c: c.pulse_measure(num_samples=num_samples, sampling_rate=sampling_rate)
             )
             return {
                 "ok": result.ok,

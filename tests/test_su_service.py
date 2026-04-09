@@ -180,10 +180,9 @@ class TestSUServiceConnectionSafeguards:
 
         # Patch DPISamplingUnit constructor for the reconnect
         new_su = MagicMock()
-        with patch(
-            "src.logic.services.su_service.DPISamplingUnit", return_value=new_su
-        ), patch(
-            "src.logic.services.su_service.DPIMainControlUnit", return_value=MagicMock()
+        with (
+            patch("src.logic.services.su_service.DPISamplingUnit", return_value=new_su),
+            patch("src.logic.services.su_service.DPIMainControlUnit", return_value=MagicMock()),
         ):
             service._ensure_connected()
 
@@ -245,17 +244,20 @@ class TestSUServiceConnectionSafeguards:
         service = SamplingUnitService()
         mock_su = MagicMock()
 
-        with patch(
-            "src.logic.services.su_service.DPISamplingUnit", return_value=mock_su
-        ), patch(
-            "src.logic.services.su_service.DPIMainControlUnit",
-            side_effect=RuntimeError("MCU error"),
-        ), patch(
-            "src.logic.services.su_service.SUController",
-            side_effect=RuntimeError("Controller init failed"),
-        ), patch("time.sleep"):
-            with pytest.raises(RuntimeError, match="Controller init failed"):
-                service._ensure_connected()
+        with (
+            patch("src.logic.services.su_service.DPISamplingUnit", return_value=mock_su),
+            patch(
+                "src.logic.services.su_service.DPIMainControlUnit",
+                side_effect=RuntimeError("MCU error"),
+            ),
+            patch(
+                "src.logic.services.su_service.SUController",
+                side_effect=RuntimeError("Controller init failed"),
+            ),
+            patch("time.sleep"),
+            pytest.raises(RuntimeError, match="Controller init failed"),
+        ):
+            service._ensure_connected()
 
         # SU should have been disconnected during cleanup (once per retry attempt)
         assert mock_su.disconnect.call_count == service._CONNECT_MAX_ATTEMPTS
@@ -276,11 +278,13 @@ class TestSUServiceConnectionSafeguards:
                 raise RuntimeError("USB busy")
             return mock_su
 
-        with patch(
-            "src.logic.services.su_service.DPISamplingUnit", side_effect=flaky_su_constructor
-        ), patch(
-            "src.logic.services.su_service.DPIMainControlUnit", return_value=MagicMock()
-        ), patch("time.sleep"):  # Don't actually sleep in tests
+        with (
+            patch(
+                "src.logic.services.su_service.DPISamplingUnit", side_effect=flaky_su_constructor
+            ),
+            patch("src.logic.services.su_service.DPIMainControlUnit", return_value=MagicMock()),
+            patch("time.sleep"),
+        ):  # Don't actually sleep in tests
             service._ensure_connected()
 
         assert service._connected is True
@@ -291,12 +295,15 @@ class TestSUServiceConnectionSafeguards:
         """_ensure_connected should raise after max attempts exhausted."""
         service = SamplingUnitService()
 
-        with patch(
-            "src.logic.services.su_service.DPISamplingUnit",
-            side_effect=RuntimeError("USB gone"),
-        ), patch("time.sleep"):
-            with pytest.raises(RuntimeError, match="USB gone"):
-                service._ensure_connected()
+        with (
+            patch(
+                "src.logic.services.su_service.DPISamplingUnit",
+                side_effect=RuntimeError("USB gone"),
+            ),
+            patch("time.sleep"),
+            pytest.raises(RuntimeError, match="USB gone"),
+        ):
+            service._ensure_connected()
 
         assert service._connected is False
 

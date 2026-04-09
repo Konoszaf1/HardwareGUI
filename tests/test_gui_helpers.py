@@ -64,7 +64,7 @@ class TestAppendLog:
 
     def test_append_log_none_console_safe(self):
         """append_log should handle None console gracefully."""
-        append_log(None, "Test message")  # Should not raise
+        append_log(None, "Test message")  # type: ignore[arg-type]  # Should not raise
 
 
 class TestAddThumbnailItem:
@@ -98,7 +98,7 @@ class TestAddThumbnailItem:
         add_thumbnail_item(list_widget, str(img_path))
 
         item = list_widget.item(0)
-        assert item.data(Qt.UserRole) == str(img_path)
+        assert item.data(Qt.ItemDataRole.UserRole) == str(img_path)
 
     def test_item_displays_basename(self, qtbot, tmp_path):
         """add_thumbnail_item should display only the filename, not full path."""
@@ -132,7 +132,7 @@ class TestAddThumbnailItem:
         img_path = tmp_path / "test.png"
         img_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
-        add_thumbnail_item(None, str(img_path))  # Should not raise
+        add_thumbnail_item(None, str(img_path))  # type: ignore[arg-type]  # Should not raise
 
     def test_nonexistent_path_safe(self, qtbot):
         """add_thumbnail_item should handle non-existent path gracefully."""

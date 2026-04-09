@@ -1125,7 +1125,7 @@ class TestVUControllerEdgeCases:
         """Verify OperationResult cannot be mutated after creation."""
         result = OperationResult(ok=True, serial=1, message="test", data={"k": 1})
         with pytest.raises(AttributeError):
-            result.ok = False
+            result.ok = False  # type: ignore[misc]
 
     @pytest.mark.parametrize(
         "ok,serial,message",

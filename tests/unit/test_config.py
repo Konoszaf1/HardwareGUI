@@ -34,7 +34,7 @@ class TestUIConfig:
         ui = UIConfig()
 
         with pytest.raises(dataclasses.FrozenInstanceError):
-            ui.sidebar_expanded_width = 999
+            ui.sidebar_expanded_width = 999  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ class TestAppConfig:
         app = AppConfig()
 
         with pytest.raises(dataclasses.FrozenInstanceError):
-            app.log_level = "DEBUG"
+            app.log_level = "DEBUG"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
