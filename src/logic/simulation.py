@@ -626,7 +626,7 @@ class SimulatedSMUService(SimulatedServiceBase):
                 ],
             }
 
-        return self._sim_task("load_calibration_status", 0.3, body=body)
+        return self._sim_task("Load Cal Status", 0.3, body=body)
 
     def run_delete_calibration_ranges(
         self,
