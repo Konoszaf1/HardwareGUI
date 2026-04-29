@@ -27,7 +27,7 @@ class TestUIConfig:
         assert ui.animation_duration_ms == 500
         assert ui.window_min_width == 900
         assert ui.window_min_height == 600
-        assert ui.sidebar_button_icon_size == 24
+        assert ui.sidebar_button_icon_size == 36
 
     def test_frozen_immutable(self):
         """UIConfig raises FrozenInstanceError on attribute assignment."""

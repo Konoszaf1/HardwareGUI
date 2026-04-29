@@ -44,7 +44,7 @@ class UIConfig:
     collapse_hover_delay_ms: int = 200
     window_min_width: int = 900
     window_min_height: int = 600
-    sidebar_button_icon_size: int = 24
+    sidebar_button_icon_size: int = 36
 
     # Shared Panels
     panel_toggle_size: int = 24

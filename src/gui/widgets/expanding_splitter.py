@@ -119,7 +119,10 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
         """
         self.buttons.append(button)
         # Clear text immediately without animation
-        button.setText("")
+        if hasattr(button, "collapse_immediate_state"):
+            button.collapse_immediate_state()
+        else:
+            button.setText("")
         button.installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -222,10 +225,12 @@ class ExpandingSplitter(QSplitter, AnimatedWidgetMixin):
 
         # Clear button text WITHOUT animation (set_collapsed would animate)
         for button in self.buttons:
-            button.setText("")
-            # Also ensure button itself doesn't try to be larger than collapsed width
-            button.setMinimumWidth(config.ui.sidebar_collapsed_width)
-            button.setMaximumWidth(config.ui.sidebar_collapsed_width)
+            if hasattr(button, "collapse_immediate_state"):
+                button.collapse_immediate_state()
+            else:
+                button.setText("")
+                button.setMinimumWidth(config.ui.sidebar_collapsed_width)
+                button.setMaximumWidth(config.ui.sidebar_collapsed_width)
 
     def _on_resize_animation(self, value: int) -> None:
         """Handle resizing of the splitter during animation.

@@ -4,9 +4,9 @@ from src.logic.action_dataclass import ActionDescriptor
 from src.logic.hardware_dataclass import HardwareDescriptor
 
 HARDWARE: list[HardwareDescriptor] = [
-    HardwareDescriptor(1, "Voltage Unit", ":/icons/keyboard.png", 0),
-    HardwareDescriptor(3, "Source Measure Unit", ":/icons/scanner-image.png", 1),
-    HardwareDescriptor(2, "Sampling Unit", ":/icons/screen.png", 2),
+    HardwareDescriptor(1, "Voltage Unit", ":/icons/voltage-unit.png", 0),
+    HardwareDescriptor(3, "Source Measure Unit", ":/icons/source-measure-unit.png", 1),
+    HardwareDescriptor(2, "Sampling Unit", ":/icons/sampling-unit.png", 2),
 ]
 
 ACTIONS: list[ActionDescriptor] = [

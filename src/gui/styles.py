@@ -69,6 +69,8 @@ class Styles:
         BUTTON_ERROR: Inline style for error buttons.
         BUTTON_ACCENT: Inline style for accent buttons.
         SIDEBAR_TOOLTIP: Stylesheet for the sidebar tooltip.
+        SIDEBAR_BUTTON_COLLAPSED: Stylesheet for collapsed hardware sidebar buttons.
+        SIDEBAR_BUTTON_EXPANDED: Stylesheet for expanded hardware sidebar buttons.
         STATUS_BAR: Stylesheet for the status bar.
         SCOPE_CONNECTED: Inline style for connected scope label.
         SCOPE_DISCONNECTED: Inline style for disconnected scope label.
@@ -132,6 +134,26 @@ class Styles:
             padding: 4px 8px;
             font-size: 10pt;
         }}
+    """
+
+    SIDEBAR_BUTTON_COLLAPSED = """
+        QToolButton {
+            text-align: left;
+            font-family: 'Goldman';
+            font-weight: bold;
+            font-size: 18px;
+            padding: 0;
+        }
+    """
+
+    SIDEBAR_BUTTON_EXPANDED = """
+        QToolButton {
+            text-align: left;
+            font-family: 'Goldman';
+            font-weight: bold;
+            font-size: 12px;
+            padding: 0;
+        }
     """
 
     # Status bar
