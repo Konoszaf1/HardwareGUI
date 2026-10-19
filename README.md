@@ -402,7 +402,3 @@ uv run pytest          # 342 tests, ~5 s
 | Permission denied on a script | `chmod +x run.sh scripts/*.sh` |
 
 ---
-
-## Academic Context & License
-
-Developed as a **bachelor thesis** at the **Institute for Microelectronics, TU Wien**, around the institute's `dpi` instrument framework. No open-source license is currently declared; usage and distribution are subject to the institute's terms. *(Add a `LICENSE` file if releasing publicly.)*
